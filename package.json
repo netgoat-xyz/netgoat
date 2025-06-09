@@ -1,0 +1,34 @@
+{
+  "dependencies": {
+    "@fastify/http-proxy": "^11.1.2",
+    "@fastify/static": "^8.2.0",
+    "@fastify/view": "^11.1.0",
+    "@tailwindcss/cli": "^4.1.8",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.16",
+    "ascii-table": "^0.0.9",
+    "bun": "^1.2.15",
+    "cal-sans": "^1.0.1",
+    "chalk": "^5.4.1",
+    "daisyui": "^5.0.43",
+    "eta": "^3.5.0",
+    "fastify": "^5.3.3",
+    "figlet": "^1.8.1",
+    "gradient-string": "^3.0.0",
+    "tailwindcss": "^4.1.8",
+    "tldts": "^7.0.8"
+  },
+  "name": "netgoat",
+  "module": "index.js",
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i assets/css/globals.css -o assets/css/tailwind.css --watch"
+  },
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
