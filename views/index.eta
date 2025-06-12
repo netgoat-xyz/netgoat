@@ -2,36 +2,79 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Login | NetGoat</title>
-    <link href="/assets/css/tailwind.css" rel="stylesheet"/>
+    <link href="/assets/css/tailwind.css" rel="stylesheet" />
   </head>
-  <body data-theme="literallybender" class="bg-base-200 flex items-center justify-center min-h-screen">
-    <div class="card card-border w-full max-w-sm shadow-2xl bg-base-100">
-      <div class="card-body">
-        <h2 class="text-2xl font-calsans font-bold mb-4">Login to NetGoat</h2>
-        <form method="POST" action="/login" class="space-y-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text">Username</span>
-            </label>
-            <input type="text" placeholder="your_username" name="username" class="w-full input input-bordered" required />
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text">Password</span>
-            </label>
-            <input type="password" placeholder="••••••••" name="password" class="w-full input input-bordered" required />
+  <body
+    data-theme="literallybender"
+    class="bg-base-200 flex items-center justify-center min-h-screen"
+  >
+    <div class="min-h-screen bg-base-200 flex items-center">
+      <div class="card mx-auto w-full max-w-5xl shadow-xl">
+        <div class="grid md:grid-cols-2 grid-cols-1 bg-base-100 rounded-xl">
+          <div class="">
+            <div class="hero min-h-full rounded-l-xl herogradient">
+              <div class="hero-content py-12 ">
+                <div class="max-w-md ">
 
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="form-control mt-6">
-            <button class="btn btn-primary w-full">Login</button>
+          <div class="py-24 px-10">
+            <h2 class="text-4xl font-semibold mb-2 text-center font-calsans tracking-wide">Login</h2>
+            <form>
+              <div class="mb-4">
+                <div class="form-control w-full mt-4">
+                  <label class="label"
+                    ><span class="label-text text-base-content undefined"
+                      >Email Id</span
+                    ></label
+                  ><input
+                    type="emailId"
+                    placeholder=""
+                    class="input input-bordered w-full"
+                    value=""
+                  />
+                </div>
+                <div class="form-control w-full mt-4">
+                  <label class="label"
+                    ><span class="label-text text-base-content undefined"
+                      >Password</span
+                    ></label
+                  ><input
+                    type="password"
+                    placeholder=""
+                    class="input input-bordered w-full"
+                    value=""
+                  />
+                </div>
+              </div>
+              <div class="text-right text-primary">
+                <a href="/forgot-password"
+                  ><span
+                    class="text-sm inline-block hover:text-primary hover:underline hover:cursor-pointer transition duration-200"
+                    >Forgot Password?</span
+                  ></a
+                >
+              </div>
+              <p class="text-center text-error mt-8"></p>
+              <button type="submit" class="btn mt-2 w-full btn-primary">
+                Login
+              </button>
+              <div class="text-center mt-4">
+                Don't have an account yet?
+                <a href="/register"
+                  ><span
+                    class="inline-block hover:text-primary hover:underline hover:cursor-pointer transition duration-200"
+                    >Register</span
+                  ></a
+                >
+              </div>
+            </form>
           </div>
-        </form>
-        <p class="text-center text-sm text-gray-500 mt-4">
-          Don't have an account?
-          <a href="/register" class="link link-primary">Sign up</a>
-        </p>
+        </div>
       </div>
     </div>
   </body>

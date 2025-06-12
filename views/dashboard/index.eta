@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="cyberpunk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NetGoat Admin</title>
+  <link href="/assets/css/tailwind.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body class="bg-base-200 text-base-content h-screen overflow-hidden flex flex-col">
+
+  <!-- TOP NAV -->
+  <nav class="navbar bg-primary text-primary-content shadow z-50 px-6">
+    <div class="flex-1">
+      <a class="text-xl font-bold tracking-wide">NetGoat Dashboard</a>
+    </div>
+    <div class="flex-none gap-4">
+      <button class="btn btn-sm btn-ghost">Docs</button>
+      <button class="btn btn-sm btn-ghost">Settings</button>
+      <div class="avatar">
+        <div class="w-8 mask mask-squircle">
+          <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=admin" />
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="flex-1 overflow-y-auto p-6 space-y-6">
+
+    <!-- STATS -->
+    <div class="grid md:grid-cols-4 sm:grid-cols-2 gap-6">
+      <div class="card bg-gradient-to-r from-secondary to-primary text-primary-content p-4 stat shadow-xl">
+        <h2 class="text-lg font-bold">Users</h2>
+        <p class="text-3xl font-extrabold mt-2">1,234</p>
+      </div>
+      <div class="card bg-gradient-to-r from-pink-500 to-fuchsia-600 text-white p-4 stat shadow-xl">
+        <h2 class="text-lg font-bold">Sales</h2>
+        <p class="text-3xl font-extrabold mt-2">567</p>
+      </div>
+      <div class="card bg-gradient-to-r from-success to-accent text-accent-content p-4 stat shadow-xl">
+        <h2 class="text-lg font-bold">Revenue</h2>
+        <p class="text-3xl font-extrabold mt-2">$12,345</p>
+      </div>
+      <div class="card bg-gradient-to-r from-error to-warning text-white p-4 stat shadow-xl">
+        <h2 class="text-lg font-bold">Errors</h2>
+        <p class="text-3xl font-extrabold mt-2">3</p>
+      </div>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="card bg-base-100 shadow-lg p-6">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">User Activity</h2>
+        <button id="refreshBtn" class="btn btn-outline btn-sm">Refresh</button>
+      </div>
+      <canvas id="lineChart" height="150"></canvas>
+    </div>
+
+  </main>
+
+  <script>
+    const ctx = document.getElementById('lineChart').getContext('2d');
+    const data = {
+      labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      datasets: [{
+        label: 'Active Users',
+        data: [120, 200, 150, 220, 170, 240, 300],
+        borderColor: '#00FFFF',
+        backgroundColor: 'rgba(0,255,255,0.3)',
+        tension: 0.3,
+        fill: true
+      }]
+    };
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: data,
+      options: {
+        plugins: { legend: { display: false }},
+        scales: { y: { beginAtZero: true }}
+      }
+    });
+
+    // GSAP stuff
+    gsap.from('.stat', {
+      opacity: 0,
+      y: 20,
+      stagger: 0.15,
+      duration: 0.6,
+      ease: 'power2.out'
+    });
+
+    gsap.from('#lineChart', {
+      opacity: 0,
+      scale: 0.9,
+      duration: 1.2,
+      ease: 'back.out(1.7)'
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      gsap.to('#refreshBtn', { rotate: 360, duration: 0.7 });
+      chart.data.datasets[0].data = chart.data.datasets[0].data.map(n => Math.floor(n + (Math.random() * 100 - 50)));
+      chart.update();
+    });
+  </script>
+</body>
+</html>

@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "@coreui/coreui": "^5.4.0",
+    "@coreui/react": "^5.7.0",
     "@fastify/http-proxy": "^11.1.2",
     "@fastify/static": "^8.2.0",
     "@fastify/view": "^11.1.0",
