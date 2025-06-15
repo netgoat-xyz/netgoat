@@ -6,6 +6,8 @@ import figlet from 'figlet';
 import os from 'os';
 import chalk from 'chalk';
 import AsciiTable from 'ascii-table'; 
+import { initRaft } from "./electionRaft/index.js";
+
 await import('./utils/loader.js');
 
 const text = figlet.textSync('NetGoat');
@@ -86,6 +88,14 @@ console.clear();
 console.log(rainbowify(figlet.textSync('NetGoat')));
 console.log(systemTable.toString());
 console.log(workersTable.toString());
+
+
+let NODE_ID = process.env.NODE_ID;
+let PORT = process.env.ElectionPort;
+let PEERS = process.env.PEERS ? process.env.PEERS.split(",") : [];
+let shardManagerUrl = process.env.SHARD_MANAGER_URL;
+
+// initRaft(NODE_ID, PORT, PEERS, shardManagerUrl);
 
 await Promise.all([
   import('./servers/backend.js'),

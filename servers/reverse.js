@@ -48,7 +48,7 @@ fastify.all("/*", async (req, reply) => {
       body: hasBody ? req.raw : undefined,
     });
 
-    const traceletId = tracelet("na1");
+    const traceletId = tracelet(process.env.regionID);
 
     reply.status(upstreamReq.statusCode);
     reply.header(
