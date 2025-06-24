@@ -1,13 +1,13 @@
 import Fastify from "fastify";
 import { request } from "undici";
 import { parse } from "tldts";
-
-const fastify = Fastify({ logger: false });
-
+import domains from "../database/mongodb/schema/domains";
 const upstreamMap = {
   "api.example.com": "http://localhost:3000",
   "app.example.com": "http://localhost:3001",
 };
+
+const fastify = Fastify({ logger: false });
 
 fastify.addHook("onRequest", (req, reply, done) => {
   logger.info(
@@ -27,8 +27,10 @@ fastify.addHook("onResponse", (req, reply, done) => {
 
 fastify.all("/*", async (req, reply) => {
   const host = req.headers.host?.split(":")[0];
-  const target = upstreamMap[host];
   const { domain, subdomain } = parse(req.hostname);
+  
+  const domainData = domains.findOne({ domain: domain })
+  const target = domainData.proxied;
 
   if (!target) {
     reply.code(502).send({ error: "Bad Gateway", message: "Unknown host" });
@@ -63,9 +65,7 @@ fastify.all("/*", async (req, reply) => {
       reply.header(k, v);
     }
 
-
     domainLOGS(domain, subdomain, req, new Date(), traceletId);
-
 
     return;
   } catch (err) {

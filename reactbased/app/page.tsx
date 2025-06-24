@@ -31,7 +31,7 @@ export default function HomePage() {
   return (
     <div className="bg-black text-white overflow-x-hidden">
       {/* 🧊 Hero */}
-<section className="h-screen w-full flex flex-col justify-center items-center text-center px-6 bg-gradient-to-br from-black via-zinc-900 to-[#0d0d0d] relative overflow-hidden">
+<section className="section-wrapper h-screen w-full flex flex-col justify-center items-center text-center px-6 bg-gradient-to-br from-black via-zinc-900 to-[#0d0d0d] relative overflow-hidden">
   <motion.h1
     initial={{ opacity: 0, y: 100 }}
     animate={{ opacity: 1, y: 0 }}

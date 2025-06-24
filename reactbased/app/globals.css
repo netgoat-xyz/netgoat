@@ -166,3 +166,30 @@
     @apply bg-background text-foreground;
   }
 }
+html {
+  scroll-behavior: smooth;
+}
+
+.section-wrapper {
+  position: relative;
+  isolation: isolate;
+}
+
+.section-fade {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 100px;
+  z-index: 1;
+}
+
+.section-fade.top {
+  top: -1px;
+  background: linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0));
+}
+
+.section-fade.bottom {
+  bottom: -1px;
+  background: linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0));
+}
