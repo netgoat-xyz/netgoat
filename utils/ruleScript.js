@@ -1,4 +1,3 @@
-// cloudflareRuleEngineFull.js
 import { pathToRegexp } from 'path-to-regexp'
 
 export class CloudflareRuleEngine {
@@ -22,14 +21,14 @@ export class CloudflareRuleEngine {
       const safeField = field
       const safeValue = value
       switch (op) {
-        case 'eq': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) === ${safeValue}`
-        case 'ne': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) !== ${safeValue}`
-        case 'lt': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) < ${safeValue}`
-        case 'gt': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) > ${safeValue}`
-        case 'lte': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) <= ${safeValue}`
-        case 'gte': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) >= ${safeValue}`
-        case 'contains': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx).includes(${safeValue})`
-        case 'matches': return `${safeValue}.replace(/^\"|\"$/g, '') && new RegExp(${safeValue}).test(CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx))`
+        case 'eq': return `getFieldValue(\"${safeField}\", ctx) === ${safeValue}`
+        case 'ne': return `getFieldValue(\"${safeField}\", ctx) !== ${safeValue}`
+        case 'lt': return `getFieldValue(\"${safeField}\", ctx) < ${safeValue}`
+        case 'gt': return `getFieldValue(\"${safeField}\", ctx) > ${safeValue}`
+        case 'lte': return `getFieldValue(\"${safeField}\", ctx) <= ${safeValue}`
+        case 'gte': return `getFieldValue(\"${safeField}\", ctx) >= ${safeValue}`
+        case 'contains': return `getFieldValue(\"${safeField}\", ctx).includes(${safeValue})`
+        case 'matches': return `${safeValue}.replace(/^\"|\"$/g, '') && new RegExp(${safeValue}).test(getFieldValue(\"${safeField}\", ctx))`
         default: return 'false'
       }
     })
@@ -41,7 +40,7 @@ export class CloudflareRuleEngine {
   static evaluateExpression(expr, ctx) {
     try {
       const safeExpr = CloudflareRuleEngine.tokenize(expr)
-      return Function('ctx', `\"use strict\"; return (${safeExpr});`)(ctx)
+return Function('ctx', 'getFieldValue', `\"use strict\"; return (${safeExpr});`)(ctx, CloudflareRuleEngine.getFieldValue)
     } catch (err) {
       throw new Error(`Rule Syntax Error: ${err.message}`)
     }

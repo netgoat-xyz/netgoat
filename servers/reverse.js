@@ -2,12 +2,15 @@ import Fastify from "fastify";
 import { request } from "undici";
 import { parse } from "tldts";
 import domains from "../database/mongodb/schema/domains";
-const upstreamMap = {
-  "api.example.com": "http://localhost:3000",
-  "app.example.com": "http://localhost:3001",
-};
+import Score from "../database/mongodb/schema/score.js";
 
 const fastify = Fastify({ logger: false });
+
+function getClientIp(req) {
+  const xForwardedFor = req.headers["x-forwarded-for"];
+  if (xForwardedFor) return xForwardedFor.split(",")[0].trim();
+  return req.ip || req.raw.connection.remoteAddress || "unknown";
+}
 
 fastify.addHook("onRequest", (req, reply, done) => {
   logger.info(
@@ -25,24 +28,59 @@ fastify.addHook("onResponse", (req, reply, done) => {
   done();
 });
 
+// Cachey Cachey
+const domainCache = new Map();
+
 fastify.all("/*", async (req, reply) => {
-  const host = req.headers.host?.split(":")[0];
-  const { domain, subdomain } = parse(req.hostname);
-  
-  const domainData = domains.findOne({ domain: domain })
-  const target = domainData.proxied;
-
-  if (!target) {
-    reply.code(502).send({ error: "Bad Gateway", message: "Unknown host" });
-    return;
-  }
-
   try {
+    const host = req.headers.host?.split(":")[0];
+    if (!host)
+      return reply
+        .code(400)
+        .send({ error: "Bad Request", message: "Missing Host header" });
+
+    const { domain, subdomain } = parse(host);
+    if (!domain)
+      return reply
+        .code(400)
+        .send({ error: "Bad Request", message: "Invalid domain" });
+
+    let domainData = domainCache.get(domain);
+    if (!domainData) {
+      domainData = await domains.findOne({ domain });
+      if (domainData) domainCache.set(domain, domainData);
+    }
+
+    const target = domainData?.proxied || null;
+    if (!target)
+      return reply
+        .code(502)
+        .send({ error: "Bad Gateway", message: "Unknown host" });
+
     const url = new URL(req.raw.url, target);
 
-    const hasBody = !["GET", "HEAD", "PUT", "POST", "DELETE"].includes(
-      req.method
-    );
+    const ipAddress = getClientIp(req);
+
+    const agg = await Score.aggregate([
+      { $match: { ipAddress } },
+      {
+        $group: {
+          _id: "$ipAddress",
+          totalScore: { $sum: "$score" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    if (agg.length > 60) {
+      logger.warn(
+        `IP ${ipAddress} has exceeded the score with ${agg.length} requests.`
+      );
+    }
+
+    // Body Check, hooooray.
+    const methodsWithBody = ["POST", "PUT", "PATCH", "DELETE"];
+    const hasBody = methodsWithBody.includes(req.method.toUpperCase());
 
     const upstreamReq = await request(url.toString(), {
       method: req.method,
@@ -65,11 +103,25 @@ fastify.all("/*", async (req, reply) => {
       reply.header(k, v);
     }
 
+    // Record and waste space for user's sake
     domainLOGS(domain, subdomain, req, new Date(), traceletId);
 
-    return;
+    // Score Tracker (Im gonna start tweaking)
+    try {
+      const scoreValue = 1; // Tweak this you lil bastard
+
+      const newScore = new Score({ ipAddress, score: scoreValue });
+      await newScore.save();
+    } catch (err) {
+      logger.error("Failed to save request score:", err);
+    }
+    // ==============================
+
+    // Pipe upstream response back
+    const responseBody = await upstreamReq.body.text();
+    return reply.send(responseBody);
   } catch (err) {
-    reply.code(500).send({ error: "Proxy error", message: err.message });
+    return reply.code(500).send({ error: "Proxy error", message: err.message });
   }
 });
 
