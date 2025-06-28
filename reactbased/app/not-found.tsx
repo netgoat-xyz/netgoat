@@ -1,40 +1,50 @@
-// /app/not-found.tsx or /pages/404.tsx
 'use client'
 
+import { useMemo } from "react"
+import ClientOnly from "@/components/ClientOnly"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { Sparkles, Ghost, RefreshCcw } from "lucide-react"
 import Link from "next/link"
 
 export default function NotFound() {
+  const sparkles = useMemo(() => {
+    return [...Array(20)].map(() => ({
+      top: `${Math.random() * 100}%`,
+      left: `${Math.random() * 100}%`,
+      delay: Math.random() * 2,
+      duration: 5 + Math.random() * 3
+    }))
+  }, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-zinc-900 to-neutral-900 flex flex-col items-center justify-center text-white relative overflow-hidden">
-      <motion.div 
-        className="absolute top-0 left-0 w-full h-full pointer-events-none"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1 }}
-      >
-        {[...Array(20)].map((_, i) => (
-          <motion.div 
-            key={i}
-            className="absolute text-white"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-            }}
-            animate={{ y: [-20, 20, -20] }}
-            transition={{
-              duration: 5 + Math.random() * 3,
-              repeat: Infinity,
-              ease: "easeInOut",
-              delay: Math.random() * 2
-            }}
-          >
-            <Sparkles className="text-pink-500/50 w-5 h-5 blur-sm" />
-          </motion.div>
-        ))}
-      </motion.div>
+      
+      <ClientOnly>
+        <motion.div 
+          className="absolute top-0 left-0 w-full h-full pointer-events-none"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1 }}
+        >
+          {sparkles.map((s, i) => (
+            <motion.div 
+              key={i}
+              className="absolute text-white"
+              style={{ top: s.top, left: s.left }}
+              animate={{ y: [-20, 20, -20] }}
+              transition={{
+                duration: s.duration,
+                repeat: Infinity,
+                ease: "easeInOut",
+                delay: s.delay
+              }}
+            >
+              <Sparkles className="text-pink-500/50 w-5 h-5 blur-sm" />
+            </motion.div>
+          ))}
+        </motion.div>
+      </ClientOnly>
 
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}

@@ -9,6 +9,7 @@ import {
   IconFileAi,
   IconFileDescription,
   IconFileWord,
+  IconRobot,
   IconFolder,
   IconHelp,
   IconInnerShadowTop,
@@ -17,6 +18,9 @@ import {
   IconSearch,
   IconSettings,
   IconUsers,
+  IconCloud,
+  IconRobotFace,
+  IconShieldBolt,
 } from "@tabler/icons-react"
 
 import {
@@ -31,6 +35,8 @@ import {
   Settings2,
   SquareTerminal,
 } from "lucide-react"
+
+import { usePathname } from "next/navigation"
 
 import { NavDocuments } from "@/components/nav-documents"
 import { NavMain } from "@/components/nav-main"
@@ -47,64 +53,67 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
-   teams: [
-    {
-      name: "Acme Inc",
-      logo: GalleryVerticalEnd,
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: AudioWaveform,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: Command,
-      plan: "Free",
-    },
-  ],
-  navMain: [
-    {
-      title: "Dashboard",
-      url: "#",
-      icon: IconDashboard,
-    },
-    {
-      title: "Lifecycle",
-      url: "#",
-      icon: IconListDetails,
-    },
-    {
-      title: "Analytics",
-      url: "#",
-      icon: IconChartBar,
-    },
-    {
-      title: "Projects",
-      url: "#",
-      icon: IconFolder,
-    },
-    {
-      title: "Team",
-      url: "#",
-      icon: IconUsers,
-    },
-  ],
-
-}
-
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname()
+const base = pathname.split("/")[2];
+
+  let teams = [
+    {
+      name: "Cloudable",
+      logo: "https://cdn.discordapp.com/icons/1350110102337749062/c50196ba4c1430be09812a5492546623.png",
+      plan: "Enterprise"
+    },
+    {
+      name: "Rewire",
+      logo: "https://cdn.discordapp.com/avatars/845312519001342052/ad209fd629974989e27ce2ac4f51a97f.png?size=1024",
+      plan: "Enterprise"
+    },
+  ]
+
+  const data = {
+    user: {
+      name: "Ducky",
+      email: "ducky@cloudable.dev",
+      avatar: "https://cdn.discordapp.com/avatars/845312519001342052/ad209fd629974989e27ce2ac4f51a97f.png?size=1024",
+    },
+    navMain: [
+      {
+        title: "Dashboard",
+        url: `${base}/dashboard`,
+        icon: IconDashboard,
+      },
+      {
+        title: "DNS",
+        url: `${base}/dns`,
+        icon: IconCloud,
+      },
+      {
+        title: "Analytics",
+        url: `${base}/analytics`,
+        icon: IconChartBar,
+      },
+      {
+        title: "WAF",
+        url: `${base}/waf`,
+        icon: IconShieldBolt,
+      },
+      {
+        title: "Captcha",
+        url: `${base}/captcha`,
+        icon: IconRobotFace,
+      },
+      {
+        title: "Error Tracking",
+        url: `${base}/errors`,
+        icon: IconReport,
+      }
+    ],
+  }
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher teams={teams} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />

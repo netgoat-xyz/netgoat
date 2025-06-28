@@ -54,7 +54,7 @@ export default function HomePage() {
     animate={{ opacity: 1 }}
     transition={{ delay: 0.6 }}
   >
-    <Link href="/signup">
+    <Link href="/dashboard">
       <Button
         size="lg"
         className=" shadow-lg hover:scale-105 transition-transform"
