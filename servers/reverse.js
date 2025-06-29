@@ -97,7 +97,7 @@ fastify.all("/*", async (req, reply) => {
     );
     reply.header("x-tracelet-id", traceletId);
     reply.header("x-powered-by", "NetGoat Reverse Proxy");
-
+    
     for (const [k, v] of Object.entries(upstreamReq.headers)) {
       if (k.toLowerCase() === "transfer-encoding") continue;
       reply.header(k, v);
@@ -119,7 +119,19 @@ fastify.all("/*", async (req, reply) => {
 
     // Pipe upstream response back
     const responseBody = await upstreamReq.body.text();
-    return reply.send(responseBody);
+const contentType = upstreamReq.headers["content-type"] || "";
+
+if (contentType.includes("text/html")) {
+  const injectedScript = `
+    <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
+    <script src="https://api.netgoat.cloudable.dev/monitor.js"></script>
+  `;
+
+  const modifiedBody = responseBody.replace('</body>', `${injectedScript}</body>`);
+  return reply.send(modifiedBody);
+} else {
+  return reply.send(responseBody);
+}
   } catch (err) {
     return reply.code(500).send({ error: "Proxy error", message: err.message });
   }

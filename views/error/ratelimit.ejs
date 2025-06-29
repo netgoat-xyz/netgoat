@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full w-full">
+  <head>
+    <meta charset="UTF-8" />
+    <title>NetGoat Access</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cal+Sans&family=Inter:wght@100..900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body, html {
+        font-family: 'Inter', sans-serif;
+      }
+    </style>
+  </head>
+  <body class="h-full w-full m-0 p-0 overflow-hidden">
+    <div class="relative h-screen w-screen">
+      <!-- Blurred Abstract Background -->
+      <img
+        src="/assets/img/bg_dark.jpg"
+        alt="Abstract blurred background"
+        class="absolute inset-0 h-full w-full object-cover"
+        draggable="false"
+      />
+
+      <!-- Overlay for blur and tint -->
+      <div class="absolute inset-0 bg-white/20 backdrop-blur-2xl z-10"></div>
+
+      <!-- Centered Card/Form -->
+      <div class="absolute inset-0 z-30 flex flex-col items-center justify-center px-4">
+        <!-- Logo/Icon -->
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="w-14 h-14 text-white mb-6 drop-shadow-lg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-label="Lightning bolt icon"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+
+        <!-- Heading -->
+        <h2 class="text-white text-3xl md:text-4xl font-bold mb-2 drop-shadow">This request has been blocked</h2>
+        <p class="text-white/80 text-base md:text-lg mb-8 text-center max-w-md drop-shadow">
+          You have hit a rate limit or your access has been temporarily restricted.
+        </p>
+      </div>
+
+      <!-- Footer -->
+      <footer class="absolute bottom-4 w-full text-center text-white text-sm opacity-80 z-40 drop-shadow">
+        Cloudable NetGoat© 2025
+      </footer>
+    </div>
+  </body>
+</html>

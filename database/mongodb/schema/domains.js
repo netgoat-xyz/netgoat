@@ -1,7 +1,7 @@
 // cloudflareRuleEngineFull.js
 import { pathToRegexp } from 'path-to-regexp'
 
-export class CloudflareRuleEngine {
+export default class CloudflareRuleEngine {
   constructor(ruleset = []) {
     this.ruleset = ruleset // Array of { expression: string, action: string }
   }

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full w-full">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mmm Tea.</title>
+    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+    <link rel="stylesheet" href="/assets/css/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cal+Sans&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+    <style>
+      body, html {
+        font-family: 'Inter', sans-serif;
+      }
+    </style>
+  </head>
+  <body class="h-full w-full m-0 p-0 overflow-hidden">
+    <div class="relative h-screen w-screen">
+      <!-- Background Image -->
+      <img src="/assets/img/bg_dark.jpg" 
+           alt="bg" 
+           class="absolute inset-0 h-full w-full object-cover" />
+
+      <!-- Blur Overlay -->
+      <div class="absolute inset-0 bg-white/10 backdrop-blur-lg z-10"></div>
+
+      <!-- 404 Content -->
+      <div class="absolute inset-0 flex space-x-5 items-center justify-center z-20 text-white">
+        <h1 class="text-[10rem] font-black italic drop-shadow-lg">Teapot</h1>
+      </div>
+
+      <!-- Footer -->
+      <footer class="absolute bottom-4 w-full text-center text-white text-sm opacity-80 z-20">
+        Cloudable NetGoat© 2025 • RayID: 7f-404-deadb33f
+      </footer>
+    </div>
+  </body>
+</html>

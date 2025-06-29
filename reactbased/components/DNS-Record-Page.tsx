@@ -1,9 +1,7 @@
 "use client";
 
 import { AppSidebar } from "@/components/domain-sidebar";
-import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { DataTable } from "@/components/dns-table";
-import { SectionCards } from "@/components/section-cards";
 import SiteHeader from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { CreateRecordSheet } from "@/components/DNS-Create-Record-Sheet";

@@ -10,6 +10,7 @@ app.register(fastifyView, {
     eta,
   },
   templates: path.join(process.cwd(), "views"),
+  viewExt: 'ejs'
 });
 
 app.register(require("@fastify/static"), {
@@ -23,6 +24,17 @@ app.get("/", async (request, reply) => {
 
 app.get("/dashboard", async (request, reply) => {
   return reply.view("dashboard/index.eta");
+});
+
+app.get("/error/:page", async (request, reply) => {
+  const { page } = request.params;
+  return reply.view(`error/${page}.ejs`);
+});
+
+
+app.get("/access/:page", async (request, reply) => {
+  const { page } = request.params;
+  return reply.view(`access/${page}.ejs`);
 });
 
 app.listen({ port: 3333 }, (err, address) => {

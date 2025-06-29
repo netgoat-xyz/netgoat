@@ -1,27 +1,18 @@
 "use client"
+import { useParams } from 'next/navigation';
 
 import * as React from "react"
 import {
-  IconCamera,
   IconChartBar,
   IconDashboard,
-  IconDatabase,
-  IconFileAi,
-  IconFileDescription,
-  IconFileWord,
-  IconRobot,
-  IconFolder,
-  IconHelp,
-  IconInnerShadowTop,
-  IconListDetails,
   IconReport,
-  IconSearch,
-  IconSettings,
-  IconUsers,
   IconCloud,
   IconRobotFace,
   IconShieldBolt,
+  IconTicket,
+  IconServer,
 } from "@tabler/icons-react"
+
 
 import {
   AudioWaveform,
@@ -52,10 +43,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { title } from 'process';
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
 const base = pathname.split("/")[2];
+  const params = useParams();
 
   let teams = [
     {
@@ -79,32 +72,42 @@ const base = pathname.split("/")[2];
     navMain: [
       {
         title: "Dashboard",
-        url: `${base}/dashboard`,
+        url: `/dashboard/${params.slug}`,
         icon: IconDashboard,
       },
       {
         title: "DNS",
-        url: `${base}/dns`,
+        url: `/dashboard/${params.slug}/dns`,
         icon: IconCloud,
       },
       {
+        title: "Proxies",
+        url: `/dashboard/${params.slug}/proxies`,
+        icon: IconServer,
+      },
+      {
+        title: "Certs",
+        url: `/dashboard/${params.slug}/certs`,
+        icon: IconTicket
+      },
+      {
         title: "Analytics",
-        url: `${base}/analytics`,
+        url: `/dashboard/${params.slug}/analytics`,
         icon: IconChartBar,
       },
       {
         title: "WAF",
-        url: `${base}/waf`,
+        url: `/dashboard/${params.slug}/waf`,
         icon: IconShieldBolt,
       },
       {
         title: "Captcha",
-        url: `${base}/captcha`,
+        url: `/dashboard/${params.slug}/captcha`,
         icon: IconRobotFace,
       },
       {
         title: "Error Tracking",
-        url: `${base}/errors`,
+        url: `/dashboard/${params.slug}/errors`,
         icon: IconReport,
       }
     ],
