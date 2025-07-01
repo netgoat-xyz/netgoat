@@ -3,8 +3,20 @@ import { request } from "undici";
 import { parse } from "tldts";
 import domains from "../database/mongodb/schema/domains";
 import Score from "../database/mongodb/schema/score.js";
+import packageInfo from "../package.json" assert { type: "json" };
+import { Eta } from "eta";
+import path from "path";
+import fastifyView from "@fastify/view";
+const eta = new Eta();
 
 const fastify = Fastify({ logger: false });
+fastify.register(fastifyView, {
+  engine: {
+    eta,
+  },
+  templates: path.join(process.cwd(), "views"),
+  viewExt: 'ejs'
+});
 
 function getClientIp(req) {
   const xForwardedFor = req.headers["x-forwarded-for"];
@@ -96,7 +108,7 @@ fastify.all("/*", async (req, reply) => {
       "x-tracelet-id, x-powered-by, x-worker-id"
     );
     reply.header("x-tracelet-id", traceletId);
-    reply.header("x-powered-by", "NetGoat Reverse Proxy");
+    reply.header("x-powered-by", "NetGoat "+packageInfo.version);
     
     for (const [k, v] of Object.entries(upstreamReq.headers)) {
       if (k.toLowerCase() === "transfer-encoding") continue;
@@ -123,8 +135,9 @@ const contentType = upstreamReq.headers["content-type"] || "";
 
 if (contentType.includes("text/html")) {
   const injectedScript = `
+    <!--
     <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
-    <script src="https://api.netgoat.cloudable.dev/monitor.js"></script>
+    <script src="https://api.netgoat.cloudable.dev/monitor.js"></script> -->
   `;
 
   const modifiedBody = responseBody.replace('</body>', `${injectedScript}</body>`);
@@ -133,7 +146,8 @@ if (contentType.includes("text/html")) {
   return reply.send(responseBody);
 }
   } catch (err) {
-    return reply.code(500).send({ error: "Proxy error", message: err.message });
+
+    return reply.code(500).render("../views/error/500.ejs",{ traceletId: traceletId, error: err.message });
   }
 });
 

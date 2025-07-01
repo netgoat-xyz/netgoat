@@ -1,112 +1,110 @@
-// cloudflareRuleEngineFull.js
-import { pathToRegexp } from 'path-to-regexp'
+import mongoose from "mongoose";
+const { Schema } = mongoose;
 
-export default class CloudflareRuleEngine {
-  constructor(ruleset = []) {
-    this.ruleset = ruleset // Array of { expression: string, action: string }
-  }
+// 🔐 ACL Schema
+const aclSchema = new Schema(
+  {
+    user: String,
+    permission: {
+      view: Boolean,
+      edit: Boolean,
+      delete: Boolean,
+      access: Boolean,
+      bypassRestrictions: Boolean,
+    },
+  },
+  { _id: false }
+);
 
-  static getFieldValue(path, ctx) {
-    const parts = path.split('.')
-    let val = ctx
-    for (const part of parts) {
-      if (val == null) return undefined
-      val = val[part]
-    }
-    return val
-  }
+// 📜 Rule Schema
+const ruleSchema = new Schema(
+  {
+    name: String,
+    priority: Boolean,
+    code: String,
+  },
+  { _id: false }
+);
 
-  static tokenize(expr) {
-    const regex = /([a-zA-Z0-9_.]+)\s+(eq|ne|lt|gt|lte|gte|contains|matches)\s+("[^"]*"|\d+(\.\d+)?)/g
-    return expr.replace(regex, (_, field, op, value) => {
-      const safeField = field
-      const safeValue = value
-      switch (op) {
-        case 'eq': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) === ${safeValue}`
-        case 'ne': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) !== ${safeValue}`
-        case 'lt': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) < ${safeValue}`
-        case 'gt': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) > ${safeValue}`
-        case 'lte': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) <= ${safeValue}`
-        case 'gte': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx) >= ${safeValue}`
-        case 'contains': return `CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx).includes(${safeValue})`
-        case 'matches': return `${safeValue}.replace(/^\"|\"$/g, '') && new RegExp(${safeValue}).test(CloudflareRuleEngine.getFieldValue(\"${safeField}\", ctx))`
-        default: return 'false'
-      }
-    })
-    .replace(/\band\b/g, '&&')
-    .replace(/\bor\b/g, '||')
-    .replace(/\bnot\b/g, '!')
-  }
+// 🚫 Banned IP Schema
+const bannedIPSchema = new Schema(
+  {
+    name: String,
+    ip: String,
+  },
+  { _id: false }
+);
 
-  static evaluateExpression(expr, ctx) {
-    try {
-      const safeExpr = CloudflareRuleEngine.tokenize(expr)
-      return Function('ctx', `\"use strict\"; return (${safeExpr});`)(ctx)
-    } catch (err) {
-      throw new Error(`Rule Syntax Error: ${err.message}`)
-    }
-  }
+// 📈 Rate Limit Rules
 
-  evaluate(ctx) {
-    for (const rule of this.ruleset) {
-      try {
-        const match = CloudflareRuleEngine.evaluateExpression(rule.expression, ctx)
-        if (match) {
-          return rule.action
-        }
-      } catch (err) {
-        return { error: true, message: err.message, rule: rule.expression }
-      }
-    }
-    return 'allow' // default action
-  }
-}
+const rateLimitSchema = new Schema({
+    requestsPerMinute: Number,
+    burstLimit: Number,
+});
 
-// Fastify plugin
-export function ruleMiddleware(ruleset) {
-  const engine = new CloudflareRuleEngine(ruleset)
+// 📂 Violation Log
 
-  return async function (req, reply, next) {
-    const context = {
-      ip: { src: req.headers['x-forwarded-for']?.split(',')[0] || req.ip },
-      http: {
-        request: {
-          uri: {
-            path: req.url,
-          },
-          method: req.method,
-        },
-        user_agent: req.headers['user-agent'] || '',
+const violations = new Schema({
+  ip: String,
+  reason: String,
+  path: String,
+  time: { type: Date, default: Date.now, expires: 60 * 60 }, // TTL: 1 hour
+})
+
+// 🌐 Proxied Service Schema
+const proxiedSchema = new Schema(
+  {
+    domain: String,
+    port: Number,
+    BlockCommonExploits: Boolean,
+    WS: Boolean,
+    slug: String,
+    SSL: Boolean,
+    SSLInfo: {
+      localCert: Boolean,
+      certPaths: {
+        PubKey: String,
+        PrivKey: String,
       },
-      cf: {
-        bot_management: {
-          score: req.headers['cf-bot-score'] ? parseFloat(req.headers['cf-bot-score']) : 50,
-        }
-      }
-    }
+    },
+    seperateRules: [ruleSchema],
+    SeperateACL: [aclSchema],
+    SeperateBannedIP: [bannedIPSchema],
+      rateRules: [rateLimitSchema],
+  violations: [violations],
+  },
+  { _id: false }
+);
 
-    const result = engine.evaluate(context)
+// 🔌 Integrations Schema
+const integrationsSchema = new Schema(
+  {
+    CloudflareTunnels: Boolean,
+    Ngrok: Boolean,
+    Tailscale: Boolean,
+    IntegrationDetails: {
+      Cloudflare: {
+        AccountID: String,
+        ApiToken: String,
+      },
+      Ngrok: {
+        ApiKey: String,
+      },
+    },
+  },
+  { _id: false }
+);
 
-    if (typeof result === 'object' && result.error) {
-      reply.code(400).send({ error: 'Syntax error in rule', detail: result.message, rule: result.rule })
-      return
-    }
 
-    switch (result) {
-      case 'block':
-        reply.code(403).send('Request blocked by ruleset')
-        return
-      case 'log':
-        console.log(`[RULE LOG] ${req.method} ${req.url} matched rule`)
-        break
-      case 'challenge':
-        reply.code(429).send('Challenge triggered')
-        return
-      case 'allow':
-      default:
-        break
-    }
 
-    next()
-  }
-}
+// 🧩 Final Domain Schema
+const domainSchema = new Schema({
+  domain: { type: String, required: true, unique: true },
+  proxied: [proxiedSchema],
+  acl: [aclSchema],
+  rules: [ruleSchema],
+  BannedIP: [bannedIPSchema],
+  integrations: integrationsSchema,
+});
+
+export default mongoose.model("Domain", domainSchema);
