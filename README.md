@@ -19,7 +19,6 @@ NetGoat is an advanced reverse proxy engine designed to act as an **additional l
 - 🔥 **Real-Time Metrics Dashboard** — Monitor traffic, bandwidth, errors, and hits.
 - 🧠 **Dynamic Rules Engine** — Write custom rules in JS/TS to handle routing, caching, filtering, etc.
 - 🌀 **WebSocket & HTTP/2 Ready** — Handles modern protocols like a beast.
-- 🧱 **No External DB Needed** — Fully portable, flatfile configs, optional JSON-based dynamic backend.
 - 🗂️ **Per-Domain Configs** — Define behavior per site with regex/wildcard support.
 - 🧬 **Plugin System** — Extend NetGoat with custom plugins or middlewares.
 - 🔗 **Cloudflare Zero Trust Support** — Acts as a trusted upstream in Zero Trust setups.
