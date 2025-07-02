@@ -28,9 +28,9 @@ function getDiskInfo() {
       return diskutil.includes("Yes") ? "SSD" : "HDD";
     }
   } catch {
-    return "Unknown";
+    return "Unknown Type";
   }
-  return "Unknown";
+  return "Unknown Type";
 }
 
 function getNetworkSpeed() {
