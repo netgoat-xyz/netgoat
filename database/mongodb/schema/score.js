@@ -1,9 +1,11 @@
-import mongoose from 'mongoose'
 
-const ScoreSchema = new mongoose.Schema({
+
+import mongoose from "mongoose";
+const { Schema } = mongoose;
+
+const ScoreSchema = new Schema({
   ipAddress: { type: String, required: true, index: true },
   score: { type: Number, required: true },
-  timestamp: { type: Date, default: Date.now }
-})
+}, { timestamps: true });
 
-export default mongoose.model('Score', ScoreSchema)
+export default mongoose.models.Score || mongoose.model("Score", ScoreSchema);
