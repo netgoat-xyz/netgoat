@@ -99,12 +99,12 @@ const integrationsSchema = new Schema(
 
 // 🧩 Final Domain Schema
 const domainSchema = new Schema({
-  domain: { type: String, required: true, unique: true },
+  domain: { type: String, required: true, unique: true, trim: true, index: true },
   proxied: [proxiedSchema],
   acl: [aclSchema],
   rules: [ruleSchema],
-  BannedIP: [bannedIPSchema],
+  bannedIp: [bannedIPSchema],
   integrations: integrationsSchema,
-});
+}, { timestamps: true });
 
-export default mongoose.model("Domain", domainSchema);
+export default mongoose.models.Domain || mongoose.model("Domain", domainSchema);

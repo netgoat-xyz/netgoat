@@ -1,15 +1,92 @@
-import Fastify from 'fastify';
-import mongoose from 'mongoose';
+import Fastify from "fastify";
+import mongoose from "mongoose";
+import Bun from "bun";
+import User from "./database/mongodb/schema/users.js";
+import jsonwebtoken from "jsonwebtoken";
 
-const app = Fastify()
+const app = Fastify();
 
-app.get('/', async (request, reply) => {
-    return { message: 'Welcome to the backend Server!' };
+app.get("/", async (request, reply) => {
+  return { message: "Welcome to the backend Server!" };
 });
 
-app.get('/monitor.js', async (request, reply) => {
-    reply.type('application/javascript');
-    return `
+app.post("/api/auth/register", async (request, reply) => {
+  const { username, password } = request.body;
+
+  if (!username || !password) {
+    return reply.code(400).send({ error: "Username and password required" });
+  }
+
+  const existingUser = await User.findOne({ username });
+  if (existingUser) {
+    return reply.code(409).send({ error: "Username already exists" });
+  }
+
+  let hash = await Bun.password.hash(password, {
+    memoryCost: process.env.ENCRYPTION_MEMORY_COST || 4,
+    timeCost: process.env.ENCRYPTION_TIME_COST || 3,
+  });
+
+  const user = new User({ username, password: hash, email, role: "user" });
+  user
+    .save()
+    .then((doc) => {
+      reply
+        .code(201)
+        .send({ success: true, reply: "User created successfully" });
+    })
+    .catch((err) => {
+      console.error("Error creating user:", err);
+      reply.code(500).send({ reply: "Internal server error", success: false });
+    });
+});
+
+app.post("/api/auth/login", async (request, reply) => {
+  const { username, email, password } = request.body;
+  if ((!username && !email) || !password) {
+    return reply
+      .code(400)
+      .send({ error: "Username or email and password required" });
+  }
+  try {
+    const query = username ? { username } : { email };
+    const user = await User.findOne(query).select(
+      "+password integrations role"
+    );
+    if (!user) return reply.code(401).send({ error: "Invalid credentials" });
+
+    if (user.password !== password) {
+      return reply.code(401).send({ error: "Invalid credentials" });
+    }
+
+    let jwttoken = jsonwebtoken.sign(
+      {
+        userId: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      },
+      process.env.JWT_SECRET
+    );
+
+    const requires2FA =
+      user.integrations &&
+      user.integrations.twofa &&
+      user.integrations.twofa.enabled;
+      
+    if (requires2FA) {
+      return reply.send({ requires2FA: true, jwt: jwttoken });
+    }
+
+    reply.send({ requires2FA: false, jwt: jwttoken });
+  } catch (err) {
+    reply.code(500).send({ error: err.message });
+  }
+});
+
+app.get("/monitor.js", async (request, reply) => {
+  reply.type("application/javascript");
+  return `
       (() => {
         const sessionId = localStorage._sessionId ||= crypto.randomUUID();
         const events = [];
@@ -55,90 +132,47 @@ app.get('/monitor.js', async (request, reply) => {
 const proxies = [];
 
 // List all proxies
-app.get('/api/proxies', async (request, reply) => {
-    // Replace with DB findAll
-    reply.send(proxies);
+app.get("/api/proxies", async (request, reply) => {
+  // Replace with DB findAll
+  reply.send(proxies);
 });
 
 // Create a new proxy
-app.post('/api/proxies', async (request, reply) => {
-    const proxy = request.body;
-    // Replace with DB insert
-    proxy.id = Date.now().toString();
-    proxies.push(proxy);
-    reply.code(201).send(proxy);
+app.post("/api/proxies", async (request, reply) => {
+  const proxy = request.body;
+  // Replace with DB insert
+  proxy.id = Date.now().toString();
+  proxies.push(proxy);
+  reply.code(201).send(proxy);
 });
 
 // Get a proxy by ID
-app.get('/api/proxies/:id', async (request, reply) => {
-    const proxy = proxies.find(p => p.id === request.params.id);
-    if (!proxy) return reply.code(404).send({ error: 'Not found' });
-    reply.send(proxy);
+app.get("/api/proxies/:id", async (request, reply) => {
+  const proxy = proxies.find((p) => p.id === request.params.id);
+  if (!proxy) return reply.code(404).send({ error: "Not found" });
+  reply.send(proxy);
 });
 
 // Update a proxy by ID
-app.put('/api/proxies/:id', async (request, reply) => {
-    const idx = proxies.findIndex(p => p.id === request.params.id);
-    if (idx === -1) return reply.code(404).send({ error: 'Not found' });
-    proxies[idx] = { ...proxies[idx], ...request.body };
-    reply.send(proxies[idx]);
+app.put("/api/proxies/:id", async (request, reply) => {
+  const idx = proxies.findIndex((p) => p.id === request.params.id);
+  if (idx === -1) return reply.code(404).send({ error: "Not found" });
+  proxies[idx] = { ...proxies[idx], ...request.body };
+  reply.send(proxies[idx]);
 });
 
 // Delete a proxy by ID
-app.delete('/api/proxies/:id', async (request, reply) => {
-    const idx = proxies.findIndex(p => p.id === request.params.id);
-    if (idx === -1) return reply.code(404).send({ error: 'Not found' });
-    const removed = proxies.splice(idx, 1)[0];
-    reply.send(removed);
-});
-
-// --- User Schema ---
-const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-});
-const User = mongoose.models.User || mongoose.model('User', userSchema);
-
-// --- Mongoose Connection ---
-const mongoUrl = process.env.MONGO_URL || 'mongodb://localhost:27017/netgoat';
-if (mongoose.connection.readyState === 0) {
-  mongoose.connect(mongoUrl, { useNewUrlParser: true, useUnifiedTopology: true });
-}
-
-// --- Auth API routes ---
-app.post('/api/auth/register', async (request, reply) => {
-  const { username, password } = request.body;
-  if (!username || !password) {
-    return reply.code(400).send({ error: 'Username and password required' });
-  }
-  try {
-    const exists = await User.findOne({ username });
-    if (exists) return reply.code(409).send({ error: 'Username already exists' });
-    const user = await User.create({ username, password });
-    reply.code(201).send({ id: user._id, username: user.username });
-  } catch (err) {
-    reply.code(500).send({ error: err.message });
-  }
-});
-
-app.post('/api/auth/login', async (request, reply) => {
-  const { username, password } = request.body;
-  if (!username || !password) {
-    return reply.code(400).send({ error: 'Username and password required' });
-  }
-  try {
-    const user = await User.findOne({ username, password });
-    if (!user) return reply.code(401).send({ error: 'Invalid credentials' });
-    reply.send({ id: user._id, username: user.username });
-  } catch (err) {
-    reply.code(500).send({ error: err.message });
-  }
+app.delete("/api/proxies/:id", async (request, reply) => {
+  const idx = proxies.findIndex((p) => p.id === request.params.id);
+  if (idx === -1) return reply.code(404).send({ error: "Not found" });
+  const removed = proxies.splice(idx, 1)[0];
+  reply.send(removed);
 });
 
 app.listen({ port: 3001 }, (err, address) => {
-    if (err) {
-        console.error(err);
-        process.exit(1);
-    }
-    logger.info(`Backend loaded at ${address}`);
+  if (err) {
+    console.error(err);
+    process.exit(1);
+  }
+  logger.info(`Backend loaded at ${address}`);
 });
