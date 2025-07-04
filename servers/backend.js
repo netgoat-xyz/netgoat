@@ -1,17 +1,21 @@
 import Fastify from "fastify";
 import mongoose from "mongoose";
 import Bun from "bun";
-import User from "./database/mongodb/schema/users.js";
+import User from "../database/mongodb/schema/users.js";
 import jsonwebtoken from "jsonwebtoken";
 
 const app = Fastify();
+app.register(require('@fastify/cors'), { 
+  // put your options here
+})
+
 
 app.get("/", async (request, reply) => {
   return { message: "Welcome to the backend Server!" };
 });
 
 app.post("/api/auth/register", async (request, reply) => {
-  const { username, password } = request.body;
+  const { username, password, email } = request.body;
 
   if (!username || !password) {
     return reply.code(400).send({ error: "Username and password required" });
@@ -22,10 +26,7 @@ app.post("/api/auth/register", async (request, reply) => {
     return reply.code(409).send({ error: "Username already exists" });
   }
 
-  let hash = await Bun.password.hash(password, {
-    memoryCost: process.env.ENCRYPTION_MEMORY_COST || 4,
-    timeCost: process.env.ENCRYPTION_TIME_COST || 3,
-  });
+  let hash = await Bun.password.hash(password);
 
   const user = new User({ username, password: hash, email, role: "user" });
   user
@@ -49,13 +50,9 @@ app.post("/api/auth/login", async (request, reply) => {
       .send({ error: "Username or email and password required" });
   }
   try {
-    const query = username ? { username } : { email };
-    const user = await User.findOne(query).select(
-      "+password integrations role"
-    );
-    if (!user) return reply.code(401).send({ error: "Invalid credentials" });
-
-    if (user.password !== password) {
+    const user = await User.findOne({ email: email });
+    if (!user) return reply.code(401).send({ error: "Invalid user" });
+    if (!await Bun.password.verify(password, user.password)) {
       return reply.code(401).send({ error: "Invalid credentials" });
     }
 
@@ -73,13 +70,14 @@ app.post("/api/auth/login", async (request, reply) => {
       user.integrations &&
       user.integrations.twofa &&
       user.integrations.twofa.enabled;
-      
+
     if (requires2FA) {
       return reply.send({ requires2FA: true, jwt: jwttoken });
     }
 
     reply.send({ requires2FA: false, jwt: jwttoken });
   } catch (err) {
+    console.error(err)
     reply.code(500).send({ error: err.message });
   }
 });

@@ -1,0 +1,3 @@
+ads.google.com
+tracker.example.com
+badsite.com
