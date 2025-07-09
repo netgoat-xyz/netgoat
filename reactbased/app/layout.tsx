@@ -1,23 +1,15 @@
-"use client";
-import type { Metadata } from "next";
 import "./globals.css";
-import KonamiEasterEgg from "@/components/egg/konami";
-import { useState } from "react";
+import { GeistSans } from "geist/font/sans";
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  const [cyberpunk, setCyberpunk] = useState(false)
+export const metadata = {
+  title: "Your App",
+  description: "Welcome to Cloudable",
+};
 
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <KonamiEasterEgg onActivate={() => setCyberpunk(!cyberpunk)} />
-
-      <body
-        className={cyberpunk ? `cyberpunk duration-300 transition-all antialiased` : `dark transition-all duration-300 antialiased`}
-      >
+    <html lang="en" className={GeistSans.className}>
+      <body className="dark transition-all duration-300 antialiased">
         {children}
       </body>
     </html>

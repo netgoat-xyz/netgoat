@@ -21,6 +21,17 @@ const IntegrationsSchema = new Schema({
   twofa: { type: TwoFASchema, default: () => ({}) },
 }, { _id: false });
 
+const DomainsOwned = new Schema({
+  group: { type: String, required: true},
+  name: { type: String, required: true},
+  status: {
+    type: String,
+    enum: ["active", "inactive", "pending"],
+    default: "active",
+  },
+  lastSeen: { type: Date, default: Date.now() }
+}, { _id: false });
+
 const UserSchema = new Schema({
   username: { type: String, required: true, unique: true, trim: true, index: true },
   password: { type: String, required: true },
@@ -32,6 +43,7 @@ const UserSchema = new Schema({
     match: [/.+@.+\..+/, "Please enter a valid email address"],
     index: true,
   },
+  domains: [DomainsOwned],
   role: { type: String, enum: ["user", "admin"], default: "user" },
   integrations: { type: IntegrationsSchema, default: () => ({}) },
 }, { timestamps: true });

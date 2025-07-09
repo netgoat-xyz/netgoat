@@ -22,18 +22,25 @@ import {
 
 export function TeamSwitcher({
   teams,
+  onTeamChange,
 }: {
   teams: {
     name: string;
     logo: string;
     plan: string;
   }[];
+  onTeamChange?: (team: { name: string; logo: string; plan: string }) => void;
 }) {
   const { isMobile } = useSidebar();
   const [activeTeam, setActiveTeam] = React.useState(teams[0]);
 
   if (!activeTeam) {
     return null;
+  }
+
+  function handleSelect(team: { name: string; logo: string; plan: string }) {
+    setActiveTeam(team);
+    if (onTeamChange) onTeamChange(team);
   }
 
   return (
@@ -73,7 +80,7 @@ export function TeamSwitcher({
             {teams.map((team, index) => (
               <DropdownMenuItem
                 key={team.name}
-                onClick={() => setActiveTeam(team)}
+                onClick={() => handleSelect(team)}
                 className="gap-2 p-2"
               >
                 <div className="">

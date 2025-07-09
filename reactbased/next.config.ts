@@ -21,6 +21,30 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "tapback.co",
+        port: "",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "cdnjs.cloudflare.com",
+        port: "",
+        pathname: "/**"
+      },
+      {
+        protocol: "https",
+        hostname: "t2.gstatic.com",
+        port: "",
+        pathname: "/**"
+      },
+      {
+        protocol: "https",
+        hostname: "www.tapback.co",
+        port: "",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
         hostname: "cdn.jsdelivr.net",
         port: "",
         pathname: "/**",
