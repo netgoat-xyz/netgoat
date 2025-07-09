@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import Bun from "bun";
 import User from "../database/mongodb/schema/users.js";
 import jsonwebtoken from "jsonwebtoken";
-
+import Domain from "../database/mongodb/schema/domains.js";
 const app = Fastify();
 app.register(require('@fastify/cors'), { 
   // put your options here
@@ -13,6 +13,45 @@ app.register(require('@fastify/cors'), {
 app.get("/", async (request, reply) => {
   return { message: "Welcome to the backend Server!" };
 });
+
+app.get("/api/:id/:action?", async (request, reply) => {
+  const { id, action } = request.params;
+
+  if (!id) {
+    return reply.code(400).send({ error: "ID is required" });
+  }
+
+  const user = await User.findOne({ _id: id }).lean();
+
+  if (!user) {
+    return reply.code(404).send({ error: "User not found" });
+  }
+
+  const safe = {
+   username: user.username,
+   email: user.email,
+   role: user.role, 
+   domains: user.domains,
+   _id: user._id,
+   createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+
+  };
+
+  if (!action) return safe;
+
+  if (typeof user[action] === "function") {
+    // do not let functions with side effects leak
+    return reply.code(400).send({ error: "Action not allowed" });
+  }
+
+if (safe[action] === undefined) {
+  return reply.code(400).send({ error: "Invalid action" });
+}
+
+return { action: safe[action] };
+});
+
 
 app.post("/api/auth/register", async (request, reply) => {
   const { username, password, email } = request.body;
@@ -78,6 +117,62 @@ app.post("/api/auth/login", async (request, reply) => {
     reply.send({ requires2FA: false, jwt: jwttoken });
   } catch (err) {
     console.error(err)
+    reply.code(500).send({ error: err.message });
+  }
+});
+
+app.get("/cd", async (request, reply) => {
+  try {
+    // 1. Find a user (for demo, the first user)
+    const user = await User.findOne();
+    if (!user) return reply.code(404).send({ error: "No user found" });
+
+    // 2. Get domain name from body or query
+    const domainName = request.body?.domain || request.query?.domain || "testdomain.com";
+    if (!domainName || typeof domainName !== "string") {
+      return reply.code(400).send({ error: "Domain name required" });
+    }
+
+    // 3. Define the domain object
+    const testDomain = {
+      domain: domainName,
+      proxied: [],
+      acl: [],
+      rules: [],
+      bannedIp: [],
+      integrations: {},
+    };
+
+    // 4. Create the domain in the domains collection if it doesn't exist
+    let domainDoc = await Domain.findOne({ domain: testDomain.domain });
+    if (!domainDoc) {
+      domainDoc = await Domain.create(testDomain);
+    }
+
+    // 5. Add the domain to the user's domains array if not already present
+    const alreadyOwned = user.domains.some(
+      (d) => d.name === testDomain.domain
+    );
+    if (!alreadyOwned) {
+      user.domains.push({
+        group: "default",
+        name: testDomain.domain,
+        status: "active",
+        lastSeen: new Date(),
+      });
+      await user.save();
+    }
+
+    reply.send({
+      message: `Domain '${domainName}' created and added to user.`,
+      user: {
+        username: user.username,
+        domains: user.domains,
+      },
+      domain: domainDoc,
+    });
+  } catch (err) {
+    console.error(err);
     reply.code(500).send({ error: err.message });
   }
 });

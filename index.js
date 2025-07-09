@@ -5,6 +5,7 @@ import figlet from "figlet";
 import os from "os";
 import chalk from "chalk";
 import AsciiTable from "ascii-table";
+import { spawn } from "child_process";
 // import { initRaft } from "./electionRaft/index.js";
 
 await import("./utils/loader.js");
@@ -105,3 +106,4 @@ await Promise.all([
   import("./servers/frontend.js"),
   import("./servers/reverse.js"),
 ]);
+

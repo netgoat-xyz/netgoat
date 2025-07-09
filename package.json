@@ -29,6 +29,7 @@
     "fs-extra": "^11.3.0",
     "geoip-lite": "^1.4.10",
     "gradient-string": "^3.0.0",
+    "jest": "^30.0.4",
     "jsonwebtoken": "^9.0.2",
     "mineflayer": "^4.29.0",
     "mineflayer-collectblock": "^1.6.0",

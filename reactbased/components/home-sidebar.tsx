@@ -35,9 +35,9 @@ import {
 
 const data = {
   user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "https://cdn.discordapp.com/avatars/845312519001342052/ad209fd629974989e27ce2ac4f51a97f.png?size=1024",
+    name: "ducky",
+    email: "ducky@cloudable.dev",
+    avatar: "https://www.tapback.co/api/avatar/duckdev",
   },
   navMain: [
     {
@@ -80,7 +80,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <a href="#">
                 <IconInnerShadowTop className="!size-5" />
-                <span className="text-base font-semibold">Acme Inc.</span>
+                <span className="text-base font-semibold">NetGoat.</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>

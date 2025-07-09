@@ -26,11 +26,26 @@ const schema = z.object({
   group: z.string(),
   name: z.string(),
   status: z.enum(["active", "inactive", "pending"]),
+  lastSeen: z.string(), // or z.date() if you parse it
 });
 
 type Row = z.infer<typeof schema>;
 
 export function DataTable({ data }: { data: Array<Row> }) {
+
+console.log("Full data:", data);
+data.forEach((row, i) => {
+  console.log(`Row ${i}:`, row);
+});
+   if (!data || data.length === 0) {
+    return (
+      <Card className="rounded-2xl py-0 mt-2 border border-border bg-background shadow-sm">
+        <CardContent className="p-6 text-center text-muted-foreground">
+          No domains found.
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card className="rounded-2xl py-0 mt-2 border border-border bg-background shadow-sm">
       <CardContent className="p-0">
@@ -47,11 +62,11 @@ export function DataTable({ data }: { data: Array<Row> }) {
             {data.map((row) => (
               <TableRow
                 key={row.name}
-                // 
-                // onClick={() => router.push(`/dashboard/${row.name}`)}
                 className="hover:bg-muted/50 transition-colors"
               >
-                <TableCell className="pl-6 font-medium"><Link href={`/dashboard/${row.name}`}>{row.name}</Link></TableCell>
+                <TableCell className="pl-6 font-medium">
+                  <Link href={`/dashboard/${row.name}`}>{row.name}</Link>
+                </TableCell>
                 <TableCell>
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
@@ -85,12 +100,24 @@ export function DataTable({ data }: { data: Array<Row> }) {
                       </svg>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="opacity-60 filter backdrop-blur-md">
-                      <DropdownMenuLabel className="font-semibold text-foreground">{row.name}</DropdownMenuLabel>
+                      <DropdownMenuLabel className="font-semibold text-foreground">
+                        {row.name}
+                      </DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="hover:text-destructive dark:hover:text-destructive opacity-100">Delete</DropdownMenuItem>
-                      <DropdownMenuItem><Link href={`/dashboard/${row.name}/proxies`}>Proxies</Link></DropdownMenuItem>
-                      <DropdownMenuItem><Link href={`/dashboard/${row.name}/certs/`}>Certs</Link></DropdownMenuItem>
-                      <DropdownMenuItem><Link href={`/dashboard/${row.name}/access`}>Access</Link></DropdownMenuItem>
+                      <DropdownMenuItem className="hover:text-destructive dark:hover:text-destructive opacity-100">
+                        Delete
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link href={`/dashboard/${row.name}/proxies`}>
+                          Proxies
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link href={`/dashboard/${row.name}/certs/`}>Certs</Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link href={`/dashboard/${row.name}/access`}>Access</Link>
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
