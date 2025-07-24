@@ -1,31 +1,24 @@
 import { mkdir, readdir } from "node:fs/promises";
-import Bun from "bun";
 import path from "node:path";
+import Bun from "bun";
 import figlet from "figlet";
 import os from "os";
 import chalk from "chalk";
 import AsciiTable from "ascii-table";
-import { spawn } from "child_process";
-// import { initRaft } from "./electionRaft/index.js";
+import cluster from "node:cluster";
+import { execSync } from "child_process";
+import { startReporting } from "./utils/statsReporter.js";
 
 await import("./utils/loader.js");
-
-const text = figlet.textSync("NetGoat");
-console.log(rainbowify(text));
-import { execSync } from "child_process";
+import("./database/mongodb/init.js")
 
 function getDiskInfo() {
   try {
-    // Linux/macOS: get disk type (NVMe/SATA/SSD) from lsblk or diskutil
     if (process.platform === "linux") {
       const lsblk = execSync("lsblk -d -o name,rota | grep -v NAME").toString();
-      // rota=0 means SSD, 1 means HDD
-      if (lsblk.includes("0")) return "SSD/NVMe (rota=0)";
-      else return "HDD (rota=1)";
+      return lsblk.includes("0") ? "SSD/NVMe (rota=0)" : "HDD (rota=1)";
     } else if (process.platform === "darwin") {
-      const diskutil = execSync(
-        'diskutil info / | grep "Solid State"'
-      ).toString();
+      const diskutil = execSync('diskutil info / | grep "Solid State"').toString();
       return diskutil.includes("Yes") ? "SSD" : "HDD";
     }
   } catch {
@@ -45,7 +38,6 @@ function getNetworkSpeed() {
       return speed.split(":")[1].trim();
     }
     if (process.platform === "darwin") {
-      // macOS doesn't have ethtool by default, fallback to generic
       return "Unknown (macOS)";
     }
   } catch {
@@ -71,39 +63,57 @@ const systemSpecs = {
 const workers = {
   "Reverse Proxy": Math.max(1, Math.floor(cpuCores * 0.5)),
   API: Math.max(1, Math.floor(cpuCores * 0.3)),
-  Frontend: Math.max(1, Math.floor(cpuCores * 0.2)),
+  Frontend: Math.max(1, Math.floor(cpuCores * 0.5)),
 };
 
-const systemTable = new AsciiTable("System Specs");
-systemTable.setHeading("Spec", "Value");
-
+const systemTable = new AsciiTable("System Specs").setHeading("Spec", "Value");
 for (const [key, value] of Object.entries(systemSpecs)) {
   systemTable.addRow(key, value);
 }
 
-const workersTable = new AsciiTable("Recommended Workers");
-workersTable.setHeading("Service", "Workers");
-
+const workersTable = new AsciiTable("Recommended Workers").setHeading("Service", "Workers");
 for (const [key, value] of Object.entries(workers)) {
   workersTable.addRow(key, value);
 }
 
-console.clear();
-console.log(rainbowify(figlet.textSync("NetGoat")));
-console.log(systemTable.toString());
-console.log(workersTable.toString());
+const serverMap = {
+  "Reverse Proxy": "./servers/reverse.js",
+  API: "./servers/backend.js",
+  Frontend: "./servers/frontend.js",
+};
 
-let NODE_ID = process.env.NODE_ID;
-let PORT = process.env.ElectionPort;
-let PEERS = process.env.PEERS ? process.env.PEERS.split(",") : [];
-let shardManagerUrl = process.env.SHARD_MANAGER_URL;
+if (cluster.isPrimary) {
+  console.clear();
+  console.log(global.rainbowify(figlet.textSync("NetGoat")));
+  console.log(systemTable.toString());
+  console.log(workersTable.toString());
 
-// initRaft(NODE_ID, PORT, PEERS, shardManagerUrl);
-import("./database/mongodb/init.js");
+  for (const [role, count] of Object.entries(workers)) {
+    for (let i = 0; i < count; i++) {
+      cluster.fork({ WORKER_ROLE: role });
+    }
+  }
 
-await Promise.all([
-  import("./servers/backend.js"),
-  import("./servers/frontend.js"),
-  import("./servers/reverse.js"),
-]);
+  cluster.on("exit", (worker, code, signal) => {
+    console.warn(`[Cluster] Worker ${worker.process.pid} died. Restarting...`);
+    cluster.fork(worker.process.env);
+  });
+} else {
+  const role = process.env.WORKER_ROLE;
 
+  if (!serverMap[role]) {
+    console.error(`[Worker] Unknown role: ${role}`);
+    process.exit(1);
+  }
+
+  await startReporting({
+    serverUrl: process.env.Central_server,
+    sharedJwt: process.env.Central_JWT,
+    intervalMinutes: 1,
+    service: process.env.service || role,
+    workerId: String(process.pid),   // use own pid here
+    regionId: process.env.regionID || "local",
+  });
+
+  await import(serverMap[role]);
+}

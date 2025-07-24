@@ -1,61 +1,50 @@
-import Fastify from "fastify";
-import { request } from "undici";
-import { parse } from "tldts";
-import domains from "../database/mongodb/schema/domains";
-import Score from "../database/mongodb/schema/score.js";
-import packageInfo from "../package.json" assert { type: "json" };
-import { Eta } from "eta";
-import path from "path";
-import fastifyView from "@fastify/view";
-const eta = new Eta();
+import { Elysia } from 'elysia';
+import { parse } from 'tldts';
+import { Eta } from 'eta';
+import { request } from 'undici';
+import path from 'path';
+import Score from '../database/mongodb/schema/score';
+import domains from '../database/mongodb/schema/domains';
+import packageInfo from '../package.json';
+import logger from '../utils/logger';
 
-const fastify = Fastify({ logger: false });
-fastify.register(fastifyView, {
-  engine: {
-    eta,
-  },
-  templates: path.join(process.cwd(), "views"),
-  viewExt: 'ejs'
-});
-
-function getClientIp(req) {
-  const xForwardedFor = req.headers["x-forwarded-for"];
-  if (xForwardedFor) return xForwardedFor.split(",")[0].trim();
-  return req.ip || req.raw.connection.remoteAddress || "unknown";
-}
-
-fastify.addHook("onRequest", (req, reply, done) => {
-  logger.info(
-    `incoming request: ${req.method} ${req.url} Host: ${req.headers.host}`
-  );
-  done();
-});
-
-fastify.addHook("onResponse", (req, reply, done) => {
-  logger.info(
-    `request completed: ${req.method} ${req.url} Status: ${
-      reply.statusCode
-    } in ${reply.getResponseTime().toFixed(2)}ms`
-  );
-  done();
-});
-
-// Cachey Cachey
+const app = new Elysia();
+const eta = new Eta({ views: path.join(process.cwd(), 'views') });
 const domainCache = new Map();
 
-fastify.all("/*", async (req, reply) => {
+const getClientIp = (req) => {
+  const xff = req.headers.get('x-forwarded-for');
+  return xff ? xff.split(',')[0].trim() : req.headers.get('x-real-ip') || 'unknown';
+};
+
+const logToLogDB = async (domain, subdomain, req, time, traceletId) => {
   try {
-    const host = req.headers.host?.split(":")[0];
-    if (!host)
-      return reply
-        .code(400)
-        .send({ error: "Bad Request", message: "Missing Host header" });
+    const payload = {
+      method: req.method,
+      path: new URL(req.url).pathname,
+      headers: Object.fromEntries(req.headers),
+      ip: getClientIp(req),
+      time: time.toISOString(),
+      traceletId
+    };
+
+    await fetch(`http://localhost:3010/api/${domain}/analytics?subdomain=${subdomain}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    logger.warn('Failed to send log to LogDB:', err);
+  }
+};
+
+app.all('/*', async ({ request: req, set }) => {
+  try {
+    const host = req.headers.get('host')?.split(':')[0];
+    if (!host) return new Response('Missing Host header', { status: 400 });
 
     const { domain, subdomain } = parse(host);
-    if (!domain)
-      return reply
-        .code(400)
-        .send({ error: "Bad Request", message: "Invalid domain" });
+    if (!domain) return new Response('Invalid domain', { status: 400 });
 
     let domainData = domainCache.get(domain);
     if (!domainData) {
@@ -63,94 +52,60 @@ fastify.all("/*", async (req, reply) => {
       if (domainData) domainCache.set(domain, domainData);
     }
 
-    const target = domainData?.proxied || null;
-    if (!target)
-      return reply
-        .code(502)
-        .send({ error: "Bad Gateway", message: "Unknown host" });
+    const target = domainData?.proxied;
+    if (!target) return new Response('Unknown host', { status: 502 });
 
-    const url = new URL(req.raw.url, target);
-
+    const url = new URL(req.url, target);
     const ipAddress = getClientIp(req);
 
     const agg = await Score.aggregate([
       { $match: { ipAddress } },
-      {
-        $group: {
-          _id: "$ipAddress",
-          totalScore: { $sum: "$score" },
-          count: { $sum: 1 },
-        },
-      },
+      { $group: { _id: '$ipAddress', totalScore: { $sum: '$score' }, count: { $sum: 1 } } }
     ]);
 
-    if (agg.length > 60) {
-      logger.warn(
-        `IP ${ipAddress} has exceeded the score with ${agg.length} requests.`
-      );
-    }
+    if (agg.length > 60) logger.warn(`IP ${ipAddress} has exceeded the score`);
 
-    // Body Check, hooooray.
-    const methodsWithBody = ["POST", "PUT", "PATCH", "DELETE"];
-    const hasBody = methodsWithBody.includes(req.method.toUpperCase());
+    const method = req.method;
+    const hasBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+    const reqBody = hasBody ? await req.text() : undefined;
 
-    const upstreamReq = await request(url.toString(), {
-      method: req.method,
-      headers: req.headers,
-      body: hasBody ? req.raw : undefined,
+    const upstream = await request(url.toString(), {
+      method,
+      headers: Object.fromEntries(req.headers),
+      body: reqBody
     });
 
     const traceletId = tracelet(process.env.regionID);
 
-    reply.status(upstreamReq.statusCode);
-    reply.header(
-      "Access-Control-Expose-Headers",
-      "x-tracelet-id, x-powered-by, x-worker-id"
-    );
-    reply.header("x-tracelet-id", traceletId);
-    reply.header("x-powered-by", "NetGoat "+packageInfo.version);
-    
-    for (const [k, v] of Object.entries(upstreamReq.headers)) {
-      if (k.toLowerCase() === "transfer-encoding") continue;
-      reply.header(k, v);
-    }
+    const headers = new Headers(upstream.headers);
+    headers.set('x-tracelet-id', traceletId);
+    headers.set('x-powered-by', `NetGoat ${packageInfo.version}`);
+    headers.set('Access-Control-Expose-Headers', 'x-tracelet-id, x-powered-by, x-worker-id');
 
-    // Record and waste space for user's sake
-    domainLOGS(domain, subdomain, req, new Date(), traceletId);
+    await logToLogDB(domain, subdomain, req, new Date(), traceletId);
 
-    // Score Tracker (Im gonna start tweaking)
     try {
-      const scoreValue = 1; // Tweak this you lil bastard
-
-      const newScore = new Score({ ipAddress, score: scoreValue });
+      const newScore = new Score({ ipAddress, score: 1 });
       await newScore.save();
     } catch (err) {
-      logger.error("Failed to save request score:", err);
+      logger.error('Failed to save request score:', err);
     }
-    // ==============================
 
-    // Pipe upstream response back
-    const responseBody = await upstreamReq.body.text();
-const contentType = upstreamReq.headers["content-type"] || "";
+    const contentType = upstream.headers['content-type'] || '';
+    const bodyText = await upstream.body.text();
 
-if (contentType.includes("text/html")) {
-  const injectedScript = `
-    <!--
-    <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
-    <script src="https://api.netgoat.cloudable.dev/monitor.js"></script> -->
-  `;
+    if (contentType.includes('text/html')) {
+      const injectedScript = `\n<!--\n<script src=\"https://unpkg.com/rrweb@latest/dist/rrweb.min.js\"></script>\n<script src=\"https://api.netgoat.cloudable.dev/monitor.js\"></script> -->\n`;
+      const modifiedBody = bodyText.replace('</body>', `${injectedScript}</body>`);
+      return new Response(modifiedBody, { status: upstream.statusCode, headers });
+    }
 
-  const modifiedBody = responseBody.replace('</body>', `${injectedScript}</body>`);
-  return reply.send(modifiedBody);
-} else {
-  return reply.send(responseBody);
-}
+    return new Response(bodyText, { status: upstream.statusCode, headers });
   } catch (err) {
-
-    return reply.code(500).render("../views/error/500.ejs",{ traceletId: traceletId, error: err.message });
+    const html = await eta.render('error/500.ejs', { traceletId: tracelet(process.env.regionID), error: err.message });
+    return new Response(html, { status: 500, headers: { 'Content-Type': 'text/html' } });
   }
 });
 
-fastify.listen({ port: 80 }).then(() => {
-  logger.info("Reverse proxy running on port 80");
-});
+app.listen({ port: 80 });
+logger.info('Reverse proxy running on port 80');
