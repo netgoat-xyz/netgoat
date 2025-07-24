@@ -33,6 +33,8 @@ export function TeamSwitcher({
 }) {
   const { isMobile } = useSidebar();
   const [activeTeam, setActiveTeam] = React.useState(teams[0]);
+  // Track image error per team by name
+  const [imgErrorMap, setImgErrorMap] = React.useState<{ [name: string]: boolean }>({});
 
   if (!activeTeam) {
     return null;
@@ -53,13 +55,24 @@ export function TeamSwitcher({
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <div className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                <Image
-                  src={activeTeam.logo}
-                  alt={activeTeam.name}
-                  width={24}
-                  height={24}
-                  className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg"
-                />
+                {imgErrorMap[activeTeam.name] ? (
+                  <img
+                    src="https://cdnjs.cloudflare.com/ajax/libs/emoji-datasource-apple/15.1.2/img/apple/64/1f47b.png"
+                    alt={activeTeam.name}
+                    width={24}
+                    height={24}
+                    className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg"
+                  />
+                ) : (
+                  <Image
+                    src={activeTeam.logo}
+                    alt={activeTeam.name}
+                    width={24}
+                    height={24}
+                    className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg"
+                    onError={() => setImgErrorMap((prev) => ({ ...prev, [activeTeam.name]: true }))}
+                  />
+                )}
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{activeTeam.name}</span>
@@ -84,13 +97,24 @@ export function TeamSwitcher({
                 className="gap-2 p-2"
               >
                 <div className="">
-                  <Image
-                    alt={team.name}
-                    src={team.logo}
-                    width={24}
-                    height={24}
-                    className="flex size-6 items-center justify-center rounded-md border"
-                  />
+                  {imgErrorMap[team.name] ? (
+                    <img
+                      src="https://cdnjs.cloudflare.com/ajax/libs/emoji-datasource-apple/15.1.2/img/apple/64/1f47b.png"
+                      alt={team.name}
+                      width={24}
+                      height={24}
+                      className="flex size-6 items-center justify-center rounded-md border"
+                    />
+                  ) : (
+                    <Image
+                      src={team.logo}
+                      alt={team.name}
+                      width={24}
+                      height={24}
+                      className="flex size-6 items-center justify-center rounded-md border"
+                      onError={() => setImgErrorMap((prev) => ({ ...prev, [team.name]: true }))}
+                    />
+                  )}
                 </div>
                 {team.name}
                 <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>

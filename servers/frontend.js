@@ -1,49 +1,45 @@
-import Fastify from "fastify";
+import { Elysia } from 'elysia'
 import { Eta } from "eta";
-import path from "path";
-import fastifyView from "@fastify/view";
-const eta = new Eta();
-const app = Fastify();
+import path from "node:path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const eta = new Eta({ views: path.join(__dirname, "../views") })
+import staticPlugin from "@elysiajs/static";
+const app = new Elysia();
 
-app.register(fastifyView, {
-  engine: {
-    eta,
-  },
-  templates: path.join(process.cwd(), "views"),
-  viewExt: 'ejs'
-});
+app.use(staticPlugin({
+  assets: 'assets',
+  prefix: "/assets",
+  alwaysStatic: true,
+    headers: {
+    "Cache-Control": "public, max-age=31536000, immutable"
+  }
+}));
 
-app.register(require("@fastify/static"), {
-  root: path.join(process.cwd(), "assets"),
-  prefix: "/assets/", // optional: default '/'
-});
-
-app.get("/", async (request, reply) => {
+app.get("/", async (ctx) => {
   return reply.view("index.eta");
 });
 
-app.get("/dashboard", async (request, reply) => {
+app.get("/dashboard", async (ctx) => {
   return reply.view("dashboard/index.eta");
 });
 
 
 // Pages for testing!!!
-/*
-app.get("/error/:page", async (request, reply) => {
-  const { page } = request.params;
-  return reply.view(`error/${page}.ejs`);
+app.get("/error/:page", async ({ params }) => {
+  const html = await eta.render(path.join("views", "error", `${params.page}.ejs`));
+  return new Response(html, {
+    headers: { "Content-Type": "text/html" },
+  });
 });
 
-app.get("/access/:page", async (request, reply) => {
-  const { page } = request.params;
-  return reply.view(`access/${page}.ejs`);
+app.get("/access/:page", async ({ params }) => {
+  const html = await eta.render(path.join("..", "views", "access", `${params.page}.ejs`));
+  return new Response(html, {
+    headers: { "Content-Type": "text/html" },
+  });
 });
-*/
 
-app.listen({ port: 3333 }, (err, address) => {
-  if (err) {
-    console.error(err);
-    process.exit(1);
-  }
-  logger.info(`Frontend loaded at ${address}`);
-});
+app.listen({ port: 3333 })
+  logger.info(`Frontend loaded at port 3333`);
