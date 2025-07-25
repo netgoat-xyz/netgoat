@@ -1,4 +1,5 @@
 // Example proxy routes (in-memory, replace with DB logic as needed)
+import escapeHtml from "escape-html";
 const proxies = [];
 
 export function registerProxyRoutes(app) {
@@ -35,6 +36,11 @@ export function registerProxyRoutes(app) {
     const idx = proxies.findIndex((p) => p.id === request.params.id);
     if (idx === -1) return reply.code(404).send({ error: "Not found" });
     const removed = proxies.splice(idx, 1)[0];
-    reply.send(removed);
+    const sanitizedRemoved = Object.fromEntries(
+      Object.entries(removed).map(([key, value]) =>
+        typeof value === "string" ? [key, escapeHtml(value)] : [key, value]
+      )
+    );
+    reply.send(sanitizedRemoved);
   });
 }
