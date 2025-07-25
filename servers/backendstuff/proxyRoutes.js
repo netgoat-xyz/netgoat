@@ -28,7 +28,12 @@ export function registerProxyRoutes(app) {
     const idx = proxies.findIndex((p) => p.id === request.params.id);
     if (idx === -1) return reply.code(404).send({ error: "Not found" });
     proxies[idx] = { ...proxies[idx], ...request.body };
-    reply.send(proxies[idx]);
+    const sanitizedProxy = Object.fromEntries(
+      Object.entries(proxies[idx]).map(([key, value]) =>
+        typeof value === "string" ? [key, escapeHtml(value)] : [key, value]
+      )
+    );
+    reply.send(sanitizedProxy);
   });
 
   // Delete a proxy by ID
