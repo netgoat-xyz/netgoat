@@ -20,7 +20,12 @@ export function registerProxyRoutes(app) {
   app.get("/api/proxies/:id", async (request, reply) => {
     const proxy = proxies.find((p) => p.id === request.params.id);
     if (!proxy) return reply.code(404).send({ error: "Not found" });
-    reply.send(proxy);
+    const sanitizedProxy = Object.fromEntries(
+      Object.entries(proxy).map(([key, value]) =>
+        typeof value === "string" ? [key, escapeHtml(value)] : [key, value]
+      )
+    );
+    reply.send(sanitizedProxy);
   });
 
   // Update a proxy by ID
