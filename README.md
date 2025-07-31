@@ -19,6 +19,14 @@ NetGoat is an advanced reverse proxy engine designed to act as an **additional l
 
 ---
 
+## 📷 Screenshots
+Say cheese!
+<img width="1639" height="1114" alt="image" src="https://github.com/user-attachments/assets/10590637-07b6-48c5-b083-1c13c69b9a67" />
+<img width="1636" height="1131" alt="image" src="https://github.com/user-attachments/assets/36381a53-b201-4961-ab39-3f583033d75a" />
+<img width="1649" height="1109" alt="image" src="https://github.com/user-attachments/assets/e5890bf2-769a-4487-8442-6a0ab0e17d3d" />
+<img width="1630" height="1120" alt="image" src="https://github.com/user-attachments/assets/a294d0c0-019e-4cac-904e-6f5a10b33b6a" />
+
+
 ## 🚀 Features
 
 - 🛡️ **Anti-DDoS & WAF** — Filters like a hawk. Blocks malicious requests, bots, and common exploits.
