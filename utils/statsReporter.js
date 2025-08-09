@@ -258,7 +258,9 @@ async function startReporting({
     intervalMinutes = 1,
     service,
     workerId, 
-    regionId
+    regionId,
+    maxRetries = 5, // NEW: max retry attempts for reporting
+    retryDelayMs = 10000 // NEW: delay between retries in ms
 }) {
     if (!serverUrl) {
         global.logger.error('[StatsReporter] Error: serverUrl is required to start reporting.');
@@ -274,11 +276,20 @@ async function startReporting({
         stopReporting();
     }
 
-    // --- Initial Authentication Step ---
-    currentSecretKey = await authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId);
-
+    // --- Initial Authentication Step with auto-retry ---
+    let authAttempts = 0;
+    const maxAuthRetries = 1000; // Arbitrary large number for infinite-like retry
+    while (authAttempts < maxAuthRetries) {
+        currentSecretKey = await authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId);
+        if (currentSecretKey) {
+            break;
+        }
+        authAttempts++;
+        global.logger.error(`[StatsReporter] Failed to obtain SecretKey. Retrying authentication in ${retryDelayMs / 1000}s... (Attempt ${authAttempts})`);
+        await new Promise(res => setTimeout(res, retryDelayMs));
+    }
     if (!currentSecretKey) {
-        global.logger.error('[StatsReporter] Failed to obtain SecretKey. Reporting will not start.');
+        global.logger.error('[StatsReporter] Could not authenticate after many attempts. Reporting will not start.');
         return;
     }
 
@@ -293,23 +304,35 @@ async function startReporting({
     global.logger.info(`[StatsReporter] Data key will be: ${dataKey}`);
 
     /**
-     * The main reporting function that runs on an interval.
+     * The main reporting function that runs on an interval, with retry logic.
      */
     const reportFunction = async () => {
-        try {
-            const stats = await collectSystemAndAppStats();
-            const payload = {
-                dataKey: dataKey,
-                service: service,
-                workerId: workerId,
-                regionId: regionId,
-                stats: stats,
-            };
+        let attempt = 0;
+        while (attempt <= maxRetries) {
+            try {
+                const stats = await collectSystemAndAppStats();
+                const payload = {
+                    dataKey: dataKey,
+                    service: service,
+                    workerId: workerId,
+                    regionId: regionId,
+                    stats: stats,
+                };
 
-            global.logger.debug(`[StatsReporter] Collecting and sending stats for ${dataKey}...`);
-            await sendDataToServer(`${serverUrl}/report-stats`, payload, currentSecretKey);
-        } catch (error) {
-            global.logger.error('[StatsReporter] Error during reporting cycle:', error.message);
+                global.logger.debug(`[StatsReporter] Collecting and sending stats for ${dataKey}... (Attempt ${attempt + 1})`);
+                await sendDataToServer(`${serverUrl}/report-stats`, payload, currentSecretKey);
+                // Success, break out of retry loop
+                break;
+            } catch (error) {
+                attempt++;
+                global.logger.error(`[StatsReporter] Error during reporting cycle (Attempt ${attempt}):`, error.message);
+                if (attempt > maxRetries) {
+                    global.logger.error(`[StatsReporter] Max retry attempts (${maxRetries}) reached. Skipping this reporting cycle.`);
+                    break;
+                }
+                global.logger.info(`[StatsReporter] Retrying in ${retryDelayMs / 1000}s...`);
+                await new Promise(res => setTimeout(res, retryDelayMs));
+            }
         }
     };
 
@@ -319,6 +342,7 @@ async function startReporting({
     // Set up the interval
     reportingInterval = setInterval(reportFunction, intervalMs);
 }
+
 
 /**
  * Stops the statistics reporting.

@@ -19,7 +19,7 @@ export default function Page({ params }: { params: { domain: string; slug: strin
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${process.env.backendapi}/api/${params.slug}/analytics`, {
+        const res = await axios.get(`${process.env.logdb}/api/${params.slug}/analytics`, {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("jwt")}`,
           },

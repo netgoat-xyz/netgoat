@@ -1,15 +1,5 @@
-# centralmonserver
+# Central server
 
-To install dependencies:
+Runs on port 1933
 
-```bash
-bun install
-```
-
-To run:
-
-```bash
-bun run index.js
-```
-
-This project was created using `bun init` in bun v1.2.17. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+Access the info UI on 1933 (example. http://localhost:1933) 

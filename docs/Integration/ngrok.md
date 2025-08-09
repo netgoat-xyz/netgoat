@@ -1,3 +1,0 @@
-# NGROK
-
-Temporary tunnels

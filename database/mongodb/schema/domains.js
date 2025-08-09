@@ -100,6 +100,7 @@ const integrationsSchema = new Schema(
 // 🧩 Final Domain Schema
 const domainSchema = new Schema({
   domain: { type: String, required: true, unique: true, trim: true, index: true },
+  nameservers: { type: Boolean, default: false },
   proxied: [proxiedSchema],
   acl: [aclSchema],
   rules: [ruleSchema],
