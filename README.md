@@ -1,4 +1,9 @@
-# 🐐 NetGoat
+# 🐐 NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
+
+
+**NetGoat** is a blazing-fast, self-hostable reverse proxy and traffic manager built for developers, homelabbers, and teams who want a **Cloudflare-like** experience without the costs.  
+It supports **zero trust networking**, **DDoS protection**, **SSL termination**, **rate limiting**, **WebSocket support**, and is powered by modern tools like **Bun**, **Next.js**, **Fastify**, and **TailwindCSS**.
+
 
  ![CSS3](https://img.shields.io/badge/css3-%231572B6.svg?style=for-the-badge&logo=css3&logoColor=white) ![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white) ![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E) ![Markdown](https://img.shields.io/badge/markdown-%23000000.svg?style=for-the-badge&logo=markdown&logoColor=white) ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white) ![Shell Script](https://img.shields.io/badge/shell_script-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=Cloudflare&logoColor=white)  ![Express.js](https://img.shields.io/badge/express.js-%23404d59.svg?style=for-the-badge&logo=express&logoColor=%2361DAFB) ![NodeJS](https://img.shields.io/badge/node.js-6DA55F?style=for-the-badge&logo=node.js&logoColor=white) ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white) ![NPM](https://img.shields.io/badge/NPM-%23000000.svg?style=for-the-badge&logo=npm&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)![Webpack](https://img.shields.io/badge/webpack-%238DD6F9.svg?style=for-the-badge&logo=webpack&logoColor=black)  ![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?style=for-the-badge&logo=mongodb&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
@@ -8,13 +13,19 @@
 
 > Built for [HackClub Summer of Making](https://summer.hackclub.com)
 
-> A Cloudflare alternative for local and cloud use, can be used ontop of cloudflare for cloudflares paid features, but for free!
-
 NetGoat is an advanced reverse proxy engine designed to act as an **additional layer** on top of Cloudflare — enabling **premium-grade features**, **zero-cost scaling**, and **maximum control** for power users and homelabbers.
 
 **⚠️ Use responsibly. This tool gives you god-mode over your web traffic.**
 
 ---
+
+## 📷 Screenshots
+Say cheese!
+<img width="1639" height="1114" alt="image" src="https://github.com/user-attachments/assets/10590637-07b6-48c5-b083-1c13c69b9a67" />
+<img width="1636" height="1131" alt="image" src="https://github.com/user-attachments/assets/36381a53-b201-4961-ab39-3f583033d75a" />
+<img width="1649" height="1109" alt="image" src="https://github.com/user-attachments/assets/e5890bf2-769a-4487-8442-6a0ab0e17d3d" />
+<img width="1630" height="1120" alt="image" src="https://github.com/user-attachments/assets/a294d0c0-019e-4cac-904e-6f5a10b33b6a" />
+
 
 ## 🚀 Features
 
