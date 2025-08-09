@@ -93,7 +93,7 @@ export function registerRoutes(app) {
   });
 
   // Create Domain
-  app.post("/cd", async (request, reply) => {
+  app.get("/cd", async (request, reply) => {
     try {
       const user = await User.findOne();
       if (!user) return reply.code(404).send({ error: "No user found" });

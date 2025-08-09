@@ -7,7 +7,7 @@ import { html } from '@elysiajs/html'; // Import the html plugin
 
 
 // --- Config ---
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 1933;
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/stats_db";
 
@@ -287,75 +287,100 @@ const app = new Elysia()
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NetGoat Stats Monitor</title>
-<style>
-  body { font-family: system-ui, sans-serif; background: #111; color: #eee; padding: 20px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-  th, td { padding: 8px; border: 1px solid #444; text-align: left; }
-  th { background: #222; }
-  tr:nth-child(even) { background: #222; }
-  input, button { margin: 5px; padding: 5px; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NetGoat Stats Monitor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .fade-in { animation: fadeIn 0.7s cubic-bezier(.4,0,.2,1); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(16px);} to { opacity: 1; transform: none; } }
+  </style>
 </head>
-<body>
-<h1>NetGoat Stats Monitor</h1>
-
-<label>Service:
-  <input id="serviceInput" type="text" placeholder="Filter service" />
-</label>
-<label>Region:
-  <input id="regionInput" type="text" placeholder="Filter region" />
-</label>
-<button onclick="loadStats()">Refresh</button>
-
-<table>
-  <thead>
-    <tr>
-      <th>Data Key</th>
-      <th>CPU %</th>
-      <th>Memory %</th>
-      <th>Uptime (s)</th>
-      <th>Received At</th>
-    </tr>
-  </thead>
-  <tbody id="statsTableBody"></tbody>
-</table>
-
-<script>
-  async function loadStats() {
-    const service = document.getElementById('serviceInput').value;
-    const region = document.getElementById('regionInput').value;
-    let url = '/api/stats?limit=30';
-    if (service) url += '&service=' + encodeURIComponent(service);
-    if (region) url += '&region=' + encodeURIComponent(region);
-    
-    const res = await fetch(url);
-    const data = await res.json();
-
-    const tbody = document.getElementById('statsTableBody');
-    tbody.innerHTML = '';
-    data.reports.forEach(r => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = \`
-        <td>\${r.dataKey}</td>
-        <td>\${r.stats.appCpuUsagePercent.toFixed(2)}</td>
-        <td>\${r.stats.systemMemoryUsagePercent.toFixed(2)}</td>
-        <td>\${r.stats.systemUptimeSeconds.toFixed(0)}</td>
-        <td>\${new Date(r.receivedAt).toLocaleString()}</td>
-      \`;
-      tbody.appendChild(tr);
-    });
-  }
-
-  loadStats();
-  setInterval(loadStats, 30000);
-</script>
+<body class="bg-gradient-to-br from-zinc-900 to-zinc-800 min-h-screen text-zinc-100 px-4 py-8">
+  <div class="max-w-5xl mx-auto fade-in">
+    <h1 class="text-3xl font-bold mb-2 tracking-tight">NetGoat <span class="text-primary-500">Stats Monitor</span></h1>
+    <p class="text-zinc-400 mb-6">Monitor and filter your service stats in real time.</p>
+    <div class="flex flex-col sm:flex-row gap-3 mb-6">
+      <input id="serviceInput" type="text" placeholder="Filter service" class="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition" />
+      <input id="regionInput" type="text" placeholder="Filter region" class="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-primary-500 transition" />
+      <button onclick="loadStats()" class="rounded-lg bg-primary-600 hover:bg-primary-500 transition text-white px-5 py-2 font-semibold shadow-sm">Refresh</button>
+    </div>
+    <div class="overflow-x-auto rounded-xl shadow-lg bg-zinc-900/80 backdrop-blur border border-zinc-800">
+      <table class="min-w-full divide-y divide-zinc-800">
+        <thead>
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Service</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Region</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Worker ID</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">CPU %</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Memory %</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Uptime (s)</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wider">Received At</th>
+          </tr>
+        </thead>
+        <tbody id="statsTableBody" class="divide-y divide-zinc-800"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="hidden text-center text-zinc-500 py-8">No stats found for the current filter.</div>
+  </div>
+  <script>
+    async function loadStats() {
+      const service = document.getElementById('serviceInput').value;
+      const region = document.getElementById('regionInput').value;
+      let url = '/api/stats?limit=30';
+      if (service) url += '&service=' + encodeURIComponent(service);
+      if (region) url += '&region=' + encodeURIComponent(region);
+      const res = await fetch(url);
+      const data = await res.json();
+      const tbody = document.getElementById('statsTableBody');
+      const emptyState = document.getElementById('emptyState');
+      tbody.innerHTML = '';
+      if (!data.reports || data.reports.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      } else {
+        emptyState.classList.add('hidden');
+      }
+      data.reports.forEach((r, i) => {
+        // Split dataKey: Service_Region_WorkerID
+        let service = '-', region = '-', worker = '-';
+        if (typeof r.dataKey === 'string') {
+          const parts = r.dataKey.split('_');
+          if (parts.length === 3) {
+            [service, region, worker] = parts;
+          } else if (parts.length === 2) {
+            [service, region] = parts;
+          } else {
+            service = r.dataKey;
+          }
+        }
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-zinc-800/60 transition';
+        tr.innerHTML = \`
+          <td class="px-4 py-3 whitespace-nowrap font-mono text-sm">\${service}</td>
+          <td class="px-4 py-3 whitespace-nowrap font-mono text-sm">\${region}</td>
+          <td class="px-4 py-3 whitespace-nowrap font-mono text-sm">\${worker}</td>
+          <td class="px-4 py-3">\${r.stats.appCpuUsagePercent !== undefined ? r.stats.appCpuUsagePercent.toFixed(2) : '-'}</td>
+          <td class="px-4 py-3">\${r.stats.systemMemoryUsagePercent !== undefined ? r.stats.systemMemoryUsagePercent.toFixed(2) : '-'}</td>
+          <td class="px-4 py-3">\${r.stats.systemUptimeSeconds !== undefined ? r.stats.systemUptimeSeconds.toFixed(0) : '-'}</td>
+          <td class="px-4 py-3 text-zinc-400">\${new Date(r.receivedAt).toLocaleString()}</td>
+        \`;
+        tbody.appendChild(tr);
+      });
+    }
+    loadStats();
+    setInterval(loadStats, 30000);
+  </script>
 </body>
 </html>
 `
   )
+
+  
 
   .listen(PORT, () => {
     serverLog("success", `ElysiaJS server running on http://localhost:${PORT}`);

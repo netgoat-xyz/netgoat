@@ -1,1 +1,0 @@
-if $score > 60 do reply.send("default_highbotrate") butif $IPAddr == "" letContinue endif

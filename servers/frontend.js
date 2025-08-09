@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const eta = new Eta({ views: path.join(__dirname, "../views") })
 import staticPlugin from "@elysiajs/static";
+import tracelet from '../utils/tracelet';
 const app = new Elysia();
 
 app.use(staticPlugin({
@@ -28,7 +29,9 @@ app.get("/dashboard", async (ctx) => {
 
 // Pages for testing!!!
 app.get("/error/:page", async ({ params }) => {
-  const html = await eta.render(path.join("views", "error", `${params.page}.ejs`));
+  const html = await eta.render(`error/${params.page}.ejs`, {
+    traceletId: tracelet("MM")
+  });
   return new Response(html, {
     headers: { "Content-Type": "text/html" },
   });

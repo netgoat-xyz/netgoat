@@ -4,6 +4,9 @@ import os from 'os';
 import cluster from 'cluster';
 import logger from './logger';
 import { startReporting } from './statsReporter';
+import { cors } from '@elysiajs/cors'
+
+global.logger = logger;
 
 const BASE_LOG_DIR = path.resolve(process.cwd(), 'database/DomainLogs');
 const numCPUs = os.cpus().length;
@@ -17,6 +20,7 @@ if (cluster.isPrimary) {
   });
 } else {
   const app = new Elysia();
+  app.use(cors())
 
   app.get('/api/:domain/analytics', async ({ params, query, set }) => {
     const domain = params.domain;

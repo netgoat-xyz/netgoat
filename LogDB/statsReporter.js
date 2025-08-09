@@ -7,7 +7,6 @@
 
 const os = require('os'); // Node.js built-in OS module for system info
 const process = require('process'); // Node.js built-in process module for process info
-const logger = require('./l.js')
 /**
  * Global variable to store the interval ID, allowing us to stop reporting later.
  * @type {NodeJS.Timeout | null}
@@ -131,7 +130,7 @@ function decodeJwtPayload(token) {
     try {
         const parts = token.split('.');
         if (parts.length !== 3) {
-            logger.error('[StatsReporter] Invalid JWT format: Expected 3 parts.');
+            global.logger.error('[StatsReporter] Invalid JWT format: Expected 3 parts.');
             return null;
         }
         const payloadBase64 = parts[1];
@@ -139,7 +138,7 @@ function decodeJwtPayload(token) {
         const decodedPayload = Buffer.from(payloadBase64, 'base64').toString('utf8');
         return JSON.parse(decodedPayload);
     } catch (error) {
-        logger.error(`[StatsReporter] Error decoding JWT payload: ${error.message}`);
+        global.logger.error(`[StatsReporter] Error decoding JWT payload: ${error.message}`);
         return null;
     }
 }
@@ -156,7 +155,7 @@ function decodeJwtPayload(token) {
  */
 async function authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId) {
     const authEndpoint = `${serverUrl}/auth`; // Assuming an /auth endpoint for registration
-    logger.info(`[StatsReporter] Attempting to authenticate and get SecretKey from ${authEndpoint}...`);
+    global.logger.info(`[StatsReporter] Attempting to authenticate and get SecretKey from ${authEndpoint}...`);
 
     try {
         const response = await fetch(authEndpoint, {
@@ -175,7 +174,7 @@ async function authenticateAndGetSecretKey(serverUrl, sharedJwt, service, worker
 
         if (!response.ok) {
             const errorText = await response.text();
-            logger.error(`[StatsReporter] Authentication failed: ${response.status} ${response.statusText} - ${errorText}`);
+            global.logger.error(`[StatsReporter] Authentication failed: ${response.status} ${response.statusText} - ${errorText}`);
             return null;
         }
 
@@ -183,21 +182,21 @@ async function authenticateAndGetSecretKey(serverUrl, sharedJwt, service, worker
         // The server is expected to respond with a JWT containing the SecretKey
         const responseJwt = responseJson.token; // Assuming the server sends a 'token' field
         if (!responseJwt) {
-            logger.error('[StatsReporter] Authentication response missing JWT token.');
+            global.logger.error('[StatsReporter] Authentication response missing JWT token.');
             return null;
         }
 
         const decodedPayload = decodeJwtPayload(responseJwt);
         if (decodedPayload && decodedPayload.secretKey) {
-            logger.success('[StatsReporter] Successfully obtained SecretKey.');
+            global.logger.success('[StatsReporter] Successfully obtained SecretKey.');
             return decodedPayload.secretKey;
         } else {
-            logger.error('[StatsReporter] JWT payload missing "secretKey" field.');
+            global.logger.error('[StatsReporter] JWT payload missing "secretKey" field.');
             return null;
         }
 
     } catch (error) {
-        logger.error(`[StatsReporter] Error during authentication request to ${authEndpoint}:`, error.message);
+        global.logger.error(`[StatsReporter] Error during authentication request to ${authEndpoint}:`, error.message);
         return null;
     }
 }
@@ -211,7 +210,7 @@ async function authenticateAndGetSecretKey(serverUrl, sharedJwt, service, worker
  */
 async function sendDataToServer(serverUrl, data, secretKey) {
     if (!secretKey) {
-        logger.error('[StatsReporter] Cannot send data: SecretKey is not available. Authentication might have failed.');
+        global.logger.error('[StatsReporter] Cannot send data: SecretKey is not available. Authentication might have failed.');
         return;
     }
 
@@ -229,14 +228,14 @@ async function sendDataToServer(serverUrl, data, secretKey) {
         });
 
         if (!response.ok) {
-            // logger non-2xx responses as errors
+            // global.logger non-2xx responses as errors
             const errorText = await response.text();
-            logger.error(`[StatsReporter] Failed to send data: ${response.status} ${response.statusText} - ${errorText}`);
+            global.logger.error(`[StatsReporter] Failed to send data: ${response.status} ${response.statusText} - ${errorText}`);
         } else {
-            logger.info(`[StatsReporter] Data sent successfully to ${serverUrl}`);
+            global.logger.info(`[StatsReporter] Data sent successfully to ${serverUrl}`);
         }
     } catch (error) {
-        logger.error(`[StatsReporter] Error sending data to ${serverUrl}:`, error.message);
+        global.logger.error(`[StatsReporter] Error sending data to ${serverUrl}:`, error.message);
     }
 }
 
@@ -259,58 +258,81 @@ async function startReporting({
     intervalMinutes = 1,
     service,
     workerId, 
-    regionId
+    regionId,
+    maxRetries = 5, // NEW: max retry attempts for reporting
+    retryDelayMs = 10000 // NEW: delay between retries in ms
 }) {
     if (!serverUrl) {
-        logger.error('[StatsReporter] Error: serverUrl is required to start reporting.');
+        global.logger.error('[StatsReporter] Error: serverUrl is required to start reporting.');
         return;
     }
     if (!sharedJwt) {
-        logger.error('[StatsReporter] Error: sharedJwt is required for authentication.');
+        global.logger.error('[StatsReporter] Error: sharedJwt is required for authentication.');
         return;
     }
 
     if (reportingInterval) {
-        logger.warn('[StatsReporter] Reporting is already running. Stopping previous interval before starting a new one.');
+        global.logger.warn('[StatsReporter] Reporting is already running. Stopping previous interval before starting a new one.');
         stopReporting();
     }
 
-    // --- Initial Authentication Step ---
-    currentSecretKey = await authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId);
-
+    // --- Initial Authentication Step with auto-retry ---
+    let authAttempts = 0;
+    const maxAuthRetries = 1000; // Arbitrary large number for infinite-like retry
+    while (authAttempts < maxAuthRetries) {
+        currentSecretKey = await authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId);
+        if (currentSecretKey) {
+            break;
+        }
+        authAttempts++;
+        global.logger.error(`[StatsReporter] Failed to obtain SecretKey. Retrying authentication in ${retryDelayMs / 1000}s... (Attempt ${authAttempts})`);
+        await new Promise(res => setTimeout(res, retryDelayMs));
+    }
     if (!currentSecretKey) {
-        logger.error('[StatsReporter] Failed to obtain SecretKey. Reporting will not start.');
+        global.logger.error('[StatsReporter] Could not authenticate after many attempts. Reporting will not start.');
         return;
     }
 
     const intervalMs = intervalMinutes * 60 * 1000; // Convert minutes to milliseconds
 
-    logger.info(`[StatsReporter] Starting reporting to ${serverUrl}/report-stats every ${intervalMinutes} minute(s).`);
+    global.logger.info(`[StatsReporter] Starting reporting to ${serverUrl}/report-stats every ${intervalMinutes} minute(s).`);
     const dataKeyParts = [service, regionId];
     if (workerId && workerId !== 'default_worker') { // Only add workerId if it's explicitly provided and not default
         dataKeyParts.push(workerId);
     }
     const dataKey = dataKeyParts.join('_');
-    logger.info(`[StatsReporter] Data key will be: ${dataKey}`);
+    global.logger.info(`[StatsReporter] Data key will be: ${dataKey}`);
 
     /**
-     * The main reporting function that runs on an interval.
+     * The main reporting function that runs on an interval, with retry logic.
      */
     const reportFunction = async () => {
-        try {
-            const stats = await collectSystemAndAppStats();
-            const payload = {
-                dataKey: dataKey,
-                service: service,
-                workerId: workerId,
-                regionId: regionId,
-                stats: stats,
-            };
+        let attempt = 0;
+        while (attempt <= maxRetries) {
+            try {
+                const stats = await collectSystemAndAppStats();
+                const payload = {
+                    dataKey: dataKey,
+                    service: service,
+                    workerId: workerId,
+                    regionId: regionId,
+                    stats: stats,
+                };
 
-            logger.debug(`[StatsReporter] Collecting and sending stats for ${dataKey}...`);
-            await sendDataToServer(`${serverUrl}/report-stats`, payload, currentSecretKey);
-        } catch (error) {
-            logger.error('[StatsReporter] Error during reporting cycle:', error.message);
+                global.logger.debug(`[StatsReporter] Collecting and sending stats for ${dataKey}... (Attempt ${attempt + 1})`);
+                await sendDataToServer(`${serverUrl}/report-stats`, payload, currentSecretKey);
+                // Success, break out of retry loop
+                break;
+            } catch (error) {
+                attempt++;
+                global.logger.error(`[StatsReporter] Error during reporting cycle (Attempt ${attempt}):`, error.message);
+                if (attempt > maxRetries) {
+                    global.logger.error(`[StatsReporter] Max retry attempts (${maxRetries}) reached. Skipping this reporting cycle.`);
+                    break;
+                }
+                global.logger.info(`[StatsReporter] Retrying in ${retryDelayMs / 1000}s...`);
+                await new Promise(res => setTimeout(res, retryDelayMs));
+            }
         }
     };
 
@@ -321,6 +343,7 @@ async function startReporting({
     reportingInterval = setInterval(reportFunction, intervalMs);
 }
 
+
 /**
  * Stops the statistics reporting.
  */
@@ -329,9 +352,9 @@ function stopReporting() {
         clearInterval(reportingInterval);
         reportingInterval = null;
         currentSecretKey = null; // Clear the secret key on stop
-        logger.info('[StatsReporter] Statistics reporting stopped.');
+        global.logger.info('[StatsReporter] Statistics reporting stopped.');
     } else {
-        logger.info('[StatsReporter] Statistics reporting is not currently running.');
+        global.logger.info('[StatsReporter] Statistics reporting is not currently running.');
     }
 }
 
