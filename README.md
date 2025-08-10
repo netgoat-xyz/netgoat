@@ -48,11 +48,9 @@ Say cheese!
 - 📏 **Bandwidth Limits** — Limit or throttle specific domains or proxy's
 
 ## 🐳 Quick Start
-You’ll need:
-- Node or Bun (we love Bun ❤️)
-- A VPS or server behind Cloudflare
-- Ports 80/443 open
-- Basic knowledge of how not to break the internet
+We recommend [datalix](https://datalix.eu/a/netgoat) for cheap and highly avaliable vps'ses
+
+https://docs.netgoat.xyz (not published yet)
 
 ## 💖 Open Source Projects That Helped me Build
 * [Bun](https://bun.sh) - [Github](https://github.com/oven-sh/bun) - MIT License
