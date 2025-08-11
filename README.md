@@ -1,4 +1,4 @@
-# 🐐 NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
+NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
 
 **NetGoat** is a blazing-fast, self-hostable reverse proxy and traffic manager built for developers, homelabbers, and teams who want a **Cloudflare-like** experience without the costs.  
@@ -15,11 +15,9 @@ It supports **zero trust networking**, **DDoS protection**, **SSL termination**,
 
 NetGoat is an advanced reverse proxy engine designed to act as an **additional layer** on top of Cloudflare — enabling **premium-grade features**, **zero-cost scaling**, and **maximum control** for power users and homelabbers.
 
-**⚠️ Use responsibly. This tool gives you god-mode over your web traffic.**
-
 ---
 
-## 📷 Screenshots
+##  Screenshots
 Say cheese!
 <img width="1639" height="1114" alt="image" src="https://github.com/user-attachments/assets/10590637-07b6-48c5-b083-1c13c69b9a67" />
 <img width="1636" height="1131" alt="image" src="https://github.com/user-attachments/assets/36381a53-b201-4961-ab39-3f583033d75a" />
@@ -27,32 +25,32 @@ Say cheese!
 <img width="1630" height="1120" alt="image" src="https://github.com/user-attachments/assets/a294d0c0-019e-4cac-904e-6f5a10b33b6a" />
 
 
-## 🚀 Features
+##  Features
 
-- 🛡️ **Anti-DDoS & WAF** — Filters like a hawk. Blocks malicious requests, bots, and common exploits.
-- ⚡ **Rate Limiting & Request Queuing** — Your API won’t get nuked.
-- 🔒 **Auto SSL & TLS Termination** — Free SSL with auto-renew.
-- 🔁 **Load Balancing & Failover** — Multinode routing with zero-downtime.
-- 🔥 **Real-Time Metrics Dashboard** — Monitor traffic, bandwidth, errors, and hits.
-- 🧠 **Dynamic Rules Engine** — Write custom rules in JS/TS to handle routing, caching, filtering, etc.
-- 🌀 **WebSocket & HTTP/2 Ready** — Handles modern protocols like a beast.
-- 🗂️ **Per-Domain Configs** — Define behavior per site with regex/wildcard support.
-- 🧬 **Plugin System** — Extend NetGoat with custom plugins or middlewares.
-- 🔗 **Cloudflare Zero Trust Support** — Acts as a trusted upstream in Zero Trust setups.
-- 🧠 **Smart Caching Layer** — Custom cache policies per route, endpoint, or asset.
+- **Anti-DDoS & WAF** — Filters like a hawk. Blocks malicious requests, bots, and common exploits.
+- **Rate Limiting & Request Queuing** — Your API won’t get nuked.
+- **Auto SSL & TLS Termination** — Free SSL with auto-renew.
+- **Load Balancing & Failover** — Multinode routing with zero-downtime.
+- **Real-Time Metrics Dashboard** — Monitor traffic, bandwidth, errors, and hits.
+- **Dynamic Rules Engine** — Write custom rules in JS/TS to handle routing, caching, filtering, etc.
+- **WebSocket & HTTP/2 Ready** — Handles modern protocols like a beast.
+- **Per-Domain Configs** — Define behavior per site with regex/wildcard support.
+- **Plugin System** — Extend NetGoat with custom plugins or middlewares.
+- **Cloudflare Zero Trust Support** — Acts as a trusted upstream in Zero Trust setups.
+- **Smart Caching Layer** — Custom cache policies per route, endpoint, or asset.
 
-## 🔌 Seamless intergration
+## Seamless intergration
 
-- 🧭 **DNS Searching** — Automatically scans your domains to automatically create a suitable Proxy record
-- ☁️ **Cloudflare** — Manage cloudflare tunnels and more with our UI
-- 📏 **Bandwidth Limits** — Limit or throttle specific domains or proxy's
+- **DNS Searching** — Automatically scans your domains to automatically create a suitable Proxy record
+- **Cloudflare** — Manage cloudflare tunnels and more with our UI
+- **Bandwidth Limits** — Limit or throttle specific domains or proxy's
 
-## 🐳 Quick Start
+## Quick Start
 We recommend [datalix](https://datalix.eu/a/netgoat) for cheap and highly avaliable vps'ses
 
 https://docs.netgoat.xyz (not published yet)
 
-## 💖 Open Source Projects That Helped me Build
+## Open Source Projects That Helped me Build
 * [Bun](https://bun.sh) - [Github](https://github.com/oven-sh/bun) - MIT License
 
 * [ShadCN](https://ui.shadcn.com) - [Github](https://github.com/shadcn-ui/ui) - MIT License
