@@ -1,4 +1,4 @@
-NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
+# NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
 
 **NetGoat** is a blazing-fast, self-hostable reverse proxy and traffic manager built for developers, homelabbers, and teams who want a **Cloudflare-like** experience without the costs.  
