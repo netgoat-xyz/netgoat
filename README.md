@@ -12,7 +12,8 @@ It supports **zero trust networking**, **DDoS protection**, **SSL termination**,
 ![Stats](https://hackatime-badge.hackclub.com/U082B71HP8B/NetGoat)
 
 > Built for [HackClub Summer of Making](https://summer.hackclub.com)
-> Join our discord for support!! [Click Me To Join!](https://discord.com/invite/3aJ7MdJsZV) ![Discord](https://img.shields.io/discord/1350110102337749062)
+
+> Join our discord for support, annoucements, updates & bugs!! [Click Me To Join!](https://discord.com/invite/3aJ7MdJsZV) ![Discord](https://img.shields.io/discord/1350110102337749062)
 
 NetGoat is an advanced reverse proxy engine designed to act as an **additional layer** on top of Cloudflare — enabling **premium-grade features**, **zero-cost scaling**, and **maximum control** for power users and homelabbers.
 
