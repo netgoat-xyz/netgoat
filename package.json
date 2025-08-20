@@ -45,7 +45,8 @@
     "react-syntax-highlighter": "^15.6.1",
     "tailwindcss": "^4.1.8",
     "tldts": "^7.0.8",
-    "escape-html": "^1.0.3"
+    "escape-html": "^1.0.3",
+    "express-rate-limit": "^8.0.1"
   },
   "name": "netgoat",
   "module": "index.js",

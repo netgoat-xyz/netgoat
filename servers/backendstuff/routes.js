@@ -2,8 +2,16 @@ import User from "../../database/mongodb/schema/users.js";
 import Domain from "../../database/mongodb/schema/domains.js";
 import jsonwebtoken from "jsonwebtoken";
 import Bun from "bun";
+import rateLimit from "express-rate-limit";
 
 export function registerRoutes(app) {
+  // Rate limiter for /cd route: max 10 requests per minute per IP
+  const cdRateLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+   max: 10, // limit each IP to 10 requests per windowMs
+   message: { error: "Too many requests, please try again later." }
+ });
+
   // Root
   app.get("/", async (request, reply) => {
     return { message: "Welcome to the backend Server!" };
@@ -93,7 +101,7 @@ export function registerRoutes(app) {
   });
 
   // Create Domain
-  app.get("/cd", async (request, reply) => {
+  app.get("/cd", cdRateLimiter, async (request, reply) => {
     try {
       const user = await User.findOne();
       if (!user) return reply.code(404).send({ error: "No user found" });
