@@ -1,4 +1,4 @@
-# 🐐 NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
+# NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
 
 **NetGoat** is a blazing-fast, self-hostable reverse proxy and traffic manager built for developers, homelabbers, and teams who want a **Cloudflare-like** experience without the costs.  
@@ -13,13 +13,13 @@ It supports **zero trust networking**, **DDoS protection**, **SSL termination**,
 
 > Built for [HackClub Summer of Making](https://summer.hackclub.com)
 
-NetGoat is an advanced reverse proxy engine designed to act as an **additional layer** on top of Cloudflare — enabling **premium-grade features**, **zero-cost scaling**, and **maximum control** for power users and homelabbers.
+> Join our discord for support, annoucements, updates & bugs!! [Click Me To Join!](https://discord.com/invite/3aJ7MdJsZV) ![Discord](https://img.shields.io/discord/1350110102337749062)
 
-**⚠️ Use responsibly. This tool gives you god-mode over your web traffic.**
+NetGoat is an advanced reverse proxy engine designed to act as an **additional layer** on top of Cloudflare — enabling **premium-grade features**, **zero-cost scaling**, and **maximum control** for power users and homelabbers.
 
 ---
 
-## 📷 Screenshots
+##  Screenshots
 Say cheese!
 <img width="1639" height="1114" alt="image" src="https://github.com/user-attachments/assets/10590637-07b6-48c5-b083-1c13c69b9a67" />
 <img width="1636" height="1131" alt="image" src="https://github.com/user-attachments/assets/36381a53-b201-4961-ab39-3f583033d75a" />
@@ -27,34 +27,32 @@ Say cheese!
 <img width="1630" height="1120" alt="image" src="https://github.com/user-attachments/assets/a294d0c0-019e-4cac-904e-6f5a10b33b6a" />
 
 
-## 🚀 Features
+##  Features
 
-- 🛡️ **Anti-DDoS & WAF** — Filters like a hawk. Blocks malicious requests, bots, and common exploits.
-- ⚡ **Rate Limiting & Request Queuing** — Your API won’t get nuked.
-- 🔒 **Auto SSL & TLS Termination** — Free SSL with auto-renew.
-- 🔁 **Load Balancing & Failover** — Multinode routing with zero-downtime.
-- 🔥 **Real-Time Metrics Dashboard** — Monitor traffic, bandwidth, errors, and hits.
-- 🧠 **Dynamic Rules Engine** — Write custom rules in JS/TS to handle routing, caching, filtering, etc.
-- 🌀 **WebSocket & HTTP/2 Ready** — Handles modern protocols like a beast.
-- 🗂️ **Per-Domain Configs** — Define behavior per site with regex/wildcard support.
-- 🧬 **Plugin System** — Extend NetGoat with custom plugins or middlewares.
-- 🔗 **Cloudflare Zero Trust Support** — Acts as a trusted upstream in Zero Trust setups.
-- 🧠 **Smart Caching Layer** — Custom cache policies per route, endpoint, or asset.
+- **Anti-DDoS & WAF** — Filters like a hawk. Blocks malicious requests, bots, and common exploits.
+- **Rate Limiting & Request Queuing** — Your API won’t get nuked.
+- **Auto SSL & TLS Termination** — Free SSL with auto-renew.
+- **Load Balancing & Failover** — Multinode routing with zero-downtime.
+- **Real-Time Metrics Dashboard** — Monitor traffic, bandwidth, errors, and hits.
+- **Dynamic Rules Engine** — Write custom rules in JS/TS to handle routing, caching, filtering, etc.
+- **WebSocket & HTTP/2 Ready** — Handles modern protocols like a beast.
+- **Per-Domain Configs** — Define behavior per site with regex/wildcard support.
+- **Plugin System** — Extend NetGoat with custom plugins or middlewares.
+- **Cloudflare Zero Trust Support** — Acts as a trusted upstream in Zero Trust setups.
+- **Smart Caching Layer** — Custom cache policies per route, endpoint, or asset.
 
-## 🔌 Seamless intergration
+## Seamless intergration
 
-- 🧭 **DNS Searching** — Automatically scans your domains to automatically create a suitable Proxy record
-- ☁️ **Cloudflare** — Manage cloudflare tunnels and more with our UI
-- 📏 **Bandwidth Limits** — Limit or throttle specific domains or proxy's
+- **DNS Searching** — Automatically scans your domains to automatically create a suitable Proxy record
+- **Cloudflare** — Manage cloudflare tunnels and more with our UI
+- **Bandwidth Limits** — Limit or throttle specific domains or proxy's
 
-## 🐳 Quick Start
-You’ll need:
-- Node or Bun (we love Bun ❤️)
-- A VPS or server behind Cloudflare
-- Ports 80/443 open
-- Basic knowledge of how not to break the internet
+## Quick Start
+We recommend [datalix](https://datalix.eu/a/netgoat) for cheap and highly avaliable vps'ses
 
-## 💖 Open Source Projects That Helped me Build
+https://docs.netgoat.xyz (not published yet)
+
+## Open Source Projects That Helped me Build
 * [Bun](https://bun.sh) - [Github](https://github.com/oven-sh/bun) - MIT License
 
 * [ShadCN](https://ui.shadcn.com) - [Github](https://github.com/shadcn-ui/ui) - MIT License
@@ -64,3 +62,14 @@ You’ll need:
 * [Fastify](https://fastify.dev) - [Github](https://github.com/fastify/fastify) - MIT License
 
 * [TailwindCSS](https://tailwindcss.com) - [Github](https://github.com/tailwindlabs/tailwindcss) - MIT License
+
+
+## Star History
+
+<a href="https://www.star-history.com/#cloudable-dev/netgoat&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date" />
+ </picture>
+</a>
