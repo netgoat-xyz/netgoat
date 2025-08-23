@@ -62,3 +62,14 @@ https://docs.netgoat.xyz (not published yet)
 * [Fastify](https://fastify.dev) - [Github](https://github.com/fastify/fastify) - MIT License
 
 * [TailwindCSS](https://tailwindcss.com) - [Github](https://github.com/tailwindlabs/tailwindcss) - MIT License
+
+
+## Star History
+
+<a href="https://www.star-history.com/#cloudable-dev/netgoat&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date" />
+ </picture>
+</a>
