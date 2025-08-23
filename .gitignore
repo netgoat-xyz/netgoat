@@ -1,3 +1,10 @@
+# Branches
+comingsoon
+
+# Experimental
+experimental
+feature-wips
+
 # AI Features
 SomeCoolFeatureIMightImplement
 
@@ -5,6 +12,7 @@ SomeCoolFeatureIMightImplement
 node_modules
 
 reactbased/node_modules
+
 
 # output
 out

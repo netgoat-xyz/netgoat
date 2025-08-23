@@ -31,7 +31,7 @@ export function Hero() {
          A Cloudflare alternative for local and cloud use, can be used ontop of cloudflare for cloudflares paid features, but for free! 
       </p>
       <div className="mt-10 flex justify-center gap-x-6">
-        <Button href="/dashboard">Lets use it, Enjoy it.</Button>
+        <Button href="https://github.com/cloudable-dev/netgoat">Coming soon.</Button>
         <Button
           href="#features"
           variant="outline"

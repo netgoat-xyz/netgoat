@@ -279,7 +279,6 @@ const app = new Elysia()
     }
   })
 
-  // Serve simple monitoring UI
   .get(
     "/",
     () =>
