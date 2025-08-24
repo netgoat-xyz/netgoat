@@ -1,5 +1,18 @@
 "use client"
 
+type ChartAreaInteractiveProps = {
+  title?: string;
+  description?: string;
+  cc?: any;
+  chartData?: any[];
+  areaKeys?: Array<{ key: string; color: string; gradient: string }>;
+  gradientDefs?: React.ReactNode;
+  areaProps?: Record<string, any>;
+  timeRange: string;
+  setTimeRange: (v: string) => void;
+};
+
+
 import * as React from "react"
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
 
@@ -32,7 +45,6 @@ import {
 
 export const description = "An interactive area chart"
 
-
 export function ChartAreaInteractive({
   title,
   description,
@@ -44,39 +56,12 @@ export function ChartAreaInteractive({
   ],
   gradientDefs,
   areaProps = {},
-}: {
-  title?: string;
-  description?: string;
-  cc?: any;
-  chartData?: any[];
-  areaKeys?: Array<{ key: string; color: string; gradient: string }>;
-  gradientDefs?: React.ReactNode;
-  areaProps?: Record<string, any>;
-}) {
+  timeRange,
+  setTimeRange,
+}: ChartAreaInteractiveProps) {
   const isMobile = useIsMobile();
-  const [timeRange, setTimeRange] = React.useState("90d");
-
-  React.useEffect(() => {
-    if (isMobile) {
-      setTimeRange("7d");
-    }
-  }, [isMobile]);
-
   const chartConfig = cc satisfies ChartConfig;
-
-  const filteredData = chartData?.filter((item) => {
-    const date = new Date(item.date);
-    const referenceDate = new Date("2024-06-30");
-    let daysToSubtract = 90;
-    if (timeRange === "30d") {
-      daysToSubtract = 30;
-    } else if (timeRange === "7d") {
-      daysToSubtract = 7;
-    }
-    const startDate = new Date(referenceDate);
-    startDate.setDate(startDate.getDate() - daysToSubtract);
-    return date >= startDate;
-  });
+  const filteredData = chartData;
 
   return (
     <Card className="@container/card">
@@ -96,7 +81,7 @@ export function ChartAreaInteractive({
             variant="outline"
             className="hidden *:data-[slot=toggle-group-item]:!px-4 @[767px]/card:flex"
           >
-            <ToggleGroupItem value="90d">Last 3 months</ToggleGroupItem>
+            <ToggleGroupItem value="3mo">Last 3 months</ToggleGroupItem>
             <ToggleGroupItem value="30d">Last 30 days</ToggleGroupItem>
             <ToggleGroupItem value="7d">Last 7 days</ToggleGroupItem>
           </ToggleGroup>

@@ -5,6 +5,7 @@ import cluster from 'cluster';
 import logger from './logger';
 import { startReporting } from './statsReporter';
 import { cors } from '@elysiajs/cors'
+import fs from "fs/promises"
 
 global.logger = logger;
 
@@ -25,7 +26,7 @@ if (cluster.isPrimary) {
   app.get('/api/:domain/analytics', async ({ params, query, set }) => {
     const domain = params.domain;
     const subdomain = typeof query.subdomain === 'string' ? query.subdomain : '@';
-    const timeframe = typeof query.timeframe === 'string' ? query.timeframe : '1d';
+    const timeframe = typeof query.timeframe === 'string' ? query.timeframe : '7d';
     const logFilePath = path.join(BASE_LOG_DIR, domain, subdomain, `${timeframe}.json`);
 
     try {
@@ -42,40 +43,43 @@ if (cluster.isPrimary) {
     }
   });
 
-  app.post('/api/:domain/analytics', async ({ params, query, body, set }) => {
-    const domain = params.domain;
-    const subdomain = typeof query.subdomain === 'string' ? query.subdomain : '@';
-    const timeframe = typeof query.timeframe === 'string' ? query.timeframe : '1d';
-    const logFilePath = path.join(BASE_LOG_DIR, domain, subdomain, `${timeframe}.json`);
-    const logDir = path.dirname(logFilePath);
 
-    try {
-      await Bun.mkdir(logDir, { recursive: true });
+// ...
 
-      let logs = [];
-      const file = Bun.file(logFilePath);
-      if (await file.exists()) {
-        try {
-          const text = await file.text();
-          logs = JSON.parse(text);
-        } catch (err) {
-          logger.warn(`Failed to parse existing log at ${logFilePath}:`, err);
-        }
+app.post('/api/:domain/analytics', async ({ params, query, body, set }) => {
+  const domain = params.domain
+  const subdomain = typeof query.subdomain === 'string' ? query.subdomain : '@'
+  const timeframe = typeof query.timeframe === 'string' ? query.timeframe : '1d'
+  const logFilePath = path.join(BASE_LOG_DIR, domain, subdomain, `${timeframe}.json`)
+  const logDir = path.dirname(logFilePath)
+
+  try {
+    await fs.mkdir(logDir, { recursive: true })   // <-- use fs.mkdir
+
+    let logs = []
+    const file = Bun.file(logFilePath)
+    if (await file.exists()) {
+      try {
+        const text = await file.text()
+        logs = JSON.parse(text)
+      } catch (err) {
+        logger.warn(`Failed to parse existing log at ${logFilePath}:`, err)
       }
-
-      const entry = typeof body === 'object' && body !== null ? { ...body } : {};
-      entry.time ??= new Date().toISOString();
-
-      logs.push(entry);
-      await Bun.write(logFilePath, JSON.stringify(logs, null, 2));
-
-      set.status = 200;
-      return { success: true, message: `Logged to ${logFilePath}` };
-    } catch (err) {
-      set.status = 500;
-      return { error: `Write error: ${err.message}` };
     }
-  });
+
+    const entry = typeof body === 'object' && body !== null ? { ...body } : {}
+    entry.time ??= new Date().toISOString()
+
+    logs.push(entry)
+    await Bun.write(logFilePath, JSON.stringify(logs, null, 2))
+
+    set.status = 200
+    return { success: true, message: `Logged to ${logFilePath}` }
+  } catch (err) {
+    set.status = 500
+    return { error: `Write error: ${err.message}` }
+  }
+})
 
   app.listen({ port: 3010 });
   logger.success(`[Worker ${process.pid}] LogDB running on http://localhost:3010`);
