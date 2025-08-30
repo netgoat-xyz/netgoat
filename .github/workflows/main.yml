@@ -29,7 +29,6 @@ jobs:
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # only needed for private repos
           slug: Cloudable-dev/netgoat
           files: ./coverage/lcov.info
           fail_ci_if_error: true
