@@ -11,7 +11,7 @@ import { Testimonials } from '@/components/Testimonials'
 export default function Home() {
   return (
     <>
-     <div className="dark:bg-white">
+     <div className="dark:bg-white ">
       <Header />
       <main>
         <Hero />

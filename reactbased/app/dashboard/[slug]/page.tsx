@@ -1,27 +1,48 @@
 "use client";
 
 import { AppSidebar } from "@/components/domain-sidebar";
+
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
-import { DataTable } from "@/components/domains-table";
 import { SectionCards } from "@/components/section-cards";
 import SiteHeader from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { useEffect, useState, use as usePromise } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 
-const cacheData = [/* your cacheData stays as-is */];
+interface DashboardPageProps {
+  params: { slug: string };
+}
+
+interface ClientData {
+  date: string;
+  mobile: number;
+  desktop: number;
+}
+
+interface CacheData {
+  date: string;
+  hit: number;
+  miss: number;
+}
+
+const cacheData: CacheData[] = [
+  { date: "2025-06-01", hit: 100, miss: 20 },
+  { date: "2025-06-02", hit: 120, miss: 25 },
+  { date: "2025-06-03", hit: 150, miss: 30 },
+];
 
 const isMobile = (ua: string) => /iPhone|iPad|iPod|Android|Mobile/i.test(ua);
 
-export default function DashboardPage({ params }: { params: { slug: string } }) {
-  const { slug } = usePromise(params);
-  const [clients, setClients] = useState<any[]>([]);
+export default function DashboardPage({ params }: DashboardPageProps) {
+  const { slug } = params;
+  const [clients, setClients] = useState<ClientData[]>([]);
   const [timeRange, setTimeRange] = useState<string>("3mo");
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await axios.get(`${process.env.logdb}/api/${slug}/analytics?timeframe=${timeRange}`,
+        const res = await axios.get<{ time: string; userAgent: string }[]>(
+          `${process.env.logdb}/api/${slug}/analytics?timeframe=${timeRange}`,
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("jwt")}`,
@@ -29,7 +50,7 @@ export default function DashboardPage({ params }: { params: { slug: string } }) 
           }
         );
 
-        const logs: { time: string; userAgent: string }[] = res.data;
+        const logs = res.data;
         const dailyCounts: Record<string, { mobile: number; desktop: number }> = {};
 
         for (const log of logs) {
@@ -66,16 +87,14 @@ export default function DashboardPage({ params }: { params: { slug: string } }) 
 
   return (
     <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
+      style={{
+        "--sidebar-width": "calc(var(--spacing) * 72)",
+        "--header-height": "calc(var(--spacing) * 12)",
+      } as React.CSSProperties}
     >
       <AppSidebar variant="inset" />
       <SidebarInset>
-  <SiteHeader title={slug} />
+        <SiteHeader title={slug} />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -104,6 +123,8 @@ export default function DashboardPage({ params }: { params: { slug: string } }) 
                     { key: "hit", color: "var(--color-hit)", gradient: "fillHit" },
                     { key: "miss", color: "var(--color-miss)", gradient: "fillMiss" },
                   ]}
+                  timeRange="3mo"
+                  setTimeRange={() => {}}
                 />
               </div>
             </div>

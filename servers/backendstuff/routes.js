@@ -5,14 +5,6 @@ import Bun from "bun";
 import rateLimit from "express-rate-limit";
 
 export function registerRoutes(app) {
-  // Rate limiter for /cd route: max 10 requests per minute per IP
-  const cdRateLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-   max: 10, // limit each IP to 10 requests per windowMs
-   message: { error: "Too many requests, please try again later." }
- });
-
-  // Root
   app.get("/", async (request, reply) => {
     return { message: "Welcome to the backend Server!" };
   });
@@ -101,7 +93,8 @@ export function registerRoutes(app) {
   });
 
   // Create Domain
-  app.get("/cd", cdRateLimiter, async (request, reply) => {
+  if (process.env.NODE_ENV !== "production") {
+  app.get("/cd", async (request, reply) => {
     try {
       const user = await User.findOne();
       if (!user) return reply.code(404).send({ error: "No user found" });
@@ -146,7 +139,7 @@ export function registerRoutes(app) {
       reply.code(500).send({ error: err.message });
     }
   });
-
+  }4
   // Monitor.js
   app.get("/monitor.js", async (request, reply) => {
     reply.type("application/javascript");

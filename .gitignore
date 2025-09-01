@@ -5,8 +5,15 @@ comingsoon
 experimental
 feature-wips
 
+# Big Files
+utils/ipinfo_lite.json
+utils/threatLists.js
+
 # AI Features
 SomeCoolFeatureIMightImplement
+
+# Database
+LogDB/database
 
 # dependencies (bun install)
 node_modules

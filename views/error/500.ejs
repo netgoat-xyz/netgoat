@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <title>500</title>
     <!-- <script src="https://cdn.tailwindcss.com"></script> -->
-    <!-- <link rel="stylesheet" href="/assets/css/tailwind.css"> -->
+    <!-- <link rel="stylesheet" href="http://localhost:3001/assets/css/tailwind.css"> -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cal+Sans&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
@@ -18,7 +18,7 @@
   <body class="h-full w-full m-0 p-0 overflow-hidden">
     <div class="relative h-screen w-screen">
       <!-- Background Image -->
-      <img src="/assets/img/bg_dark.jpg" 
+      <img src="http://localhost:3001/assets/img/bg_dark.jpg" 
            alt="bg" 
            class="absolute inset-0 h-full w-full object-cover" />
 
@@ -36,7 +36,7 @@
 
       <!-- Footer -->
       <footer class="absolute bottom-4 w-full text-center text-white text-sm opacity-80 z-20">
-        Cloudable NetGoat© 2025 • Tracelet ID: <%=traceletId%>
+        Cloudable NetGoat© 2025 • Tracelet ID: <%= it.traceletId%>
       </footer>
     </div>
   </body>

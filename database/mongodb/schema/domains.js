@@ -58,6 +58,7 @@ const proxiedSchema = new Schema(
     port: Number,
     BlockCommonExploits: Boolean,
     WS: Boolean,
+    ip: String,
     slug: String,
     SSL: Boolean,
     SSLInfo: {
