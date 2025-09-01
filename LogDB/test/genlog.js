@@ -5,7 +5,7 @@ const BASE_LOG_DIR = path.resolve(process.cwd(), "database/DomainLogs")
 const domain = "google.com"
 const subdomain = "@"
 
-const LOGS_COUNT = 1000000
+const LOGS_COUNT = 100000
 
 const desktopAgents = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",

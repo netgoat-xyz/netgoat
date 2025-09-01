@@ -1,46 +1,32 @@
 // app/dashboard/layout.tsx
-"use client";
+import { Metadata } from "next";
+import { ReactNode } from "react";
+import DashboardClientWrapper from "./layoutClient"; // your "use client" wrapper
 
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
-
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    // Only check session for dashboard routes
-    const jwt = localStorage.getItem("jwt");
-    if (!jwt) {
-      router.replace("/auth");
-      return;
-    }
-
-    const session = localStorage.getItem("session");
-      fetch("/api/session?session=" + jwt)
-        .then((res) => res.json())
-        .then((data) => {
-          localStorage.setItem("session", JSON.stringify(data));
-          setReady(true);
-        })
-        .catch((err) => {
-          console.error("Session fetch failed", err);
-          router.replace("/auth");
-        });
-  }, [pathname, router]);
-
-  if (!ready) {
-    return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground">
-        Loading dashboard...
-      </div>
-    );
-  }
-
-  return <>{children}</>;
+interface LayoutProps {
+  children: ReactNode;
+  params?: { slug?: string; section?: string };
 }
-1
+
+// Server Component
+export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
+  const slug = params?.slug ?? "Dashboard";
+
+  // extract the last segment of the path for "section"
+  const sectionSegment = params?.section ?? ""; // might be undefined
+  const section = sectionSegment || "Overview";
+
+  const formattedSection = section.charAt(0).toUpperCase() + section.slice(1);
+
+  return {
+    title: `${slug} | ${formattedSection}`,
+    description: `Dashboard for ${slug} - ${formattedSection}`,
+  };
+}
+
+
+export default function DashboardLayout({ children, params }: LayoutProps) {
+  return (
+    <DashboardClientWrapper params={params}>{children}</DashboardClientWrapper>
+  );
+}

@@ -1,9 +1,75 @@
 // Example proxy routes (in-memory, replace with DB logic as needed)
 import escapeHtml from "escape-html";
 const proxies = [];
+import domains from "../../database/mongodb/schema/domains.js";
 
 export function registerProxyRoutes(app) {
-  // List all proxies
+  // Get Domain Data
+  app.get("/api/domains/:domain", async ({ params }, reply) => {
+    try {
+      const domainData = await domains.findOne({ domain: params.domain });
+      return domainData
+    } catch (err) {
+      return new Response(JSON.stringify({ success: false, Error: err.message }), { status: 500 });
+    }
+  })
+  // Dynamically change
+
+app.post("/api/manage-proxy", async (request, reply) => {
+  try {
+    const domain = (request.query ).domain;
+    if (!domain) return reply.status(400).send({ success: false, Error: "Missing ?domain query parameter" });
+
+    const body = request.body
+
+    // make sure proxied conforms to schema
+    const newProxy = {
+      domain: body.domain || "",
+      port: body.port || 80,
+      BlockCommonExploits: body.BlockCommonExploits ?? false,
+      WS: body.WS ?? false,
+      ip: body.ip || "",
+      slug: body.slug || "@",
+      SSL: body.SSL ?? false,
+      SSLInfo: {
+        localCert: body.SSLInfo?.localCert ?? false,
+        certPaths: {
+          PubKey: body.SSLInfo?.certPaths?.PubKey || "",
+          PrivKey: body.SSLInfo?.certPaths?.PrivKey || "",
+        },
+      },
+      seperateRules: body.seperateRules || [],
+      SeperateACL: body.SeperateACL || [],
+      SeperateBannedIP: body.SeperateBannedIP || [],
+      rateRules: body.rateRules || [],
+      violations: body.violations || [],
+    };
+
+    const updatedDoc = await domains.findOneAndUpdate(
+      { domain },
+      { $push: { proxied: newProxy } },
+      { new: true, upsert: true }
+    );
+
+    return new Response(
+      JSON.stringify(
+        {
+          message: "New proxied record added",
+          domain: updatedDoc,
+          success: true,
+        },
+        null,
+        2
+      ),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    return new Response(JSON.stringify({ success: false, Error: err.message }), { status: 500 });
+  }
+});
+
+
+  // Get all proxies
   app.get("/api/proxies", async (request, reply) => {
     reply.send(proxies);
   });
