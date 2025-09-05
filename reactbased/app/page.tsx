@@ -1,29 +1,14 @@
-import { CallToAction } from '@/components/CallToAction'
-import { Faqs } from '@/components/Faqs'
-import { Footer } from '@/components/Footer'
-import { Header } from '@/components/Header'
-import { Hero } from '@/components/Hero'
-import { Pricing } from '@/components/Pricing'
-import { PrimaryFeatures } from '@/components/PrimaryFeatures'
-import { SecondaryFeatures } from '@/components/SecondaryFeatures'
-import { Testimonials } from '@/components/Testimonials'
+"use client"
 
-export default function Home() {
+import Header from "@/components/homescreen/header"
+import HeroContent from "@/components/homescreen/hero-content"
+import ShaderBackground from "@/components/homescreen/shader-background"
+
+export default function ShaderShowcase() {
   return (
-    <>
-     <div className="dark:bg-white ">
+    <ShaderBackground>
       <Header />
-      <main>
-        <Hero />
-        <PrimaryFeatures />
-        <SecondaryFeatures />
-        <CallToAction />
-        <Testimonials />
-        <Pricing />
-        { /* <Faqs /> */ }
-      </main>
-      <Footer />
-      </div>
-    </>
+      <HeroContent />
+    </ShaderBackground>
   )
 }

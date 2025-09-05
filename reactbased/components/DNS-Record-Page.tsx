@@ -2,8 +2,6 @@
 
 import { AppSidebar } from "@/components/domain-sidebar";
 import { DataTable } from "@/components/dns-table";
-import SiteHeader from "@/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { CreateRecordSheet } from "@/components/DNS-Create-Record-Sheet";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,18 +18,6 @@ export default function DNSPageContent({
   const wwwRecords = data.filter((r) => r.subdomain === "www").length;
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader title={slug} />
-
         <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6 px-4 lg:px-6">
           
           {/* Info / Zone overview */}
@@ -93,7 +79,6 @@ export default function DNSPageContent({
             </CardContent>
           </Card>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+
   );
 }

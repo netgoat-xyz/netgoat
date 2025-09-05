@@ -3,9 +3,6 @@
 import React, { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AppSidebar } from "@/components/domain-sidebar";
-import SiteHeader from "@/components/site-header";
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import {
   Table,
   TableHeader,
@@ -125,15 +122,7 @@ export default function AnalyticsPage({
   const lineData = Array.from({ length: 10 }, (_, i) => ({ name: `Day ${i + 1}`, value: Math.floor(Math.random() * 100) }));
 
   return (
-    <SidebarProvider
-      style={{
-        "--sidebar-width": "calc(var(--spacing) * 72)",
-        "--header-height": "calc(var(--spacing) * 12)",
-      } as React.CSSProperties}
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader title={slug} />
+
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -172,7 +161,6 @@ export default function AnalyticsPage({
             </div>
           </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+
   );
 }

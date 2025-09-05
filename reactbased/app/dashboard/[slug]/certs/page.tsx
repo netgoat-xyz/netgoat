@@ -69,8 +69,9 @@ const statusColors = {
   expired: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
 
-export default function CertsPage() {
+export default function CertsPage({ params }: { params: { slug: string } }) {
   const [filter, setFilter] = useState("all");
+  const { slug } = params;
   const filteredCerts =
     filter === "all"
       ? mockCerts
@@ -79,16 +80,8 @@ export default function CertsPage() {
       : mockCerts.filter((c) => c.status === filter);
 
   return (
-    <SidebarProvider
-      style={{
-        "--sidebar-width": "calc(var(--spacing) * 72)",
-        "--header-height": "calc(var(--spacing) * 12)",
-      } as React.CSSProperties}
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader title="Certificates" />
-        <div className="flex flex-1 flex-col">
+
+          <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-6 p-6 md:p-10">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
@@ -195,7 +188,6 @@ export default function CertsPage() {
             </div>
           </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+
   );
 }
