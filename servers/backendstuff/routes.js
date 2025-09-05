@@ -9,31 +9,6 @@ export function registerRoutes(app) {
     return { message: "Welcome to the backend Server!" };
   });
 
-  // User API
-  app.get("/api/:id/:action?", async (request, reply) => {
-    const { id, action } = request.params;
-    if (!id) return reply.code(400).send({ error: "ID is required" });
-    const user = await User.findOne({ _id: id }).lean();
-    if (!user) return reply.code(404).send({ error: "User not found" });
-    const safe = {
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      domains: user.domains,
-      _id: user._id,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-    };
-    if (!action) return safe;
-    if (typeof user[action] === "function") {
-      return reply.code(400).send({ error: "Action not allowed" });
-    }
-    if (safe[action] === undefined) {
-      return reply.code(400).send({ error: "Invalid action" });
-    }
-    return { action: safe[action] };
-  });
-
   // Auth Register
   app.post("/api/auth/register", async (request, reply) => {
     const { username, password, email } = request.body;
@@ -55,6 +30,8 @@ export function registerRoutes(app) {
         console.error("Error creating user:", err);
         reply.code(500).send({ reply: "Internal server error", success: false });
       });
+              reply.code(201).send({ success: true, reply: "User created successfully" });
+
   });
 
   // Auth Login
@@ -96,7 +73,7 @@ export function registerRoutes(app) {
   if (process.env.NODE_ENV !== "production") {
   app.get("/cd", async (request, reply) => {
     try {
-      const user = await User.findOne();
+      const user = await User.findOne({ username: request.query?.username });
       if (!user) return reply.code(404).send({ error: "No user found" });
       const domainName = request.body?.domain || request.query?.domain || "testdomain.com";
       if (!domainName || typeof domainName !== "string") {
@@ -175,5 +152,30 @@ export function registerRoutes(app) {
         }, 3000);
       })();
     `;
+  });
+
+  
+  app.get("/api/:id/:action?", async (request, reply) => {
+    const { id, action } = request.params;
+    if (!id) return reply.code(400).send({ error: "ID is required" });
+    const user = await User.findOne({ _id: id }).lean();
+    if (!user) return reply.code(404).send({ error: "User not found" });
+    const safe = {
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      domains: user.domains,
+      _id: user._id,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+    if (!action) return safe;
+    if (typeof user[action] === "function") {
+      return reply.code(400).send({ error: "Action not allowed" });
+    }
+    if (safe[action] === undefined) {
+      return reply.code(400).send({ error: "Invalid action" });
+    }
+    return { action: safe[action] };
   });
 }

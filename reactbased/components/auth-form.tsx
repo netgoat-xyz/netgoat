@@ -9,13 +9,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { jwtDecode } from "jwt-decode";
 import { verifySession } from "@/lib/session";
+import { useRouter } from "next/navigation";
 
-export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
+export function AuthForm({
+  onSuccess,
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [direction, setDirection] = useState<1 | -1>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Only run in browser
   useEffect(() => {
     if (typeof window !== "undefined") {
       const jwtkey = localStorage.getItem("jwt");
@@ -50,23 +54,20 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
         password,
       });
       if (res.data.jwt) {
-        // Save JWT to localStorage
         localStorage.setItem("jwt", res.data.jwt);
-        // Optionally verify and decode session
+
         let session = localStorage.getItem("session");
         if (!session) {
-          fetch("/api/session?session=" + res.data.jwt)
+          await fetch("/api/session?session=" + res.data.jwt)
             .then((res) => res.json())
             .then((data) => {
-              console.log("Session:", data);
               localStorage.setItem("session", JSON.stringify(data));
             })
             .catch((err) => console.error("Session fetch failed", err));
         }
 
-        // Optionally: set user in context or state here
-        // window.location.reload();
-      } else if (res.data.requires2FA) {
+        onSuccess(); // always happens 
+       } else if (res.data.requires2FA) {
         setError("2FA required. Please complete 2FA flow.");
       } else {
         setError("Unknown login response.");

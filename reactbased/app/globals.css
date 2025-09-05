@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap');
 @import url('https://rsms.me/inter/inter.css');
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -12,6 +12,7 @@
   --font-inter: "InterVariable", sans-serif;
   --font-inter--font-feature-settings: "cv11";
   --font-inter-variation-settings: 'liga' 1, 'calt' 1;
+  --font-instrument: "Instrument Serif", serif;
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);

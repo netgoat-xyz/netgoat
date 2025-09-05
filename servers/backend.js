@@ -6,7 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { join } from "path";
 const app = Fastify();
 app.register(require('@fastify/cors'), { 
-  // put your options here
+  origin: true
 })
 
 app.register(fastifyStatic, {
