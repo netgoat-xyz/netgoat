@@ -12,7 +12,7 @@
     "@tailwindcss/typography": "^0.5.16",
     "@tensorflow/tfjs-node": "^4.22.0",
     "ascii-table": "^0.0.9",
-    "axios": "^1.10.0",
+    "axios": "^1.12.0",
     "body-parser": "^2.2.0",
     "bun": "^1.2.17",
     "cal-sans": "^1.0.1",
