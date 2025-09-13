@@ -1,9 +1,33 @@
+
 # NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
-## 💖 Thanks to cozy critters society and Snow for donating to us! They are our first donator and will always stay special in our hearts (Check out his nonprofit at @https://opencollective.com/cozy-critters-society)
+## 💖 Special Thanks
 
-**NetGoat** is a blazing-fast, self-hostable reverse proxy and traffic manager built for developers, homelabbers, and teams who want a **Cloudflare-like** experience without the costs.  
-It supports **zero trust networking**, **DDoS protection**, **SSL termination**, **rate limiting**, **WebSocket support**, and is powered by modern tools like **Bun**, **Next.js**, **Fastify**, and **TailwindCSS**.
+A huge thank you to **Cozy Critters Society** and **Snow** for being our first donors! Their support means the world to us. Check out their nonprofit here: [Cozy Critters Society](https://opencollective.com/cozy-critters-society).
+
+> *“The team at Cozy Critters Society is happy to support the development of NetGoat in hopes that we can help them succeed in making their self-hostable Cloudflare alternative.”*
+
+---
+
+**NetGoat** is a **blazing-fast, self-hostable reverse proxy and traffic manager** designed for developers, homelabbers, and teams who want **Cloudflare-like features** without the cost.
+
+Key Features:
+
+* **Zero Trust Networking** – secure your services without hassle.
+* **DDoS Protection** – keep your traffic safe from attacks.
+* **SSL Termination** – handle certificates automatically.
+* **Rate Limiting** – control traffic and prevent abuse.
+* **WebSocket Support** – real-time apps? No problem.
+
+Built with **modern tools** for maximum performance and developer experience:
+
+* **Bun** for super-fast runtime.
+* **Next.js** for robust front-end.
+* **Fastify** for high-performance backend.
+* **TailwindCSS** for sleek, responsive UI.
+
+**NetGoat** gives you full control over your traffic, security, and performance—**all self-hosted**.
+
 
 
  ![CSS3](https://img.shields.io/badge/css3-%231572B6.svg?style=for-the-badge&logo=css3&logoColor=white) ![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white) ![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=for-the-badge&logo=javascript&logoColor=%23F7DF1E) ![Markdown](https://img.shields.io/badge/markdown-%23000000.svg?style=for-the-badge&logo=markdown&logoColor=white) ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white) ![Shell Script](https://img.shields.io/badge/shell_script-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white) ![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=Cloudflare&logoColor=white)  ![Express.js](https://img.shields.io/badge/express.js-%23404d59.svg?style=for-the-badge&logo=express&logoColor=%2361DAFB) ![NodeJS](https://img.shields.io/badge/node.js-6DA55F?style=for-the-badge&logo=node.js&logoColor=white) ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white) ![NPM](https://img.shields.io/badge/NPM-%23000000.svg?style=for-the-badge&logo=npm&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)![Webpack](https://img.shields.io/badge/webpack-%238DD6F9.svg?style=for-the-badge&logo=webpack&logoColor=black)  ![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?style=for-the-badge&logo=mongodb&logoColor=white)
