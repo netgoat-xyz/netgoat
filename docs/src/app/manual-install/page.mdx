@@ -17,115 +17,154 @@ Before you can start using Netgoat CE (Community Edition), you will need to sele
 After picking your mode, you can install Netgoat CE (Community Edition) or BE (Business Edition) using the following methods:
 - **Docker**: If you prefer containerization, you can run Netgoat using Docker. This is the recommended way to run Netgoat.
 - **Install Script**: You can use the provided install script to set up Netgoat on your system. This is a straightforward method that automates the installation process.
+- **Manual Install**: You can follow the manual installation guide to set up Netgoat on your system. This method gives you more control over the installation process and allows for customization.
 
 <div className="not-prose">
-  <Button href="/manual-install" variant="text" arrow="right">
-    <>Read the docs for Manual Installation</>
+  <Button href="/quickstart" variant="text" arrow="right">
+    <>Read the docs for Docker Installation</>
   </Button>
 </div>
 
+## Manual Install
+To run Netgoat Via Manual Install, you need to following pre-requisites:
+- Git installed on your system.
+- Bun installed on your system.
+- Nano, Vim, or any other editors installed on your system.
+- Ports 80, 443, 1933, 3000, 3010, 2222 open on your firewall and avaliable on the IP you plan to run the services on.
+- Instances of LogDB and CentralMonServer, MongoDB (you'd only need 1 of these for several netgoat instances)
 
+## Installing pre-requisites (Linux)
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install git curl unzip nano -y
+curl -fsSL https://bun.sh/install | bash
 
+export PATH="$HOME/.bun/bin:$PATH"
+source ~/.bashrc
+
+bun i -g pm2 # This is required to keep it alive and not use systemctl but you can use systemctl if you want
+```
+
+## Installing pre-requisites (Windows)
+```powershell
+powershell -c "irm bun.sh/install.ps1|iex" # You gotta frick around for windows 
+bun i -g pm2 # This is required to keep it alive and not use systemctl but you can use systemctl if you want
+```
 
 <Note>
-  Docker images are not avaliable yet!
+  So... in the future we're deprecating the monolith repo and spliting it Into several repos for each service. So you'll have to pull each repo for each service and set it up manually. This is a WIP and will be done in the future.
 </Note>
 
-### Docker
-To run Netgoat using Docker, you need to following pre-requisites:
-- Docker installed on your system.
-- Docker Compose installed on your system.
-- Ports 80, 443, 1933, 3000, 3010, 2222 open on your firewall and avaliable on the IP you plan to run the services on.
-- Instances of LogDB and CentralMonServer, MongoDB
 
-Run CentralMonServer first with docker via 
+## Pulling the repo
 ```bash
-docker volume create centralmonitoring_data
-docker run -d 
-  --name centralmonitoringservice 
-  -p 1933:1933 
-  -v centralmonitoring_data:/app/data 
-  -e NODE_ENV=production
-  -e MANAGEMENT_USERNAME="admin"
-  -e MANAGEMENT_PASSWORD="your_password_here"
-  -e MONGODB_URI="mongodb://" 
-  -e SHARED_JWT_SECRET="your_shared_jwt_secret_here" 
-  -e DYNAMIC_SECRET_KEY_JWT_SECRET="your_dynamic_secret_here" 
-  -e PORT=1933 
-  cloudable-dev/centralmonitoringservice:latest
+git clone https://github.com/cloudable-dev/NetGoat.git
+cd NetGoat
 ```
 
-Then run LogDB with docker via 
+## Installing Dependencies
 ```bash
-docker volume create logdb_data
-docker run -d 
-  --name logdb 
-  -p 3010:3010 
-  -v logdb_data:/app/database/DomainLogs 
-  cloudable-dev/logdb:latest
+bun install
+
+cd LogDB
+bun install
+cd ..
+
+cd CentralMonServer
+bun install
+cd ..
+
+cd reactbased
+bun install
+cd ..
 ```
 
-After you've confirmed those two services are running, you can run Netgoat CE with docker
+## Setting up environment variables
+We'll rename the .env.example files to .env and edit them to match your setup.
 ```bash
- docker run -d 
-  --name netgoat 
-  -p 80:80 
-  -p 443:443 
-  -p 3333:3333 
-  -e NODE_ENV=production 
-  -e NODE_ID="DO_NOT_USE" 
-  -e SHARD_MANAGER_URL="DO_NOT_USE" 
-  -e JWT_SECRET="DO_NOT_USE" 
-  -e REGISTER_KEY="DO_NOT_USE" 
-  -e regionID="MM1" 
-  -e mongodb="mongodb://localhost/netgoat" 
-  -e NS="" 
-  -e host="" 
-  -e Central_server="http://localhost:1933" 
-  -e Central_JWT="" 
-  -e SHARED_JWT_SECRET="your_shared_jwt_secret_with_CentralMonitoringService" 
-  cloudable-dev/netgoat:latest
+cp .env.example .env
+cp ./LogDB/.env.example ./LogDB/.env
+cp ./CentralMonServer/.env.example ./CentralMonServer/.env
+cp ./reactbased/.env.example ./reactbased/.env
+
+# Now its time to edit the frontend's API URLs
+# Make sure to replace `NEW_BACKEND_URL` and `NEW_LOGDB_URL` with the actual URLs or IP addresses where your backend API and LogDB services will be hosted.
+sed -i 's|https://backendapi\.netgoat\.xyz|NEW_BACKEND_URL|' ./reactbased/next.config.js
+sed -i 's|https://logdb\.netgoat\.xyz|NEW_LOGDB_URL|' ./reactbased/next.config.js
 ```
 
-Time to start up the NextJS Frontend
+We will now be filling the .env files! You will need
+* MongoDB connection string (MongoDB Atlas is recommended)
+
+Now just fill it in! Everything should be self-explanatory.
+
+## Compiling
+Compile the React Frontend
+<Note>
+  You only need to do this step if you're running in production mode. If you're running in development mode, you can skip this step and run `bun run dev` instead of `bun run start` when starting the React Frontend.
+</Note>
 ```bash
-docker run -d \
-  --name netgoat-frontend \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  cloudable-dev/netgoat-frontend:latest
+cd reactbased
+bun run build
+cd ..
 ```
 
-After that you have some more setup to do... if you want NS Mode you need two or more Netgoat CE instances but only 1 of centralmonitoring service and logdb. If you want to run in Reverse Proxy mode you can just run one instance of Netgoat CE and CentralMonitoringService and LogDB. 
+## Running the systems
+### Running Services with PM2 (Bun)
+PM2 can run Bun scripts just like Node.js. This setup will keep your services alive automatically.
+1. Install PM2 globally
 ```bash
-# SSH Into CentralMonitoringService's management console at port 2222
-ssh -p 2222 admin@localhost
-# Enter the password you set in the docker run command for CentralMonitoringService (MANAGEMENT_PASSWORD)
-# After successfully logging in, you can run the following commands to set up your Netgoat CE instance
-
-devicelist 
-# +------------------+--------------------------------------+--------------+----------------+
-# | device name      | device_key                           | IP           | operation mode |
-# +------------------+--------------------------------------+--------------+----------------+
-# | NetGoat_CE_1234  | 550e8400-e29b-41d4-a716-446655440000 | 192.168.0.1  | Standalone     |
-# | NetGoat_CE_5678  | 9f8c2b5e-6d5a-4c9a-8d4b-3a2f1d7e8c9b | 192.168.0.2  | Standalone     |
-# +------------------+--------------------------------------+--------------+----------------+
-
-device op_mode NetGoat_CE_1234 NS1.cloudable.dev HA_1
-device op_mode NetGoat_CE_5678 NS2.cloudable.dev HA_1 
-#                   ^ Device Name    ^ Group      ^ Node Name In Group
-# In my case its gonna be round robin cname NS
-# NS1.cloudable.dev will have for example 5 netgoate CE instances behind it
-# Each instance will have its own device key and IP address
-# They will be identified in their group via eg, HA_1, HA_2, HA_3, etc.
-# They can be any name you want, group name too, it can be anything you want
-
-# So it would be like this
-# A ns1.cloudable.dev server_1.homelab.com
-# A ns1.cloudable.dev server_2.homelab.com
-# A ns1.cloudable.dev server_3.homelab.com
-# A ns1.cloudable.dev server_4.homelab.com
-# A ns1.cloudable.dev server_5.homelab.com
+bun i -g pm2
 ```
 
-After thats all done, you can access the Netgoat CE web interface by navigating to `http://localhost:3000` in your web browser.
+2. Start all services
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 status
+```
+
+### Running Services with systemd (Linux)
+1. Create a service file for each service
+
+Example for LogDB: create `/etc/systemd/system/logdb.service`:
+```ini
+[Unit]
+Description=LogDB Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/NetGoat/LogDB
+ExecStart=/home/YOUR_USER/.bun/bin/bun . # For reactbased replace bun . with bun run start after building
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Repeat for `CentralMonServer` and `ReactFrontend` (update WorkingDirectory and ExecStart).
+
+2. Reload systemd and enable services
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable logdb
+sudo systemctl enable centralmonserver
+sudo systemctl enable reactfrontend
+
+sudo systemctl start logdb
+sudo systemctl start centralmonserver
+sudo systemctl start reactfrontend
+sudo systemctl status logdb
+```
+
+Notes:
+
+* `bun run start` assumes you have a start script defined in each service's package.json.
+* For Next.js frontend, use `next dev` for development or `next start` for production.
+* PM2 is easier for development; systemd is better for production servers.
+* You can combine them: use PM2 to manage processes, then generate systemd units with `pm2 startup`.
+
+After that's all done, you can access the Netgoat CE web interface by navigating to `http://localhost:3000` in your web browser.
