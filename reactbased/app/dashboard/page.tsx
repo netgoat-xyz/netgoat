@@ -51,10 +51,16 @@ export default function Page() {
       setError("Session missing user ID. Please log in again.");
       return;
     }
-    axios.get(`${process.env.backendapi}/api/${id}`)
+    axios
+      .get(`${process.env.backendapi}/api/${id}`, {
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("jwt")}`,
+        },
+      })
       .then((res) => {
         setData(res.data || null);
-        localStorage.setItem("userFD", res.data)
+        localStorage.setItem("userFD", res.data);
         setLoaded(true);
         setError(null);
       })
@@ -68,10 +74,22 @@ export default function Page() {
   // Interactive loading/error overlay (hidden after loaded)
   const LoadingOverlay = (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in pointer-events-auto transition-opacity duration-500 ${loaded ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
-      style={{ visibility: loaded ? 'hidden' : 'visible' }}
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in pointer-events-auto transition-opacity duration-500 ${
+        loaded ? "opacity-0 pointer-events-none" : "opacity-100"
+      }`}
+      style={{ visibility: loaded ? "hidden" : "visible" }}
     >
-      <svg className="animate-spin mb-6" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        className="animate-spin mb-6"
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <circle cx="12" cy="12" r="10" strokeOpacity="0.2" />
         <path d="M12 2a10 10 0 0 1 10 10" />
       </svg>
@@ -95,30 +113,36 @@ export default function Page() {
 
   return (
     <>
-          <div className="flex flex-1 flex-col">
-            <div className="@container/main flex flex-1 flex-col gap-2">
-              <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-                <div className="px-4 lg:px-6">
-                  {/* Show error message if loaded but no data */}
-                  {loaded && !error && (!data || !data.domains || data.domains.length === 0) ? (
-                    <div className="text-center text-muted-foreground py-8 text-lg">
-                      No domains found. Add a domain to get started.
-                    </div>
-                  ) : null}
-                  {/* Show table if data exists */}
-                  {loaded && !error && data && data.domains && data.domains.length > 0 ? (
-                    <DataTable data={data.domains} />
-                  ) : null}
-                  {/* Show error message if loaded and error */}
-                  {loaded && error ? (
-                    <div className="text-center text-destructive py-8 text-lg">
-                      {error}
-                    </div>
-                  ) : null}
+      <div className="flex flex-1 flex-col">
+        <div className="@container/main flex flex-1 flex-col gap-2">
+          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+            <div className="px-4 lg:px-6">
+              {/* Show error message if loaded but no data */}
+              {loaded &&
+              !error &&
+              (!data || !data.domains || data.domains.length === 0) ? (
+                <div className="text-center text-muted-foreground py-8 text-lg">
+                  No domains found. Add a domain to get started.
                 </div>
-              </div>
+              ) : null}
+              {/* Show table if data exists */}
+              {loaded &&
+              !error &&
+              data &&
+              data.domains &&
+              data.domains.length > 0 ? (
+                <DataTable data={data.domains} />
+              ) : null}
+              {/* Show error message if loaded and error */}
+              {loaded && error ? (
+                <div className="text-center text-destructive py-8 text-lg">
+                  {error}
+                </div>
+              ) : null}
             </div>
           </div>
+        </div>
+      </div>
       {LoadingOverlay}
     </>
   );

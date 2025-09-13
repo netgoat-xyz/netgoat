@@ -5,8 +5,10 @@ import { registerProxyRoutes } from "./backendstuff/proxyRoutes.js";
 import fastifyStatic from "@fastify/static";
 import { join } from "path";
 const app = Fastify();
+
 app.register(require('@fastify/cors'), { 
-  origin: true
+  origin: true,
+  credentials: true
 })
 
 app.register(fastifyStatic, {

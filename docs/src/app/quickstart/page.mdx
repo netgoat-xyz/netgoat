@@ -17,14 +17,13 @@ Before you can start using Netgoat CE (Community Edition), you will need to sele
 After picking your mode, you can install Netgoat CE (Community Edition) or BE (Business Edition) using the following methods:
 - **Docker**: If you prefer containerization, you can run Netgoat using Docker. This is the recommended way to run Netgoat.
 - **Install Script**: You can use the provided install script to set up Netgoat on your system. This is a straightforward method that automates the installation process.
+- **Manual Install**: You can follow the manual installation guide to set up Netgoat on your system. This method gives you more control over the installation process and allows for customization.
 
 <div className="not-prose">
   <Button href="/manual-install" variant="text" arrow="right">
     <>Read the docs for Manual Installation</>
   </Button>
 </div>
-
-
 
 
 <Note>
@@ -36,7 +35,7 @@ To run Netgoat using Docker, you need to following pre-requisites:
 - Docker installed on your system.
 - Docker Compose installed on your system.
 - Ports 80, 443, 1933, 3000, 3010, 2222 open on your firewall and avaliable on the IP you plan to run the services on.
-- Instances of LogDB and CentralMonServer, MongoDB
+- Instances of LogDB and CentralMonServer, MongoDB (you'd only need 1 of these for several netgoat instances)
 
 Run CentralMonServer first with docker via 
 ```bash

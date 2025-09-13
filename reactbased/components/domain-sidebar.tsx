@@ -1,7 +1,7 @@
-"use client"
-import { useParams } from 'next/navigation';
+"use client";
+import { useParams } from "next/navigation";
 
-import * as React from "react"
+import * as React from "react";
 import {
   IconChartBar,
   IconDashboard,
@@ -11,8 +11,7 @@ import {
   IconShieldBolt,
   IconTicket,
   IconServer,
-} from "@tabler/icons-react"
-
+} from "@tabler/icons-react";
 
 import {
   AudioWaveform,
@@ -25,16 +24,16 @@ import {
   PieChart,
   Settings2,
   SquareTerminal,
-} from "lucide-react"
+} from "lucide-react";
 
-import { usePathname } from "next/navigation"
+import { usePathname } from "next/navigation";
 
-import { NavDocuments } from "@/components/nav-documents"
-import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
-import { NavUser } from "@/components/nav-user"
-import { TeamSwitcher } from "@/components/team-switcher"
-import { useRouter } from "next/navigation"
+import { NavDocuments } from "@/components/nav-documents";
+import { NavMain } from "@/components/nav-main";
+import { NavSecondary } from "@/components/nav-secondary";
+import { NavUser } from "@/components/nav-user";
+import { TeamSwitcher } from "@/components/team-switcher";
+import { useRouter } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
@@ -43,41 +42,40 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
-import { title } from 'process';
-import axios from 'axios';
-import { useEffect, useState } from 'react';
-
+} from "@/components/ui/sidebar";
+import { title } from "process";
+import axios from "axios";
+import { useEffect, useState } from "react";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
   const params = useParams();
   // Get current domain slug from URL
   const currentDomain = params?.slug || ""; // adjust if your route uses something else
-  
+
   type Domain = {
-  group: string;
-  name: string;
-  status: "active" | "inactive" | "pending";
-  lastSeen: string;
-};
+    group: string;
+    name: string;
+    status: "active" | "inactive" | "pending";
+    lastSeen: string;
+  };
 
-type Role = "user" | "admin";
+  type Role = "user" | "admin";
 
-type Data = {
-  username: string;
-  email: string;
-  role: Role[]; // array of roles
-  domains: Domain[];
-  _id: string;
-  createdAt: string; // or Date if you're parsing it
-  updatedAt: string; // or Date if you're parsing it
-};
+  type Data = {
+    username: string;
+    email: string;
+    role: Role[]; // array of roles
+    domains: Domain[];
+    _id: string;
+    createdAt: string; // or Date if you're parsing it
+    updatedAt: string; // or Date if you're parsing it
+  };
 
-    const [datas, setDatas] = useState<Data | null>(null);
-    const [loaded, setLoaded] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-  
+  const [datas, setDatas] = useState<Data | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     const sessionStr = localStorage.getItem("session");
     if (!sessionStr) {
@@ -103,7 +101,11 @@ type Data = {
     }
 
     axios
-      .get(`${process.env.backendapi}/api/${id}`)
+      .get(`${process.env.backendapi}/api/${id}`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("jwt")}`,
+        },
+      })
       .then((res) => {
         setDatas(res.data || null);
         localStorage.setItem("userFD", JSON.stringify(res.data));
@@ -135,9 +137,13 @@ type Data = {
       const mapped = domains.map((d) => ({
         name: d.name,
         logo: `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${d.name}&size=128`,
-        plan: d.status ? d.status.charAt(0).toUpperCase() + d.status.slice(1) : "Active",
+        plan: d.status
+          ? d.status.charAt(0).toUpperCase() + d.status.slice(1)
+          : "Active",
       }));
-      const idx = mapped.findIndex((t) => t.name.toLowerCase() === String(currentDomain).toLowerCase());
+      const idx = mapped.findIndex(
+        (t) => t.name.toLowerCase() === String(currentDomain).toLowerCase()
+      );
       if (idx > 0) {
         // Move current domain to the front
         const [current] = mapped.splice(idx, 1);
@@ -149,7 +155,11 @@ type Data = {
   }
 
   // Use slug (currentDomain) to find the current domain for preview
-  const currentTeam = teams.find((t) => t.name && t.name.toLowerCase() === String(currentDomain).toLowerCase()) || teams[0];
+  const currentTeam =
+    teams.find(
+      (t) =>
+        t.name && t.name.toLowerCase() === String(currentDomain).toLowerCase()
+    ) || teams[0];
 
   const data = {
     user: {
@@ -176,7 +186,7 @@ type Data = {
       {
         title: "Certs",
         url: `/dashboard/${currentDomain}/certs`,
-        icon: IconTicket
+        icon: IconTicket,
       },
       {
         title: "Analytics",
@@ -197,11 +207,11 @@ type Data = {
         title: "Error Tracking",
         url: `/dashboard/${currentDomain}/errors`,
         icon: IconReport,
-      }
+      },
     ],
   };
 
-    const router = useRouter();
+  const router = useRouter();
 
   // Only render sidebar if loaded (prevents empty TeamSwitcher)
   if (!loaded) {

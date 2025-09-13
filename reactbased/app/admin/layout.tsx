@@ -2,7 +2,6 @@
 import { Metadata } from "next";
 import { ReactNode } from "react";
 import DashboardClientWrapper from "./layoutClient"; // your "use client" wrapper
-import { Toaster } from "@/components/ui/sonner";
 
 interface LayoutProps {
   children: ReactNode;
@@ -10,9 +9,7 @@ interface LayoutProps {
 }
 
 // Server Component
-export async function generateMetadata({
-  params,
-}: LayoutProps): Promise<Metadata> {
+export async function generateMetadata({ params }: LayoutProps): Promise<Metadata> {
   const slug = params?.slug ?? "Dashboard";
 
   // extract the last segment of the path for "section"
@@ -27,10 +24,9 @@ export async function generateMetadata({
   };
 }
 
+
 export default function DashboardLayout({ children, params }: LayoutProps) {
   return (
-    <DashboardClientWrapper params={params}>
-      {children} <Toaster />
-    </DashboardClientWrapper>
+    <DashboardClientWrapper params={params}>{children}</DashboardClientWrapper>
   );
 }

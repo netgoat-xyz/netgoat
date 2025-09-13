@@ -11,11 +11,15 @@ import { jwtDecode } from "jwt-decode";
 import { verifySession } from "@/lib/session";
 import { useRouter } from "next/navigation";
 
+interface AuthFormProps extends React.ComponentProps<"div"> {
+  onSuccess: () => void;
+}
+
 export function AuthForm({
   onSuccess,
   className,
   ...props
-}: React.ComponentProps<"div">) {
+}: AuthFormProps) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [direction, setDirection] = useState<1 | -1>(1);
   const [loading, setLoading] = useState(false);
@@ -58,16 +62,23 @@ export function AuthForm({
 
         let session = localStorage.getItem("session");
         if (!session) {
-          await fetch("/api/session?session=" + res.data.jwt)
-            .then((res) => res.json())
-            .then((data) => {
-              localStorage.setItem("session", JSON.stringify(data));
-            })
-            .catch((err) => console.error("Session fetch failed", err));
+          try {
+            const ress = await fetch("/api/session", {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${res.data.jwt}`,
+              },
+            });
+            const data = await ress.json();
+            localStorage.setItem("session", JSON.stringify(data));
+          } catch (err) {
+            console.error("Session fetch failed", err);
+          }
         }
 
-        onSuccess(); // always happens 
-       } else if (res.data.requires2FA) {
+        onSuccess(); // always happens
+      } else if (res.data.requires2FA) {
         setError("2FA required. Please complete 2FA flow.");
       } else {
         setError("Unknown login response.");

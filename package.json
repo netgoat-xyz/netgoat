@@ -43,6 +43,7 @@
     "mongoose": "^8.15.2",
     "native-dns": "^0.7.0",
     "path-to-regexp": "^8.2.0",
+    "pm2": "^6.0.10",
     "react-apexcharts": "^1.7.0",
     "react-simple-code-editor": "^0.14.1",
     "react-syntax-highlighter": "^15.6.1",

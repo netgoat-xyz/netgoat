@@ -4,7 +4,6 @@ import clsx from 'clsx'
 import { Feedback } from '@/components/Feedback'
 import { Heading } from '@/components/Heading'
 import { Prose } from '@/components/Prose'
-import { Table } from '@/components/table'
 
 export const a = Link
 export { Button } from '@/components/Button'
