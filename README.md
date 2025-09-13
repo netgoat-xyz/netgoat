@@ -1,6 +1,6 @@
 # NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
-## Thanks to cozy critters society and Snow for donating to us! They are our first donator and will always stay special in our hearts (Check out his nonprofit at @https://opencollective.com/cozy-critters-society)
+## 💖 Thanks to cozy critters society and Snow for donating to us! They are our first donator and will always stay special in our hearts (Check out his nonprofit at @https://opencollective.com/cozy-critters-society)
 
 **NetGoat** is a blazing-fast, self-hostable reverse proxy and traffic manager built for developers, homelabbers, and teams who want a **Cloudflare-like** experience without the costs.  
 It supports **zero trust networking**, **DDoS protection**, **SSL termination**, **rate limiting**, **WebSocket support**, and is powered by modern tools like **Bun**, **Next.js**, **Fastify**, and **TailwindCSS**.
