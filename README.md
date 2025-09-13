@@ -77,6 +77,37 @@ We recommend [datalix](https://datalix.eu/a/netgoat) for cheap and highly avalia
 
 https://docs.netgoat.xyz (not published yet)
 
+## Running Services with systemd (Linux)
+
+Prefer systemd over PM2? You can automate unit creation with the included script.
+
+Automated one-liner (installs units for core, LogDB, CTM and Frontend):
+
+Note: requires Bun installed and root privileges.
+
+curl -fsSL https://raw.githubusercontent.com/cloudable-dev/NetGoat/main/scripts/install-systemd.sh | sudo bash -s -- --root-dir /opt/netgoat
+
+Or run locally from the repo:
+
+sudo bash scripts/install-systemd.sh --root-dir "$(pwd)" --build-frontend
+
+Useful flags:
+- --user <user> / --group <group>: system user/group to run services (default: netgoat)
+- --no-netgoat, --no-logdb, --no-ctm, --no-frontend: skip specific services
+- --include-docs: also install the docs site service from ./docs
+- --dev-frontend / --dev-docs: run Next.js in dev mode instead of prod
+- --build-frontend / --build-docs: run bun run build before creating units
+- --no-start: write units but do not enable/start them
+
+Services created:
+- netgoat.service (root)
+- netgoat-logdb.service (./LogDB)
+- netgoat-ctm.service (./CentralMonServer)
+- netgoat-frontend.service (./reactbased)
+- netgoat-docs.service (./docs, optional)
+
+Ports to allow (typical): 80, 443, 1933, 3000, 3010, 2222.
+
 ## Open Source Projects That Helped me Build
 * [Bun](https://bun.sh) - [Github](https://github.com/oven-sh/bun) - MIT License
 

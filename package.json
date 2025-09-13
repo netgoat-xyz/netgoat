@@ -54,7 +54,8 @@
   "module": "index.js",
   "version": "1.0.0",
   "scripts": {
-    "build:css": "npx @tailwindcss/cli -i assets/css/globals.css -o assets/css/tailwind.css --watch"
+    "build:css": "npx @tailwindcss/cli -i assets/css/globals.css -o assets/css/tailwind.css --watch",
+    "stack": "bun scripts/stack.ts"
   },
   "type": "module",
   "private": true,
