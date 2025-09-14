@@ -1,5 +1,6 @@
 "use client";
 
+<<<<<<< HEAD
 import React, { useState, useMemo } from "react";
 import { CalculatorIcon, ChevronDownIcon } from "lucide-react"
 
@@ -14,6 +15,11 @@ import {
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+=======
+import React, { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+>>>>>>> 1e26c937094b9bb52e60e9b85f0514df46ed7c2d
 import {
   Table,
   TableHeader,
@@ -73,6 +79,7 @@ export default function AnalyticsReplica() {
   );
 
   return (
+<<<<<<< HEAD
     <div className="flex flex-1 flex-col space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -150,6 +157,22 @@ export default function AnalyticsReplica() {
                   <div className="bg-green-800/30 font-bold text-green-500 px-3 py-2 rounded-lg text-xs">
                     +1.6K%
                   </div>
+=======
+
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h1 className="text-3xl font-bold text-white">Analytics</h1>
+                  <Tabs defaultValue={timeframe} onValueChange={setTimeframe}>
+                    <TabsList>
+                      <TabsTrigger value="24h">24H</TabsTrigger>
+                      <TabsTrigger value="7d">7D</TabsTrigger>
+                      <TabsTrigger value="30d">30D</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+>>>>>>> 1e26c937094b9bb52e60e9b85f0514df46ed7c2d
                 </div>
               </CardContent>
             </div>
@@ -178,6 +201,7 @@ export default function AnalyticsReplica() {
               </CardContent>
             </div>
           </div>
+<<<<<<< HEAD
         </CardContent>
         <ChartContainer
           config={{ Visitors: { color: "#3B82F6", label: "Visitors" } }} // Vercel blue-ish
@@ -409,5 +433,9 @@ export default function AnalyticsReplica() {
         </Card>
       </div>
     </div>
+=======
+        </div>
+
+>>>>>>> 1e26c937094b9bb52e60e9b85f0514df46ed7c2d
   );
 }
