@@ -7,8 +7,12 @@ import { join } from "path";
 const app = Fastify();
 
 app.register(require('@fastify/cors'), { 
+<<<<<<< HEAD
   origin: true,
   credentials: true
+=======
+  origin: true
+>>>>>>> 1e26c937094b9bb52e60e9b85f0514df46ed7c2d
 })
 
 app.register(fastifyStatic, {
