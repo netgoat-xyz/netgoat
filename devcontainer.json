@@ -1,0 +1,34 @@
+{
+  "name": "Fullstack Dev + DinD",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {},
+  "postCreateCommand": "./scripts/init-docker-in-docker.sh",
+  "runArgs": [
+    "--privileged"
+  ],
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Catppuccin.catppuccin-vsc",              // Catppuccin Theme
+        "Catppuccin.catppuccin-vsc-icons",        // Catppuccin Icons
+        "esbenp.prettier-vscode",                 // Prettier
+        "DigitalBrainstem.javascript-ejs-support",// EJS Syntax
+        "bradlc.vscode-tailwindcss"               // Tailwind IntelliSense
+      ],
+      "settings": {
+        "workbench.colorTheme": "Catppuccin Mocha",
+        "workbench.iconTheme": "catppuccin-mocha", 
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "tailwindCSS.includeLanguages": {
+          "plaintext": "html",
+          "ejs": "html"
+        }
+      }
+    }
+  },
+  "remoteUser": "root"
+}
