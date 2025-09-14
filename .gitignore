@@ -6,8 +6,8 @@ experimental
 feature-wips
 
 # Big Files
-# utils/ipinfo_lite.json
-utils/threatLists.js
+utils/ipinfo_lite.json
+# utils/threatLists.js
 
 # AI Features
 SomeCoolFeatureIMightImplement
