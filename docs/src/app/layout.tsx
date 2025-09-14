@@ -6,6 +6,7 @@ import { Layout } from '@/components/Layout'
 import '@/styles/tailwind.css'
 import { type Metadata } from 'next'
 import { type Section } from '@/components/SectionProvider'
+import { Analytics } from "@vercel/analytics/next"
 
 export const metadata: Metadata = {
   title: {
@@ -37,6 +38,7 @@ export default async function RootLayout({
           </div>
         </Providers>
       </body>
+      <Analytics />
     </html>
   )
 }

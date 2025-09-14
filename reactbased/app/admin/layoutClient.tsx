@@ -3,11 +3,9 @@
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
-import { AppSidebar } from "@/components/domain-sidebar";
-import SiteHeader from "@/components/site-header";
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import Link from "next/link"
 
-export default function DashboardClientWrapper({ children, params }: { children: React.ReactNode, params?: any }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const [ready, setReady] = useState(false)
@@ -30,37 +28,61 @@ export default function DashboardClientWrapper({ children, params }: { children:
   if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center text-muted-foreground">
-        Loading dashboard...
+        Loading admin...
       </div>
     )
   }
 
   return (
-    <SidebarProvider
-      style={{
-        "--sidebar-width": "calc(var(--spacing) * 72)",
-        "--header-height": "calc(var(--spacing) * 12)",
-      } as React.CSSProperties}
-      id="DashboardSidebarProvider"
-    >
-      <AppSidebar variant="inset" id="AppSidebar" />
-      <SidebarInset id="SidebarInset">
-        <SiteHeader title={params?.slug ?? "Dashboard"} id="SiteHeader" />
+    <div className="flex flex-col h-screen">
+      {/* topbar */}
+      <header className="flex h-14 items-center justify-between border-b px-6">
+        <div className="flex items-center gap-6">
+          <Link href="/admin" className="font-semibold">
+            Admin
+          </Link>
+          <nav className="flex gap-4 text-sm text-muted-foreground">
+            <Link
+              href="/admin/users"
+              className={pathname.startsWith("/admin/users") ? "text-foreground font-medium" : ""}
+            >
+              Users
+            </Link>
+            <Link
+              href="/admin/logs"
+              className={pathname.startsWith("/admin/logs") ? "text-foreground font-medium" : ""}
+            >
+              Logs
+            </Link>
+            <Link
+              href="/admin/settings"
+              className={pathname.startsWith("/admin/settings") ? "text-foreground font-medium" : ""}
+            >
+              Settings
+            </Link>
+          </nav>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="text-sm text-muted-foreground hover:text-foreground">Search</button>
+          <button className="text-sm text-muted-foreground hover:text-foreground">Profile</button>
+        </div>
+      </header>
 
-        {/* animated page slot */}
+      {/* animated content */}
+      <main className="flex-1 overflow-y-auto p-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={pathname}
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -24 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
             className="h-full w-full"
           >
             {children}
           </motion.div>
         </AnimatePresence>
-      </SidebarInset>
-    </SidebarProvider>
+      </main>
+    </div>
   )
 }

@@ -25,7 +25,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton"
-import { Toaster } from "@/components/ui/sonar";
 import { toast } from "sonner";
 
 export default function Page({ params }: { params: { slug: string } }) {

@@ -27,6 +27,6 @@ export async function generateMetadata({ params }: LayoutProps): Promise<Metadat
 
 export default function DashboardLayout({ children, params }: LayoutProps) {
   return (
-    <DashboardClientWrapper params={params}>{children}</DashboardClientWrapper>
+    <DashboardClientWrapper>{children}</DashboardClientWrapper>
   );
 }
