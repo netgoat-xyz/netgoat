@@ -47,6 +47,12 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --animate-gradient: gradient 8s linear infinite;
+  @keyframes gradient {
+  to {
+    background-position: var(--bg-size, 300%) 0;
+    }
+  }
 }
 
 :root {
@@ -178,4 +184,16 @@ html {
 .section-fade.bottom {
   bottom: -1px;
   background: linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0));
+}
+
+.gradiental {
+  background: #6b419c;
+  background-clip: text;
+-webkit-background-clip: text;
+color: transparent;
+
+background: -webkit-linear-gradient(90deg, rgba(107, 65, 156, 1) 0%, rgba(153, 79, 227, 1) 50%, rgba(98, 54, 168, 1) 100%);
+background: -moz-linear-gradient(90deg, rgba(107, 65, 156, 1) 0%, rgba(153, 79, 227, 1) 50%, rgba(98, 54, 168, 1) 100%);
+background: linear-gradient(90deg, rgba(107, 65, 156, 1) 0%, rgba(153, 79, 227, 1) 50%, rgba(98, 54, 168, 1) 100%);
+filter: progid:DXImageTransform.Microsoft.gradient(startColorstr="#6B419C", endColorstr="#6236A8", GradientType=1);
 }
