@@ -55,6 +55,7 @@ export function registerRoutes(app) {
         },
         process.env.JWT_SECRET
       );
+      console.log(jwttoken)
       const requires2FA =
         user.integrations &&
         user.integrations.twofa &&

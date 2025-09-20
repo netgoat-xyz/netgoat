@@ -72,6 +72,7 @@ const app = new Elysia()
   .use(html())
   .post("/auth", async ({ body, headers, set }) => {
     try {
+      console.log("Auth attempt from", headers['x-forwarded-for'] || headers.host || "unknown");
       const authHeader = headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) { set.status = 401; return { message: "Unauthorized" }; }
       jwt.verify(authHeader.split(" ")[1], SHARED_JWT_SECRET);
@@ -83,6 +84,7 @@ const app = new Elysia()
         sk = await SecretKeyModel.create({ instanceId, service, workerId: workerId || "default_worker", regionId, secretKey: crypto.randomUUID() });
       }
       const token = jwt.sign({ secretKey: sk.secretKey, instanceId }, DYNAMIC_SECRET_KEY_JWT_SECRET, { expiresIn: "1h" });
+      console.log("Generated token for", instanceId);
       return { token };
     } catch (e) { set.status = 401; return { message: "Unauthorized" }; }
   }, { body: t.Object({ service: t.String(), workerId: t.Optional(t.String()), regionId: t.String() }) })
@@ -492,4 +494,5 @@ const server = new Server({ hostKeys: [hostKey] }, (client) => {
   });
 });
 
+app.listen(1933)
 server.listen(2222, "0.0.0.0", () => serverLog("success", "Fake SSH shell listening on 2222"));

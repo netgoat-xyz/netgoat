@@ -113,7 +113,6 @@ export default function Page() {
 
   return (
     <>
-<<<<<<< HEAD
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -124,28 +123,6 @@ export default function Page() {
               (!data || !data.domains || data.domains.length === 0) ? (
                 <div className="text-center text-muted-foreground py-8 text-lg">
                   No domains found. Add a domain to get started.
-=======
-          <div className="flex flex-1 flex-col">
-            <div className="@container/main flex flex-1 flex-col gap-2">
-              <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-                <div className="px-4 lg:px-6">
-                  {/* Show error message if loaded but no data */}
-                  {loaded && !error && (!data || !data.domains || data.domains.length === 0) ? (
-                    <div className="text-center text-muted-foreground py-8 text-lg">
-                      No domains found. Add a domain to get started.
-                    </div>
-                  ) : null}
-                  {/* Show table if data exists */}
-                  {loaded && !error && data && data.domains && data.domains.length > 0 ? (
-                    <DataTable data={data.domains} />
-                  ) : null}
-                  {/* Show error message if loaded and error */}
-                  {loaded && error ? (
-                    <div className="text-center text-destructive py-8 text-lg">
-                      {error}
-                    </div>
-                  ) : null}
->>>>>>> 1e26c937094b9bb52e60e9b85f0514df46ed7c2d
                 </div>
               ) : null}
               {/* Show table if data exists */}
@@ -164,11 +141,8 @@ export default function Page() {
               ) : null}
             </div>
           </div>
-<<<<<<< HEAD
         </div>
       </div>
-=======
->>>>>>> 1e26c937094b9bb52e60e9b85f0514df46ed7c2d
       {LoadingOverlay}
     </>
   );
