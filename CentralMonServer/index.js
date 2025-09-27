@@ -2,6 +2,7 @@
    Combined Elysia + Mongo + Fake SSH with lots of features
 */
 import { Elysia, t } from "elysia";
+import https from "https";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import chalk from "chalk";
@@ -18,6 +19,8 @@ import path from "path";
 
 // --- Config ---
 const PORT = process.env.PORT || 1933;
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH || "/etc/ssl/private/server.key";
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH || "/etc/ssl/certs/server.crt";
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/stats_db";
 const SHARED_JWT_SECRET = process.env.SHARED_JWT_SECRET || "shared_secret";
 const DYNAMIC_SECRET_KEY_JWT_SECRET = process.env.DYNAMIC_SECRET_KEY_JWT_SECRET || "dynamic_secret";
@@ -109,7 +112,14 @@ const app = new Elysia()
     const reports = await StatReportModel.find(filter).sort({ receivedAt: -1 }).limit(Number(limit)).lean();
     return { reports };
   })
-  .listen(PORT, () => serverLog("success", `ElysiaJS running at http://localhost:${PORT}`));
+// Create HTTPS server
+const httpsOptions = {
+  key: fs.readFileSync(SSL_KEY_PATH),
+  cert: fs.readFileSync(SSL_CERT_PATH),
+};
+https.createServer(httpsOptions, app.handle).listen(PORT, () => {
+  serverLog("success", `ElysiaJS running at https://localhost:${PORT}");
+});
 
 // --- Fake shell infrastructure ---
 const username = "ducky";

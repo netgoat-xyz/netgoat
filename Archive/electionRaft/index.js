@@ -4,7 +4,7 @@ export function initRaft(
   nodeId = "node1",
   port = 3000,
   peers = [],
-  shardManagerUrl = "http://localhost:4000/move-shards"
+  shardManagerUrl = "https://localhost:4000/move-shards"
 ) {
   process.env.NODE_ID = nodeId;
   process.env.PORT = port;
