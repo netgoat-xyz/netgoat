@@ -13,6 +13,7 @@
     "@tensorflow/tfjs-node": "^4.22.0",
     "ascii-table": "^0.0.9",
     "axios": "^1.12.0",
+    "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.0",
     "bun": "^1.2.17",
     "cal-sans": "^1.0.1",
@@ -47,6 +48,7 @@
     "react-apexcharts": "^1.7.0",
     "react-simple-code-editor": "^0.14.1",
     "react-syntax-highlighter": "^15.6.1",
+    "speakeasy": "^2.0.0",
     "svg-captcha": "^1.4.0",
     "tailwindcss": "^4.1.8",
     "tldts": "^7.0.8"
