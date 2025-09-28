@@ -1,0 +1,7 @@
+{
+  "channel": "slack",
+  "slackWebhook": "",
+  "email": "",
+  "webhookUrl": "",
+  "restUrl": ""
+}

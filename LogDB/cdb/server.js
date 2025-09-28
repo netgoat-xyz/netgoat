@@ -10,6 +10,7 @@ const { registerODM } = require("./odm_service");
 const Auth = require("./auth");
 const bodyParser = require("body-parser");
 const odm = require("./odm_service")
+const Notifier = require("./notify");
 function createServer({ port = 3000 } = {}) {
   const app = express();
 
@@ -24,6 +25,8 @@ function createServer({ port = 3000 } = {}) {
   const auth = new Auth(rbac);
   const audit = new Audit();
   const vindex = new VectorIndex();
+  // Notification system uses notify.config.json for runtime settings
+  const notifier = new Notifier();
 
   const wssClients = new Set();
   const sseClients = new Set();
@@ -74,7 +77,9 @@ function createServer({ port = 3000 } = {}) {
   }
 
   // Helper to track denied attempts and log alert if threshold exceeded
-  function trackDenied(user, resource, action) {
+  // Alert rate limiting and escalation
+  const alertCounts = new Map();
+  async function trackDenied(user, resource, action) {
     if (!user) return;
     const now = Date.now();
     if (!deniedAttempts.has(user)) deniedAttempts.set(user, []);
@@ -83,6 +88,20 @@ function createServer({ port = 3000 } = {}) {
     const tenMinAgo = now - 10 * 60 * 1000;
     while (attempts.length && attempts[0] < tenMinAgo) attempts.shift();
     attempts.push(now);
+
+    // Track alert count for escalation
+    if (!alertCounts.has(user)) alertCounts.set(user, []);
+    const alerts = alertCounts.get(user);
+    while (alerts.length && alerts[0] < tenMinAgo) alerts.shift();
+    alerts.push(now);
+
+    let severity = 'warning';
+    let escalate = false;
+    if (alerts.length >= 10) {
+      severity = 'critical';
+      escalate = true;
+    }
+
     if (attempts.length >= 5) {
       audit.write({
         user,
@@ -90,10 +109,18 @@ function createServer({ port = 3000 } = {}) {
         resource,
         action,
         reason: "Repeated permission denials",
-        meta: { count: attempts.length, window: "10min", blocked: true }
+        meta: { count: attempts.length, window: "10min", blocked: true, severity }
       });
       // Block user for 15 minutes
       if (rbac.blockUser) rbac.blockUser(user, 15 * 60 * 1000);
+      // Send notification
+      await notifier.send({
+        channel: escalate ? 'pagerduty' : undefined,
+        subject: `User blocked: ${user}`,
+        message: `User ${user} was blocked for repeated permission denials on resource '${resource}' (action: '${action}').`,
+        meta: { userId: user, count: attempts.length, window: "10min", blocked: true, resource, action },
+        severity
+      });
       deniedAttempts.set(user, []);
     }
   }
