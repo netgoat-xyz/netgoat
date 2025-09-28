@@ -32,7 +32,10 @@ function createServer({ port = 3000 } = {}) {
     return (headers && (headers["x-user"] || headers["X-User"])) || "anonymous";
   }
 
-  function checkOp(op, req) {
+  // Map endpoints to resource/action for RBAC
+  // Track denied attempts per user
+  const deniedAttempts = new Map();
+  function checkOp(resource, action, req) {
     const authHeader =
       req.headers["authorization"] || req.headers["Authorization"];
     let user = getUserFromHeaders(req.headers);
@@ -40,14 +43,63 @@ function createServer({ port = 3000 } = {}) {
       const token = authHeader.slice(7);
       const v = auth.verify(token);
       if (v.ok) user = v.user;
-      else return { ok: false, user: null };
+      else {
+        audit.write({
+          user,
+          op: "auth.denied",
+          resource,
+          action,
+          reason: "invalid token",
+          meta: { headers: req.headers }
+        });
+        // Track denied
+        trackDenied(user, resource, action);
+        return { ok: false, user: null };
+      }
     }
-    if (!rbac.check(user, op)) return { ok: false, user };
+    if (!rbac.check(user, resource, action)) {
+      audit.write({
+        user,
+        op: "rbac.denied",
+        resource,
+        action,
+        reason: "permission denied",
+        meta: { headers: req.headers, body: req.body }
+      });
+      // Track denied
+      trackDenied(user, resource, action);
+      return { ok: false, user };
+    }
     return { ok: true, user };
   }
 
+  // Helper to track denied attempts and log alert if threshold exceeded
+  function trackDenied(user, resource, action) {
+    if (!user) return;
+    const now = Date.now();
+    if (!deniedAttempts.has(user)) deniedAttempts.set(user, []);
+    const attempts = deniedAttempts.get(user);
+    // Remove attempts older than 10 minutes
+    const tenMinAgo = now - 10 * 60 * 1000;
+    while (attempts.length && attempts[0] < tenMinAgo) attempts.shift();
+    attempts.push(now);
+    if (attempts.length >= 5) {
+      audit.write({
+        user,
+        op: "rbac.alert",
+        resource,
+        action,
+        reason: "Repeated permission denials",
+        meta: { count: attempts.length, window: "10min", blocked: true }
+      });
+      // Block user for 15 minutes
+      if (rbac.blockUser) rbac.blockUser(user, 15 * 60 * 1000);
+      deniedAttempts.set(user, []);
+    }
+  }
+
   app.post("/atomic", (req, res) => {
-    const chk = checkOp("insert", req);
+    const chk = checkOp("logs", "insert", req);
     if (!chk.ok) return res.status(403).json({ error: "forbidden" });
     const out = tm.runAtomic(req.body.steps);
     audit.write({
@@ -60,14 +112,14 @@ function createServer({ port = 3000 } = {}) {
   });
 
   app.get("/find/:store", (req, res) => {
-    const chk = checkOp("read", req);
+    const chk = checkOp("logs", "read", req);
     if (!chk.ok) return res.status(403).json({ error: "forbidden" });
     const store = tm.getStore(req.params.store);
     res.json(store.find(req.query || {}));
   });
 
   app.post("/vector/upsert", (req, res) => {
-    const chk = checkOp("insert", req);
+    const chk = checkOp("vector", "insert", req);
     if (!chk.ok) return res.status(403).json({ error: "forbidden" });
     const { id, vector } = req.body;
     if (!id || !Array.isArray(vector))
@@ -78,7 +130,7 @@ function createServer({ port = 3000 } = {}) {
   });
 
   app.post("/backup", (req, res) => {
-    const chk = checkOp("insert", req);
+    const chk = checkOp("backup", "insert", req);
     if (!chk.ok) return res.status(403).json({ error: "forbidden" });
     const folder = Backup.createBackup(req.body?.name);
     audit.write({ user: chk.user, op: "backup", folder });
@@ -86,10 +138,13 @@ function createServer({ port = 3000 } = {}) {
   });
 
   app.post("/users", (req, res) => {
-    const chk = checkOp("insert", req);
+    const chk = checkOp("user", "insert", req);
     if (!chk.ok) return res.status(403).json({ error: "forbidden" });
     try {
-      rbac.addUser(req.body.username, req.body.role);
+      if (!req.body.password) {
+        return res.status(400).json({ error: "Password required" });
+      }
+      rbac.addUser(req.body.username, req.body.role, req.body.password);
       audit.write({
         user: getUserFromHeaders(req.headers),
         op: "user.add",
@@ -103,7 +158,7 @@ function createServer({ port = 3000 } = {}) {
   });
 
   app.post("/vector/search", (req, res) => {
-    const chk = checkOp("read", req);
+    const chk = checkOp("vector", "read", req);
     if (!chk.ok) return res.status(403).json({ error: "forbidden" });
     if (!Array.isArray(req.body.vector))
       return res.status(400).json({ error: "vector required" });
@@ -112,8 +167,15 @@ function createServer({ port = 3000 } = {}) {
   });
 
   app.post("/login", (req, res) => {
-    const out = auth.login(req.body.username, req.body.password);
-    if (!out.ok) return res.status(401).json({ error: out.error });
+    const out = auth.login(req.body.username, req.body.password, req.body.mfaCode);
+    if (!out.ok) {
+      let errorMsg = out.error;
+      if (errorMsg === 'MFA code required') {
+        errorMsg += '. Please provide your MFA code.';
+      }
+      res.status(401).json({ error: errorMsg });
+      return;
+    }
     res.json({ token: out.token });
   });
 

@@ -1,3 +1,14 @@
+# Secure Deployment & HTTPS Enforcement
+
+All NetGoat services must be accessed via HTTPS. HTTP access to sensitive endpoints is strictly disallowed.
+
+See SECURE_DEPLOYMENT.md for setup instructions, including certificate management and reverse proxy configuration.
+
+Update your environment variables:
+- `SSL_KEY_PATH`: Path to your private key
+- `SSL_CERT_PATH`: Path to your certificate
+
+For local development, use self-signed certs or mkcert.
 <img width="5658" height="1600" alt="image" src="https://github.com/user-attachments/assets/d30fb971-4b39-490c-ac08-0d688e8f9ada" />
 
 # NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)

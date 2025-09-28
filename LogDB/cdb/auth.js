@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const speakeasy = require('speakeasy');
 const SECRET = process.env.DB_JWT_SECRET || 'dev-secret';
 
 class Auth {
@@ -19,7 +21,7 @@ class Auth {
     }
   }
 
-  login(username, password) {
+  login(username, password, mfaCode) {
     // For prototype: RBAC stores username->role or username->{role,password}
     const entry = this.rbac.users.get(username);
     if (!entry) return { ok: false, error: 'no such user' };
@@ -28,7 +30,19 @@ class Auth {
       if (username === 'admin') return { ok: true, token: this.generate(username) };
       return { ok: false, error: 'no password' };
     }
-    if (entry.password !== password) return { ok: false, error: 'invalid credentials' };
+    if (!entry.password) return { ok: false, error: 'no password set' };
+    if (!bcrypt.compareSync(password, entry.password)) {
+      return { ok: false, error: 'invalid credentials' };
+    }
+    if (entry.mfaSecret) {
+      if (!mfaCode) return { ok: false, error: 'MFA code required' };
+      const verified = speakeasy.totp.verify({
+        secret: entry.mfaSecret,
+        encoding: 'base32',
+        token: mfaCode
+      });
+      if (!verified) return { ok: false, error: 'Invalid MFA code' };
+    }
     return { ok: true, token: this.generate(username) };
   }
 }
