@@ -45,12 +45,10 @@ await mongoose
     DB_READY = true;
     serverLog("success", `Mongo connected ${MONGODB_URI}`);
   })
-  .catch((e) => {
-    serverLog("error", "mongo connect:", e.message);
-  });
+  .catch((e) => serverLog("error", "mongo connect:", e.message));
 
 const secretKeySchema = new mongoose.Schema({
-  instanceId: { type: String, unique: true },
+  instanceId: { type: String },
   service: String,
   workerId: { type: String, default: "default_worker" },
   regionId: String,
@@ -59,6 +57,7 @@ const secretKeySchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
+secretKeySchema.index({ instanceId: 1 }, { unique: true });
 const SecretKeyModel = mongoose.model("SecretKey", secretKeySchema);
 
 const statReportSchema = new mongoose.Schema({
@@ -124,7 +123,6 @@ async function ensureAdminFromEnv() {
     serverLog("success", "initial admin created");
   }
 }
-
 ensureAdminFromEnv().catch(() => {});
 
 async function backupAllCollections(tag = null) {
@@ -198,13 +196,17 @@ async function runSQLLike(q) {
 
 const app = new Elysia().use(html());
 
-app.use(
-  staticPlugin({
-    assets: "./dist", // path to your dist folder
-    prefix: "/", // serve at root or change to /admin
-    indexHTML: "index.html", // optional if you built one
-  })
-);
+
+app.get("/api/health", async () => {
+  await addHistory({
+    status: "health_ping",
+    responseTime: 0,
+    category: "main",
+    regionId: "sys",
+    service: "server",
+  });
+  return { status: "ok", uptime: process.uptime() };
+});
 
 app.post(
   "/admin/login",
@@ -249,10 +251,9 @@ app.post(
 function requireAdmin(req) {
   const h = req.headers.authorization;
   if (!h || !h.startsWith("Bearer ")) throw new Error("unauth");
-  const token = h.split(" ")[1];
   try {
-    return jwt.verify(token, ADMIN_JWT_SECRET);
-  } catch (e) {
+    return jwt.verify(h.split(" ")[1], ADMIN_JWT_SECRET);
+  } catch {
     throw new Error("unauth");
   }
 }
@@ -289,16 +290,24 @@ app.post(
         workerId && workerId !== "default_worker"
           ? `${service}_${regionId}_${workerId}`
           : `${service}_${regionId}`;
-      let sk = await SecretKeyModel.findOne({ instanceId });
-      if (!sk)
-        sk = await SecretKeyModel.create({
-          instanceId,
-          service,
-          workerId: workerId || "default_worker",
-          regionId,
-          category: cat,
-          secretKey: crypto.randomUUID(),
-        });
+
+      // **PERSISTENT KEY** – only create if not exists
+      let sk = await SecretKeyModel.findOneAndUpdate(
+        { instanceId },
+        {
+          $setOnInsert: {
+            instanceId,
+            service,
+            workerId: workerId || "default_worker",
+            regionId,
+            category: cat,
+            secretKey: crypto.randomUUID(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        },
+        { new: true, upsert: true }
+      );
 
       const token = genInstanceToken(instanceId, sk.secretKey);
       await addHistory({
@@ -308,7 +317,7 @@ app.post(
         regionId,
         service,
       });
-      return { token };
+      return { token, secretKey: sk.secretKey };
     } catch (e) {
       set.status = 401;
       await addHistory({
@@ -328,21 +337,6 @@ app.post(
     }),
   }
 );
-
-app.get("/", async () => {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Admin Panel</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="./AdminPanel.js"></script>
-</body>
-</html>
-`;
-});
 
 app.post(
   "/report-stats",
@@ -443,66 +437,6 @@ app.get("/api/history", async ({ query }) => {
     .lean();
   return { history };
 });
-
-app.post(
-  "/admin/backup",
-  async ({ body, headers, set }) => {
-    try {
-      requireAdmin({ headers });
-    } catch (e) {
-      set.status = 401;
-      return { error: "unauth" };
-    }
-    const { tag } = body || {};
-    const p = await backupAllCollections(tag);
-    return { path: p };
-  },
-  { body: t.Object({ tag: t.Optional(t.String()) }) }
-);
-
-app.post(
-  "/admin/rotate-key",
-  async ({ body, headers, set }) => {
-    try {
-      requireAdmin({ headers });
-    } catch (e) {
-      set.status = 401;
-      return { error: "unauth" };
-    }
-    const { instanceId } = body || {};
-    if (!instanceId) {
-      set.status = 400;
-      return { error: "instanceId required" };
-    }
-    const doc = await rotateSecretKey(instanceId);
-    if (!doc) {
-      set.status = 404;
-      return { error: "not found" };
-    }
-    return { instanceId: doc.instanceId, secretKey: doc.secretKey };
-  },
-  { body: t.Object({ instanceId: t.String() }) }
-);
-
-app.post(
-  "/admin/sql",
-  async ({ body, headers, set }) => {
-    try {
-      requireAdmin({ headers });
-    } catch (e) {
-      set.status = 401;
-      return { error: "unauth" };
-    }
-    const { query } = body || {};
-    if (!query) {
-      set.status = 400;
-      return { error: "query required" };
-    }
-    const res = await runSQLLike(query);
-    return { result: res };
-  },
-  { body: t.Object({ query: t.String() }) }
-);
 
 app.listen(PORT, () => {
   serverLog("success", `Elysia listening ${PORT}`);

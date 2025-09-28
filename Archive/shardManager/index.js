@@ -1,11 +1,15 @@
 import 'dotenv/config'
 
 import Fastify from 'fastify';
+import https from 'https';
+import fs from 'fs';
 import axios from 'axios';
 import {QuickDB} from 'quick.db';
 import jwt from 'jsonwebtoken';
 import logger from './logger.js';
 import bodyParser from 'body-parser';
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH || '/etc/ssl/private/server.key';
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH || '/etc/ssl/certs/server.crt';
 const fastify = Fastify();
 const JWT_SECRET = process.env.JWT_SECRET;
 const REGISTER_KEY = process.env.REGISTER_KEY;
@@ -84,10 +88,10 @@ fastify.get('/assignments', async (_, reply) => {
   reply.send(await db.get('assignments') || {});
 });
 
-fastify.listen({ port: 4000 }, (err) => {
-  if (err) {
-    console.error(err);
-    process.exit(1);
-  }
-  logger.success('[ShardManager] Listening on 4000');
+const httpsOptions = {
+  key: fs.readFileSync(SSL_KEY_PATH),
+  cert: fs.readFileSync(SSL_CERT_PATH),
+};
+https.createServer(httpsOptions, fastify.server).listen(4000, () => {
+  logger.success('[ShardManager] Listening on https://localhost:4000');
 });
