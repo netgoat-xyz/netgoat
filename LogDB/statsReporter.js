@@ -1,365 +1,182 @@
-// statsReporter.js
+import os from "os";
+import process from "process";
 
-/**
- * @fileoverview A "smol" Node.js library to collect process-specific and system statistics
- * and send them to a custom server every minute, with an initial authentication step.
- */
-
-const os = require('os'); // Node.js built-in OS module for system info
-const process = require('process'); // Node.js built-in process module for process info
-/**
- * Global variable to store the interval ID, allowing us to stop reporting later.
- * @type {NodeJS.Timeout | null}
- */
 let reportingInterval = null;
-
-/**
- * Stores the dynamically obtained secret key from the server.
- * @type {string | null}
- */
 let currentSecretKey = null;
+let lastCpuUsage = process.cpuUsage();
+let lastHr = process.hrtime.bigint();
 
-// Variables for app-specific CPU usage calculation
-let previousAppCpuUsage = process.cpuUsage();
-let previousAppHrTime = process.hrtime.bigint();
-
-/**
- * Calculates the current process's CPU usage percentage over a short interval.
- * This function takes two samples of `process.cpuUsage()` and `process.hrtime.bigint()`
- * to determine the CPU time consumed by the current Node.js process relative to
- * the elapsed wall-clock time.
- * @returns {Promise<number>} A promise that resolves with the process CPU usage percentage.
- */
-async function getAppCpuUsage() {
-    // Wait for a very short period to get a second sample for calculation.
-    // This duration affects the responsiveness and precision of the CPU measurement.
-    await new Promise(resolve => setTimeout(resolve, 50)); // Sample over 50ms
-
-    const currentAppCpuUsage = process.cpuUsage();
-    const currentAppHrTime = process.hrtime.bigint();
-
-    // Calculate the difference in CPU times (user and system) since the last sample.
-    // These are in microseconds.
-    const userDiff = currentAppCpuUsage.user - previousAppCpuUsage.user;
-    const systemDiff = currentAppCpuUsage.system - previousAppCpuUsage.system;
-
-    // Calculate the difference in high-resolution real time (wall-clock time)
-    // since the last sample. This is in nanoseconds.
-    const totalHrTimeDiffNs = currentAppHrTime - previousAppHrTime;
-
-    // Update the previous values for the next calculation.
-    previousAppCpuUsage = currentAppCpuUsage;
-    previousAppHrTime = currentAppHrTime;
-
-    // Total CPU time consumed by the process during the interval (in microseconds).
-    const processCpuTimeUs = userDiff + systemDiff;
-
-    // Total elapsed wall-clock time during the interval (in microseconds).
-    // Convert nanoseconds to microseconds by dividing by 1000.
-    const wallClockTimeUs = Number(totalHrTimeDiffNs / 1000n);
-
-    // Avoid division by zero if the wall-clock time difference is negligible.
-    if (wallClockTimeUs === 0) {
-        return 0;
-    }
-
-    // Calculate CPU usage percentage: (process CPU time / wall-clock time) * 100.
-    // This value can sometimes exceed 100% on multi-core systems if the process
-    // utilizes multiple cores heavily within the sampling window.
-    const cpuUsagePercent = (processCpuTimeUs / wallClockTimeUs) * 100;
-
-    // Return the percentage, formatted to two decimal places.
-    return parseFloat(cpuUsagePercent.toFixed(2));
+function log(level, ...args) {
+  const l = global.logger?.[level] || console[level] || console.log;
+  if (level === "debug" && process.env.DEBUG !== "true") return; // only log debug if DEBUG=true
+  l("[StatsReporter]", ...args);
 }
 
-/**
- * Collects various system and process-specific statistics.
- * @returns {Promise<Object>} An object containing system and app-specific statistics.
- */
-async function collectSystemAndAppStats() {
-    // System-wide memory statistics
-    const totalMemory = os.totalmem(); // Total system memory in bytes
-    const freeMemory = os.freemem();   // Free system memory in bytes
-    const usedSystemMemory = totalMemory - freeMemory;
 
-    // Process-specific memory statistics (Resident Set Size - RSS)
-    // RSS is the portion of memory occupied by a process that is held in main memory (RAM).
-    const appMemoryUsage = process.memoryUsage();
-    const appRssMemoryBytes = appMemoryUsage.rss; // Resident Set Size in bytes
+async function sampleAppCpu() {
+  await new Promise(r => setTimeout(r, 30));
+  const nowCpu = process.cpuUsage();
+  const nowHr = process.hrtime.bigint();
 
-    return {
-        timestamp: new Date().toISOString(),
-        hostname: os.hostname(),
-        platform: os.platform(),
-        arch: os.arch(),
-        systemUptimeSeconds: os.uptime(), // System uptime in seconds
+  const cpuDiff = (nowCpu.user - lastCpuUsage.user) + (nowCpu.system - lastCpuUsage.system);
+  const hrDiff = Number(nowHr - lastHr) / 1000; // µs
 
-        // System-wide CPU information (model, count, load average)
-        cpuCount: os.cpus().length,
-        cpuModel: os.cpus()[0].model,
-        systemLoadAverage: os.loadavg(), // 1, 5, and 15 minute load averages
-
-        // System-wide memory usage
-        totalSystemMemoryBytes: totalMemory,
-        freeSystemMemoryBytes: freeMemory,
-        usedSystemMemoryBytes: usedSystemMemory,
-        systemMemoryUsagePercent: parseFloat(((usedSystemMemory / totalMemory) * 100).toFixed(2)),
-
-        // Process-specific statistics
-        processId: process.pid,
-        processUptimeSeconds: process.uptime(), // Process uptime in seconds
-        appCpuUsagePercent: await getAppCpuUsage(), // Calculated app CPU usage
-        appMemoryRssBytes: appRssMemoryBytes, // App's Resident Set Size (RAM usage)
-        // Note: Node.js's built-in modules do not provide direct, cross-platform
-        // process-specific disk read/write usage. This typically requires
-        // platform-specific tools or native modules, which are outside the scope
-        // of a "smol" and portable library.
-    };
+  lastCpuUsage = nowCpu;
+  lastHr = nowHr;
+  return hrDiff === 0 ? 0 : +(cpuDiff / hrDiff * 100).toFixed(2);
 }
 
-/**
- * Decodes the payload of a JWT. This is a simple base64 decoding and
- * does NOT verify the JWT signature. It assumes the server sends a
- * valid, unverified JWT or a base64-encoded JSON in the payload part.
- * For production, consider using a proper JWT library like 'jsonwebtoken'
- * to verify signatures.
- * @param {string} token - The JWT string.
- * @returns {Object | null} The decoded payload object, or null if decoding fails.
- */
-function decodeJwtPayload(token) {
-    try {
-        const parts = token.split('.');
-        if (parts.length !== 3) {
-            global.logger.error('[StatsReporter] Invalid JWT format: Expected 3 parts.');
-            return null;
-        }
-        const payloadBase64 = parts[1];
-        // Decode base64url to base64, then base64 to UTF-8 string
-        const decodedPayload = Buffer.from(payloadBase64, 'base64').toString('utf8');
-        return JSON.parse(decodedPayload);
-    } catch (error) {
-        global.logger.error(`[StatsReporter] Error decoding JWT payload: ${error.message}`);
-        return null;
+async function collectStats() {
+  const total = os.totalmem();
+  const free = os.freemem();
+  return {
+    ts: new Date().toISOString(),
+    host: os.hostname(),
+    arch: os.arch(),
+    platform: os.platform(),
+    sysUptime: os.uptime(),
+    cpuCount: os.cpus().length,
+    cpuModel: os.cpus()[0].model,
+    load: os.loadavg(),
+    mem: {
+      total,
+      used: total - free,
+      usedPct: +(((total - free) / total) * 100).toFixed(2)
+    },
+    proc: {
+      pid: process.pid,
+      uptime: process.uptime(),
+      rss: process.memoryUsage().rss,
+      cpuPct: await sampleAppCpu()
     }
+  };
 }
 
-/**
- * Performs an initial authentication step to obtain a dynamic secret key from the server.
- * This key is then used for subsequent stats reporting requests.
- * @param {string} serverUrl - The base URL of the custom server.
- * @param {string} sharedJwt - The pre-shared JWT for initial authentication.
- * @param {string} service - The service identifier.
- * @param {string} workerId - The worker ID.
- * @param {string} regionId - The region ID.
- * @returns {Promise<string | null>} A promise that resolves with the SecretKey if successful, otherwise null.
- */
-async function authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId) {
-    const authEndpoint = `${serverUrl}/auth`; // Assuming an /auth endpoint for registration
-    global.logger.info(`[StatsReporter] Attempting to authenticate and get SecretKey from ${authEndpoint}...`);
-
-    try {
-        const response = await fetch(authEndpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'Authorization': `Bearer ${sharedJwt}` // Use the SHARED_JWT for initial authentication
-            },
-            body: JSON.stringify({
-                service: service,
-                workerId: workerId,
-                regionId: regionId
-            }),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            global.logger.error(`[StatsReporter] Authentication failed: ${response.status} ${response.statusText} - ${errorText}`);
-            return null;
-        }
-
-        const responseJson = await response.json();
-        // The server is expected to respond with a JWT containing the SecretKey
-        const responseJwt = responseJson.token; // Assuming the server sends a 'token' field
-        if (!responseJwt) {
-            global.logger.error('[StatsReporter] Authentication response missing JWT token.');
-            return null;
-        }
-
-        const decodedPayload = decodeJwtPayload(responseJwt);
-        if (decodedPayload && decodedPayload.secretKey) {
-            global.logger.success('[StatsReporter] Successfully obtained SecretKey.');
-            return decodedPayload.secretKey;
-        } else {
-            global.logger.error('[StatsReporter] JWT payload missing "secretKey" field.');
-            return null;
-        }
-
-    } catch (error) {
-        global.logger.error(`[StatsReporter] Error during authentication request to ${authEndpoint}:`, error.message);
-        return null;
-    }
+function decodeJwt(token) {
+  try {
+    const payload = token.split(".")[1];
+    return JSON.parse(Buffer.from(payload, "base64").toString());
+  } catch (err) {
+    log("error", "JWT decode failed:", err.message);
+    return null;
+  }
 }
 
-/**
- * Sends the collected data to the specified server URL.
- * Includes the dynamically obtained SecretKey in the headers for authorization.
- * @param {string} serverUrl - The URL of the custom server endpoint.
- * @param {Object} data - The data object to send.
- * @param {string | null} secretKey - The dynamic secret key obtained from authentication.
- */
-async function sendDataToServer(serverUrl, data, secretKey) {
-    if (!secretKey) {
-        global.logger.error('[StatsReporter] Cannot send data: SecretKey is not available. Authentication might have failed.');
-        return;
+async function auth(serverUrl, sharedJwt, service, category, regionId, workerId) {
+  const endpoint = `${serverUrl}/auth`;
+  log("info", `Authenticating with ${endpoint}`);
+  try {
+    const r = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sharedJwt}` },
+      body: JSON.stringify({ service, category, regionId, workerId })
+    });
+    if (!r.ok) {
+      log("error", `Auth failed: ${r.status} ${r.statusText}`);
+      log("debug", "Auth response:", await r.text());
+      return null;
     }
-
-    try {
-        const response = await fetch(serverUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-Secret-Key': secretKey // Include the dynamic SecretKey in a custom header
-            },
-            body: JSON.stringify(data),
-            // You might want to add a timeout for the request
-            // signal: AbortSignal.timeout(5000) // Requires Node.js v15.0.0+
-        });
-
-        if (!response.ok) {
-            // global.logger non-2xx responses as errors
-            const errorText = await response.text();
-            global.logger.error(`[StatsReporter] Failed to send data: ${response.status} ${response.statusText} - ${errorText}`);
-        } else {
-            global.logger.info(`[StatsReporter] Data sent successfully to ${serverUrl}`);
-        }
-    } catch (error) {
-        global.logger.error(`[StatsReporter] Error sending data to ${serverUrl}:`, error.message);
+    const { token } = await r.json();
+    log("debug", "Auth token received:", token);
+    const decoded = decodeJwt(token);
+    log("debug", "Decoded token:", decoded);
+    if (decoded?.secretKey) {
+      log("success", "Obtained SecretKey");
+      return decoded.secretKey;
     }
+    log("error", "Auth response missing secretKey");
+    return null;
+  } catch (err) {
+    log("error", "Auth error:", err.message);
+    return null;
+  }
 }
 
-/**
- * Starts the statistics reporting.
- * @param {Object} options - Configuration options for the reporter.
- * @param {string} options.serverUrl - The base URL of the custom server.
- * It expects /auth for initial handshake and
- * /report-stats for sending data.
- * @param {string} options.sharedJwt - The pre-shared JWT for initial authentication.
- * @param {number} [options.intervalMinutes=1] - The interval in minutes to send data.
- * @param {string} [options.service='default_service'] - The service identifier.
- * @param {string} [options.string='default_worker'] - The worker ID. If not provided,
- * the data key will be based on service and region only.
- * @param {string} [options.regionId='default_region'] - The region ID.
- */
-async function startReporting({
-    serverUrl,
-    sharedJwt,
-    intervalMinutes = 1,
-    service,
-    workerId, 
-    regionId,
-    maxRetries = 5, // NEW: max retry attempts for reporting
-    retryDelayMs = 10000 // NEW: delay between retries in ms
+export async function startReporting({
+  serverUrl,
+  sharedJwt,
+  intervalMinutes = 1,
+  service,
+  category = "logdb",
+  regionId = "mm",
+  workerId = "default_worker",
+  maxRetries = 5,
+  retryDelayMs = 10_000
 }) {
-    if (!serverUrl) {
-        global.logger.error('[StatsReporter] Error: serverUrl is required to start reporting.');
-        return;
-    }
-    if (!sharedJwt) {
-        global.logger.error('[StatsReporter] Error: sharedJwt is required for authentication.');
-        return;
-    }
+  if (reportingInterval) {
+    log("warn", "Reporter already running, stopping old interval.");
+    stopReporting();
+  }
 
-    if (reportingInterval) {
-        global.logger.warn('[StatsReporter] Reporting is already running. Stopping previous interval before starting a new one.');
-        stopReporting();
-    }
+  currentSecretKey = await auth(serverUrl, sharedJwt, service, category, regionId, workerId);
+  if (!currentSecretKey) {
+    log("error", "Initial authentication failed. Reporter not started.");
+    return;
+  }
 
-    // --- Initial Authentication Step with auto-retry ---
-    let authAttempts = 0;
-    const maxAuthRetries = 1000; // Arbitrary large number for infinite-like retry
-    while (authAttempts < maxAuthRetries) {
-        currentSecretKey = await authenticateAndGetSecretKey(serverUrl, sharedJwt, service, workerId, regionId);
-        if (currentSecretKey) {
-            break;
+  const intervalMs = intervalMinutes * 60_000;
+  const dataKeyParts = [service, category, regionId];
+  if (workerId && workerId !== "default_worker") dataKeyParts.push(workerId);
+  const dataKey = dataKeyParts.join("_");
+
+  log("info", `Reporting to ${serverUrl}/report-stats every ${intervalMinutes} min`);
+  log("info", `Data key: ${dataKey}`);
+
+  async function tick() {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        const stats = await collectStats();
+        if (process.env.DEBUG == true) 
+        log("debug", `Collected stats for ${dataKey}`, stats);
+        const res = await fetch(`${serverUrl}/report-stats`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Secret-Key": currentSecretKey
+          },
+          body: JSON.stringify({ dataKey, service, category, regionId, workerId, stats })
+        });
+
+        if (res.status === 401) {
+          log("warn", "SecretKey expired, re-authenticating...");
+          currentSecretKey = await auth(serverUrl, sharedJwt, service, category, regionId, workerId);
+          attempt++;
+          continue;
         }
-        authAttempts++;
-        global.logger.error(`[StatsReporter] Failed to obtain SecretKey. Retrying authentication in ${retryDelayMs / 1000}s... (Attempt ${authAttempts})`);
-        await new Promise(res => setTimeout(res, retryDelayMs));
-    }
-    if (!currentSecretKey) {
-        global.logger.error('[StatsReporter] Could not authenticate after many attempts. Reporting will not start.');
-        return;
-    }
 
-    const intervalMs = intervalMinutes * 60 * 1000; // Convert minutes to milliseconds
-
-    global.logger.info(`[StatsReporter] Starting reporting to ${serverUrl}/report-stats every ${intervalMinutes} minute(s).`);
-    const dataKeyParts = [service, regionId];
-    if (workerId && workerId !== 'default_worker') { // Only add workerId if it's explicitly provided and not default
-        dataKeyParts.push(workerId);
-    }
-    const dataKey = dataKeyParts.join('_');
-    global.logger.info(`[StatsReporter] Data key will be: ${dataKey}`);
-
-    /**
-     * The main reporting function that runs on an interval, with retry logic.
-     */
-    const reportFunction = async () => {
-        let attempt = 0;
-        while (attempt <= maxRetries) {
-            try {
-                const stats = await collectSystemAndAppStats();
-                const payload = {
-                    dataKey: dataKey,
-                    service: service,
-                    workerId: workerId,
-                    regionId: regionId,
-                    stats: stats,
-                };
-
-                global.logger.debug(`[StatsReporter] Collecting and sending stats for ${dataKey}... (Attempt ${attempt + 1})`);
-                await sendDataToServer(`${serverUrl}/report-stats`, payload, currentSecretKey);
-                // Success, break out of retry loop
-                break;
-            } catch (error) {
-                attempt++;
-                global.logger.error(`[StatsReporter] Error during reporting cycle (Attempt ${attempt}):`, error.message);
-                if (attempt > maxRetries) {
-                    global.logger.error(`[StatsReporter] Max retry attempts (${maxRetries}) reached. Skipping this reporting cycle.`);
-                    break;
-                }
-                global.logger.info(`[StatsReporter] Retrying in ${retryDelayMs / 1000}s...`);
-                await new Promise(res => setTimeout(res, retryDelayMs));
-            }
+        if (!res.ok) {
+          log("error", `Send failed: ${res.status} ${res.statusText}`);
+          throw new Error(await res.text());
         }
-    };
 
-    // Run immediately on start
-    reportFunction();
+        log("info", `Stats sent successfully for ${dataKey}`);
+        break;
 
-    // Set up the interval
-    reportingInterval = setInterval(reportFunction, intervalMs);
+      } catch (err) {
+        attempt++;
+        log("error", `Reporting error (attempt ${attempt}):`, err.message);
+        if (attempt > maxRetries) {
+          log("error", "Max retries reached. Skipping cycle.");
+          break;
+        }
+        log("info", `Retrying in ${retryDelayMs / 1000}s`);
+        await new Promise(r => setTimeout(r, retryDelayMs));
+      }
+    }
+  }
+
+  tick();
+  reportingInterval = setInterval(tick, intervalMs);
 }
 
-
-/**
- * Stops the statistics reporting.
- */
-function stopReporting() {
-    if (reportingInterval) {
-        clearInterval(reportingInterval);
-        reportingInterval = null;
-        currentSecretKey = null; // Clear the secret key on stop
-        global.logger.info('[StatsReporter] Statistics reporting stopped.');
-    } else {
-        global.logger.info('[StatsReporter] Statistics reporting is not currently running.');
-    }
+export function stopReporting() {
+  if (reportingInterval) {
+    clearInterval(reportingInterval);
+    reportingInterval = null;
+    currentSecretKey = null;
+    log("info", "Reporting stopped.");
+  } else {
+    log("info", "Reporter not running.");
+  }
 }
-
-// Export the functions to be used by other modules
-module.exports = {
-    startReporting,
-    stopReporting,
-};
