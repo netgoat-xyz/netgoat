@@ -1,3 +1,4 @@
-#!/usr/bin/env bun
-// Entrypoint to run the full NetGoat stack with: bun stack
-import "./scripts/stack.ts";
+cd ./reactbased
+bun dev &     
+echo "Starting Stack..."
+./startstack
