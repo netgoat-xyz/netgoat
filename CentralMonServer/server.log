@@ -55,3 +55,42 @@
 ✅ 2025-09-19T18:47:28.274Z SUCCESS › Connected to MongoDB mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
 ✅ 2025-09-19T18:47:28.293Z SUCCESS › ElysiaJS running at http://localhost:1933
 ✅ 2025-09-19T18:47:28.311Z SUCCESS › Fake SSH shell listening on 2222
+❌  2025-09-26T18:23:00.759Z ERROR › Mongo connection failed: connect ECONNREFUSED 127.0.0.1:27017
+✅ 2025-09-26T18:23:00.782Z SUCCESS › ElysiaJS running at http://localhost:1933
+✅ 2025-09-26T18:23:00.798Z SUCCESS › Fake SSH shell listening on 2222
+✅ 2025-09-26T18:25:20.353Z SUCCESS › Connected to MongoDB mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+✅ 2025-09-26T18:25:20.379Z SUCCESS › ElysiaJS running at http://localhost:1933
+✅ 2025-09-26T18:25:20.400Z SUCCESS › Fake SSH shell listening on 2222
+✅ 2025-09-27T10:01:06.591Z SUCCESS › Connected to MongoDB mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+✅ 2025-09-27T10:01:06.613Z SUCCESS › ElysiaJS running at http://localhost:1933
+✅ 2025-09-27T10:01:06.634Z SUCCESS › Fake SSH shell listening on 2222
+✅ 2025-09-27T10:11:41.647Z SUCCESS › Connected to MongoDB mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+✅ 2025-09-27T10:11:41.685Z SUCCESS › ElysiaJS running at http://localhost:1933
+✅ 2025-09-27T10:11:41.713Z SUCCESS › Fake SSH shell listening on 2222
+2025-09-27T10:21:15.292Z SUCCESS › Connected to MongoDB mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T10:21:15.325Z SUCCESS › ElysiaJS running at http://localhost:1933
+2025-09-27T10:35:06.316Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T10:36:12.665Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T10:36:12.694Z SUCCESS › Elysia listening 1933
+2025-09-27T10:36:14.764Z WARN › no admin in DB and ADMIN_USERNAME/ADMIN_PASSWORD not provided
+2025-09-27T10:36:33.751Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T10:36:33.779Z SUCCESS › Elysia listening 1933
+2025-09-27T10:36:39.383Z SUCCESS › initial admin created
+2025-09-27T10:37:29.279Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T10:37:29.311Z SUCCESS › Elysia listening 1933
+2025-09-27T19:55:13.853Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T19:55:13.894Z SUCCESS › Elysia listening 1933
+2025-09-27T19:55:57.769Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T19:55:57.797Z SUCCESS › Elysia listening 1933
+2025-09-27T19:56:24.680Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T19:56:24.702Z SUCCESS › Elysia listening 1933
+2025-09-27T19:59:12.420Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T19:59:12.452Z SUCCESS › Elysia listening 1933
+2025-09-27T20:09:01.914Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T20:09:01.938Z SUCCESS › Elysia listening 1933
+2025-09-27T20:09:31.782Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T20:09:31.803Z SUCCESS › Elysia listening 1933
+2025-09-27T20:10:04.369Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-27T20:10:04.395Z SUCCESS › Elysia listening 1933
+2025-09-28T05:44:33.103Z SUCCESS › Mongo connected mongodb+srv://duckeydev:duckeydev@halfpasttwelve.m6kej2a.mongodb.net/CentralSquare
+2025-09-28T05:44:33.133Z SUCCESS › Elysia listening 1933

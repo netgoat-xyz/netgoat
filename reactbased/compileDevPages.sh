@@ -1,0 +1,14 @@
+curl http://localhost:3000
+curl http://localhost:3000/auth
+curl http://localhost:3000/dashboard
+curl http://localhost:3000/dashboard/netgoatlocal.com
+curl http://localhost:3000/dashboard/netgoatlocal.com/dns
+curl http://localhost:3000/dashboard/netgoatlocal.com/certs
+curl http://localhost:3000/dashboard/netgoatlocal.com/analytics
+curl http://localhost:3000/dashboard/netgoatlocal.com/captcha
+curl http://localhost:3000/dashboard/netgoatlocal.com/proxies
+curl http://localhost:3000/dashboard/netgoatlocal.com/errors
+curl http://localhost:3000/dashboard/netgoatlocal.com/waf
+curl http://localhost:3000/dashboard/new
+curl http://localhost:3000/status
+curl http://localhost:3000/blog
