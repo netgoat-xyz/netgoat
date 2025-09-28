@@ -91,14 +91,16 @@ if (cluster.isPrimary) {
     logger.success(`[Worker ${process.pid}] LogDB running on https://localhost:3010`);
   });
 
-  (async () => {
-    await startReporting({
-      serverUrl: process.env.Central_server!,
-      sharedJwt: process.env.Central_JWT!,
-      intervalMinutes: 1,
-      service: "LogDB",
-      workerId: String(process.pid),
-      regionId: process.env.regionID || "local",
-    });
-  })();
+(async () => {
+  await startReporting({
+    serverUrl: process.env.Central_server!,
+    sharedJwt: process.env.Central_JWT!,
+    intervalMinutes: 1,
+    service: "LogDB",
+    workerId: String(process.pid),
+    regionId: process.env.regionID, // ✅ use regionId
+    category: "logdb",                      // ✅ choose an allowed category
+  });
+})();
+
 }
