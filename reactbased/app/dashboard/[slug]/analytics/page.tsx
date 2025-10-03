@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from "react";
@@ -180,13 +181,13 @@ export default function AnalyticsReplica() {
           </div>
         </CardContent>
         <ChartContainer
-          config={{ Visitors: { color: "#3B82F6", label: "Visitors" } }} // Vercel blue-ish
+          config={{ Visitors: { color: "#3B82F6", label: "Visitors" } }} 
         >
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={lineData}>
               <XAxis
                 dataKey="name"
-                stroke={"#6b7280"} // adjust for dark or light
+                stroke={"#6b7280"} 
                 tick={{ fontSize: 12, fill: "#374151" }}
                 axisLine={false}
                 tickLine={false}
@@ -196,19 +197,18 @@ export default function AnalyticsReplica() {
                 tick={{ fontSize: 12, fill: "#374151" }}
                 axisLine={false}
                 tickLine={false}
-                // maybe add a few horizontal grid lines lightly
               />
               <CartesianGrid
                 stroke={"#e5e7eb"}
                 strokeDasharray="3 3"
                 vertical={false}
               />
-              <ReTooltip content={<DarkTooltip />} /> // style tooltip with
+              <ReTooltip content={<DarkTooltip />} /> 
               subtle shadow, background matching theme
               <Line
-                type="linear" // Vercel uses smoothing / “curve fitting” for trend lines. :contentReference[oaicite:1]{index=1}
+                type="linear" 
                 dataKey="Visitors"
-                stroke="#3B82F6" // exact blue tone; lighten/darken depending on theme
+                stroke="#3B82F6" 
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4, fill: "#3B82F6", strokeWidth: 0 }}

@@ -56,7 +56,7 @@ export function TeamSwitcher({
             >
               <div className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
                 {imgErrorMap[activeTeam.name] ? (
-                  <img
+                  <Image
                     src="https://cdnjs.cloudflare.com/ajax/libs/emoji-datasource-apple/15.1.2/img/apple/64/1f47b.png"
                     alt={activeTeam.name}
                     width={24}
@@ -98,7 +98,7 @@ export function TeamSwitcher({
               >
                 <div className="">
                   {imgErrorMap[team.name] ? (
-                    <img
+                    <Image
                       src="https://cdnjs.cloudflare.com/ajax/libs/emoji-datasource-apple/15.1.2/img/apple/64/1f47b.png"
                       alt={team.name}
                       width={24}

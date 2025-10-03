@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useRef, useState } from "react"
 import { MeshGradient } from "@paper-design/shaders-react"
 
@@ -32,7 +31,10 @@ export default function ShaderBackground({ children }: ShaderBackgroundProps) {
   }, [])
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-black relative overflow-hidden">
+    <div
+      ref={containerRef}
+      className="min-h-screen bg-black relative overflow-hidden"
+    >
       {/* SVG Filters */}
       <svg className="absolute inset-0 w-0 h-0">
         <defs>
@@ -53,7 +55,10 @@ export default function ShaderBackground({ children }: ShaderBackgroundProps) {
             <feColorMatrix
               in="blur"
               mode="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9"
+              values="1 0 0 0 0  
+                      0 1 0 0 0  
+                      0 0 1 0 0  
+                      0 0 0 19 -9"
               result="gooey"
             />
             <feComposite in="SourceGraphic" in2="gooey" operator="atop" />
@@ -66,14 +71,11 @@ export default function ShaderBackground({ children }: ShaderBackgroundProps) {
         className="absolute inset-0 w-full h-full"
         colors={["#000000", "#8b5cf6", "#ffffff", "#1e1b4b", "#4c1d95"]}
         speed={0.3}
-        backgroundColor="#000000"
       />
       <MeshGradient
         className="absolute inset-0 w-full h-full opacity-60"
         colors={["#000000", "#ffffff", "#8b5cf6", "#000000"]}
         speed={0.2}
-        wireframe="true"
-        backgroundColor="transparent"
       />
 
       {children}

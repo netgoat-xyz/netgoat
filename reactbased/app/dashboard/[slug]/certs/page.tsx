@@ -69,9 +69,9 @@ const statusColors = {
   expired: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
 };
 
-export default function CertsPage({ params }: { params: { slug: string } }) {
+export default async function CertsPage({ params }: { params: Promise<{ slug: string }>  }) {
   const [filter, setFilter] = useState("all");
-  const { slug } = params;
+  const slug = (await params).slug;
   const filteredCerts =
     filter === "all"
       ? mockCerts

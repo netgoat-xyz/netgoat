@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 
 interface DashboardPageProps {
-  params: { slug: string };
+  params: Promise<{ domain: string; slug: string }>;
 }
 
 interface ClientData {
@@ -33,8 +33,8 @@ const cacheData: CacheData[] = [
 
 const isMobile = (ua: string) => /iPhone|iPad|iPod|Android|Mobile/i.test(ua);
 
-export default function DashboardPage({ params }: DashboardPageProps) {
-  const { slug } = params;
+export default async function DashboardPage({ params }: DashboardPageProps) {
+  const slug = (await params).slug;
   const [clients, setClients] = useState<ClientData[]>([]);
   const [timeRange, setTimeRange] = useState<string>("3mo");
 
@@ -51,12 +51,15 @@ export default function DashboardPage({ params }: DashboardPageProps) {
         );
 
         const logs = res.data;
-        const dailyCounts: Record<string, { mobile: number; desktop: number }> = {};
+        const dailyCounts: Record<string, { mobile: number; desktop: number }> =
+          {};
 
         for (const log of logs) {
           const date = new Date(log.time).toISOString().slice(0, 10);
           if (!dailyCounts[date]) dailyCounts[date] = { mobile: 0, desktop: 0 };
-          isMobile(log.userAgent) ? dailyCounts[date].mobile++ : dailyCounts[date].desktop++;
+          isMobile(log.userAgent)
+            ? dailyCounts[date].mobile++
+            : dailyCounts[date].desktop++;
         }
 
         const finalData = Object.entries(dailyCounts).map(([date, counts]) => ({
@@ -86,41 +89,52 @@ export default function DashboardPage({ params }: DashboardPageProps) {
   };
 
   return (
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <SectionCards />
-              <div className="px-4 lg:px-6">
-                <ChartAreaInteractive
-                  title="Total visitors"
-                  description="Total for the last 3 months"
-                  cc={visitorConfig}
-                  chartData={clients}
-                  areaKeys={[
-                    { key: "mobile", color: "var(--color-mobile)", gradient: "fillMobile" },
-                    { key: "desktop", color: "var(--color-desktop)", gradient: "fillDesktop" },
-                  ]}
-                  timeRange={timeRange}
-                  setTimeRange={setTimeRange}
-                />
-              </div>
-              <div className="px-4 lg:px-6">
-                <ChartAreaInteractive
-                  title="Caching Total"
-                  description="Cache data for the last 3 months"
-                  cc={cacheConfig}
-                  chartData={cacheData}
-                  areaKeys={[
-                    { key: "hit", color: "var(--color-hit)", gradient: "fillHit" },
-                    { key: "miss", color: "var(--color-miss)", gradient: "fillMiss" },
-                  ]}
-                  timeRange="3mo"
-                  setTimeRange={() => {}}
-                />
-              </div>
-            </div>
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          <SectionCards />
+          <div className="px-4 lg:px-6">
+            <ChartAreaInteractive
+              title="Total visitors"
+              description="Total for the last 3 months"
+              cc={visitorConfig}
+              chartData={clients}
+              areaKeys={[
+                {
+                  key: "mobile",
+                  color: "var(--color-mobile)",
+                  gradient: "fillMobile",
+                },
+                {
+                  key: "desktop",
+                  color: "var(--color-desktop)",
+                  gradient: "fillDesktop",
+                },
+              ]}
+              timeRange={timeRange}
+              setTimeRange={setTimeRange}
+            />
+          </div>
+          <div className="px-4 lg:px-6">
+            <ChartAreaInteractive
+              title="Caching Total"
+              description="Cache data for the last 3 months"
+              cc={cacheConfig}
+              chartData={cacheData}
+              areaKeys={[
+                { key: "hit", color: "var(--color-hit)", gradient: "fillHit" },
+                {
+                  key: "miss",
+                  color: "var(--color-miss)",
+                  gradient: "fillMiss",
+                },
+              ]}
+              timeRange="3mo"
+              setTimeRange={() => {}}
+            />
           </div>
         </div>
-
+      </div>
+    </div>
   );
 }

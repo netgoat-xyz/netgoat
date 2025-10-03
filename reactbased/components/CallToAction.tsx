@@ -24,7 +24,7 @@ export function CallToAction() {
             Get started today
           </h2>
           <p className="mt-4 text-lg tracking-tight text-white">
-            It's time to own whats yours, and manage your web trafic like its the last day on earth.
+            It&apos;s time to own whats yours, and manage your web trafic like its the last day on earth.
             {/*
              i wanna goon right now
             */}

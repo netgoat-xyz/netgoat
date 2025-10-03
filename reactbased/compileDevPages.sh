@@ -12,3 +12,4 @@ curl http://localhost:3000/dashboard/netgoatlocal.com/waf
 curl http://localhost:3000/dashboard/new
 curl http://localhost:3000/status
 curl http://localhost:3000/blog
+curl http://localhost:3000/admin

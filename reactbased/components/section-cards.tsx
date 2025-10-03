@@ -92,7 +92,7 @@ export function SectionCards() {
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
           <div className="line-clamp-1 flex gap-2 font-medium">
-            User's spend time <IconTrendingUp className="size-4" />
+            User&apos;s spend time <IconTrendingUp className="size-4" />
           </div>
           <div className="text-muted-foreground">Meets growth projections</div>
         </CardFooter>

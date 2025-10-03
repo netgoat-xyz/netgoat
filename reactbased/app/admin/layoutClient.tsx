@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
-import Link from "next/link"
+import useSwipeDirection from "./useSwipeDirection"
+import { Toaster } from "@/components/ui/sonner"
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardClientWrapper({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const direction = useSwipeDirection()
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -20,6 +22,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .then((res) => res.json())
       .then((data) => {
         localStorage.setItem("session", JSON.stringify(data))
+        console.log(data)
+        if (data.role != "admin") {
+          router.replace("/")
+          return
+        }
         setReady(true)
       })
       .catch(() => router.replace("/auth"))
@@ -33,56 +40,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
-  return (
-    <div className="flex flex-col h-screen">
-      {/* topbar */}
-      <header className="flex h-14 items-center justify-between border-b px-6">
-        <div className="flex items-center gap-6">
-          <Link href="/admin" className="font-semibold">
-            Admin
-          </Link>
-          <nav className="flex gap-4 text-sm text-muted-foreground">
-            <Link
-              href="/admin/users"
-              className={pathname.startsWith("/admin/users") ? "text-foreground font-medium" : ""}
-            >
-              Users
-            </Link>
-            <Link
-              href="/admin/logs"
-              className={pathname.startsWith("/admin/logs") ? "text-foreground font-medium" : ""}
-            >
-              Logs
-            </Link>
-            <Link
-              href="/admin/settings"
-              className={pathname.startsWith("/admin/settings") ? "text-foreground font-medium" : ""}
-            >
-              Settings
-            </Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-3">
-          <button className="text-sm text-muted-foreground hover:text-foreground">Search</button>
-          <button className="text-sm text-muted-foreground hover:text-foreground">Profile</button>
-        </div>
-      </header>
+  const variants = {
+    enter: (dir: string) => ({
+      x: dir === "right" ? 100 : -100,
+      opacity: 0,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+      transition: { duration: 0.25 },
+    },
+    exit: (dir: string) => ({
+      x: dir === "right" ? -100 : 100,
+      opacity: 0,
+      transition: { duration: 0.25 },
+    }),
+  }
 
-      {/* animated content */}
-      <main className="flex-1 overflow-y-auto p-6">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="h-full w-full"
-          >
-            {children}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+  return (
+    <div className="min-h-screen bg-background">
+      <AnimatePresence mode="wait" custom={direction}>
+        <motion.div
+          key={pathname}
+          custom={direction}
+          variants={variants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+        >
+          {children}
+                  <Toaster position="top-right" richColors />
+        </motion.div>
+      </AnimatePresence>
     </div>
   )
 }
