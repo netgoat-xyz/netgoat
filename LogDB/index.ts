@@ -1,6 +1,4 @@
 import { Elysia } from "elysia";
-import https from "https";
-import fs from "fs";
 import os from "os";
 import cluster from "cluster";
 import logger from "./logger";
@@ -20,11 +18,6 @@ if (cluster.isPrimary) {
     cluster.fork();
   });
 } else {
-  // HTTPS options: update cert/key paths as needed
-  const httpsOptions = {
-    key: fs.readFileSync(process.env.SSL_KEY_PATH || "/etc/ssl/private/server.key"),
-    cert: fs.readFileSync(process.env.SSL_CERT_PATH || "/etc/ssl/certs/server.crt"),
-  };
   const app = new Elysia();
   app.use(cors());
 
@@ -86,10 +79,12 @@ if (cluster.isPrimary) {
     }
   });
 
-  // Start HTTPS server
-  https.createServer(httpsOptions, app.handle).listen(3010, () => {
-    logger.success(`[Worker ${process.pid}] LogDB running on https://localhost:3010`);
-  });
+app.get("/api/health", async () => {
+  return { status: "ok", uptime: process.uptime() };
+})
+
+  app.listen({ port: process.env.PORT || 3010 });
+  logger.success(`[Worker ${process.pid}] LogDB running on http://localhost:3010`);
 
 (async () => {
   await startReporting({

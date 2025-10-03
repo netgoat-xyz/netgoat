@@ -21,15 +21,20 @@ app.register(fastifyStatic, {
   wildcard: false // optional, ensures exact matches
 });
 
+app.get("/api/health", async (request, reply) => {
+  return { status: "ok", uptime: process.uptime() };
+})
 // Register main backend routes
 registerRoutes(app);
 // Register proxy routes
 registerProxyRoutes(app);
 
-app.listen({ port: 3001 }, (err, address) => {
+const port = process.env.PORT || 3001;
+
+app.listen({ port: 3001, host: '0.0.0.0' }, (err, address) => {
   if (err) {
-    console.error(err);
-    process.exit(1);
+    console.error(err)
+    process.exit(1)
   }
-  console.log(`Backend loaded at ${address}`);
-});
+  console.log(`Backend loaded at ${address}`)
+})

@@ -9,6 +9,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@elysiajs/cors": "^1.4.0",
     "@elysiajs/html": "^1.3.0",
     "@elysiajs/static": "^1.4.0",
     "axios": "^1.10.0",
