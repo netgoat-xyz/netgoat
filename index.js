@@ -63,7 +63,6 @@ const systemSpecs = {
 const workers = {
   "Reverse Proxy": Math.max(1, Math.floor(cpuCores * 0.5)),
   API: Math.max(1, Math.floor(cpuCores * 0.3)),
-  Frontend: Math.max(1, Math.floor(cpuCores * 0.5)),
 };
 
 const systemTable = new AsciiTable("System Specs").setHeading("Spec", "Value");
@@ -79,7 +78,6 @@ for (const [key, value] of Object.entries(workers)) {
 const serverMap = {
   "Reverse Proxy": "./servers/reverse.js",
   API: "./servers/backend.js",
-  Frontend: "./servers/frontend.js",
 };
 
 if (cluster.isPrimary) {
