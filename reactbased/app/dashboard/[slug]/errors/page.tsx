@@ -1,39 +1,24 @@
-import { AppSidebar } from "@/components/domain-sidebar";
-import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { SectionCards } from "@/components/errors-cards";
 import ErrorsTable from "@/components/errors-table";
-import SiteHeader from "@/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
-const data = [
-  {
-    name: "Undefined Error",
-    site: "example.com",
-    users: 212,
-    lastSeen: "2023-10-01T12:00:00Z",
-    status: "patching" as "patching",
-  },
-    {
-    name: "Undefined Error",
-    site: "example.com",
-    users: 212,
-    lastSeen: "2023-10-01T12:00:00Z",
-    status: "fixed" as "fixed",
-  },
-    {
-    name: "Undefined Error",
-    site: "example.com",
-    users: 212,
-    lastSeen: "2023-10-01T12:00:00Z",
-    status: "on-going" as "on-going",
-  },
+
+const data: {
+  name: string;
+  site: string;
+  users: number;
+  lastSeen: string;
+  status: "patching" | "fixed" | "on-going";
+}[] = [
+  { name: "Undefined Error", site: "example.com", users: 212, lastSeen: "2023-10-01T12:00:00Z", status: "patching" },
+  { name: "Undefined Error", site: "example.com", users: 212, lastSeen: "2023-10-01T12:00:00Z", status: "fixed" },
+  { name: "Undefined Error", site: "example.com", users: 212, lastSeen: "2023-10-01T12:00:00Z", status: "on-going" },
 ];
 
 export default async function Page({
   params,
 }: {
   params: Promise<{
-    domain: String;
+    domain: string;
     slug: string;
   }>;
 }) {

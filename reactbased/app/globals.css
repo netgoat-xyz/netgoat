@@ -1,14 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap');
 @import url('https://rsms.me/inter/inter.css');
 @import "tailwindcss";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-calsans: "Cal Sans", sans-serif;
+  --font-calsans: "Cal Sans";
   --font-inter: "InterVariable", sans-serif;
   --font-inter--font-feature-settings: "cv11";
   --font-inter-variation-settings: 'liga' 1, 'calt' 1;

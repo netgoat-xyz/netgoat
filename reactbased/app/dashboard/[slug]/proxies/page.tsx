@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner";
 
-export default function Page({ params }: { params: { slug: string } }) {
+export default function Page({ params }: { params: Promise<{ slug: string }>  }) {
   const [filter, setFilter] = useState("all");
   const [proxies, setProxies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +38,7 @@ export default function Page({ params }: { params: { slug: string } }) {
   const fetchProxies = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.backendapi}/api/domains/${params.slug}`, {
+      const res = await fetch(`${process.env.backendapi}/api/domains/${(await params).slug}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -55,9 +55,13 @@ export default function Page({ params }: { params: { slug: string } }) {
     }
   };
 
-  useEffect(() => {
-    fetchProxies();
-  }, [params.slug]);
+useEffect(() => {
+  const load = async () => {
+    await fetchProxies();
+  };
+  load();
+}, [params]);
+
 
   const handleSubmit = async () => {
     if (!form.slug || !form.target) {
@@ -66,12 +70,12 @@ export default function Page({ params }: { params: { slug: string } }) {
     }
     setSaving(true);
     try {
-      await fetch(`${process.env.backendapi}/api/manage-proxy?domain=${params.slug}`, {
+      await fetch(`${process.env.backendapi}/api/manage-proxy?domain=${(await params).slug}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slug: form.slug,
-          domain: params.slug,
+          domain: (await params).slug,
           ip: form.target,
           port: form.port,
           SSL: form.ssl,

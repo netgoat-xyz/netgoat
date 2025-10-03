@@ -13,7 +13,7 @@ import SiteHeader from "@/components/site-header";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { AnimatePresence, motion } from "framer-motion";
 
-export default function CaptchaConfigPage({ params }: { params: { domain: string; slug: string } }) {
+export default function CaptchaConfigPage({ params }: { params: Promise<{ domain: string; slug: string }>  }) {
   const [enabled, setEnabled] = useState(true);
   const [difficulty, setDifficulty] = useState("medium");
   const [drawerOpen, setDrawerOpen] = useState(false);

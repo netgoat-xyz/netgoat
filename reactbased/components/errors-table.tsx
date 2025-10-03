@@ -3,13 +3,12 @@
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { z } from "zod";
 import {
   DropdownMenu,
@@ -20,7 +19,6 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
-import router from "next/dist/client/router";
 
 const schema = z.object({
   name: z.string(),

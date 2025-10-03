@@ -43,12 +43,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { title } from "process";
 import axios from "axios";
 import { useEffect, useState } from "react";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const pathname = usePathname();
   const params = useParams();
   // Get current domain slug from URL
   const currentDomain = params?.slug || ""; // adjust if your route uses something else
@@ -155,12 +153,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   // Use slug (currentDomain) to find the current domain for preview
+  /*
   const currentTeam =
     teams.find(
       (t) =>
         t.name && t.name.toLowerCase() === String(currentDomain).toLowerCase()
     ) || teams[0];
-
+   */
   const data = {
     user: {
       name: "ducky",

@@ -10,8 +10,8 @@ export default function DNSPageContent({
   slug,
   data,
 }: {
-  slug: string;
-  data: any[];
+  slug: string
+  data: readonly any[]
 }) {
   const totalRecords = data.length;
   const rootRecords = data.filter((r) => r.subdomain === "@").length;

@@ -33,7 +33,7 @@ const schema = z.object({
 
 type Row = z.infer<typeof schema>;
 
-export function DataTable({ data }: { data: Array<Row> }) {
+export function DataTable({ data }: { data: readonly Row[] }) {
   return (
     <Card className="rounded-2xl py-0 mt-2 border border-border bg-background shadow-sm">
       <CardContent className="p-0">
