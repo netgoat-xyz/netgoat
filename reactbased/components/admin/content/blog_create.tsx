@@ -39,7 +39,7 @@ export default function BlogCreate() {
   const [loading, setLoading] = useState(false);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -66,7 +66,8 @@ export default function BlogCreate() {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) return toast("Error", { description: "Could not create blog post." });
+      if (!res.ok)
+        return toast("Error", { description: "Could not create blog post." });
 
       toast("Blog created!", {
         description: "Your blog post was successfully added.",

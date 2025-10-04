@@ -1,32 +1,32 @@
-'use client'
+"use client";
 
-import { useId } from 'react'
-import Image, { type ImageProps } from 'next/image'
-import { Tab } from '@headlessui/react'
-import clsx from 'clsx'
+import { useId } from "react";
+import Image, { type ImageProps } from "next/image";
+import { Tab } from "@headlessui/react";
+import clsx from "clsx";
 
-import { Container } from '@/components/Container'
-import screenshotAnalytics from '@/public/screenshots/analytics.png'
-import screenshot503 from '@/public/screenshots/504.png'
-import screenshotAlwaysAvailable from '@/public/screenshots/AlwaysAvail.png'
+import { Container } from "@/components/Container";
+import screenshotAnalytics from "@/public/screenshots/analytics.png";
+import screenshot503 from "@/public/screenshots/504.png";
+import screenshotAlwaysAvailable from "@/public/screenshots/AlwaysAvail.png";
 
 interface Feature {
-  name: React.ReactNode
-  summary: string
-  description: string
-  image: ImageProps['src']
-  icon: React.ComponentType
+  name: React.ReactNode;
+  summary: string;
+  description: string;
+  image: ImageProps["src"];
+  icon: React.ComponentType;
 }
 
 const features: Array<Feature> = [
   {
-    name: 'NetGoat AlwaysAvaliable',
-    summary: 'Never worry! Always available here! Rest easy with NetGoat.',
+    name: "NetGoat AlwaysAvaliable",
+    summary: "Never worry! Always available here! Rest easy with NetGoat.",
     description:
-      'With Netgoat AlwaysAvailable™, your services stay online even when the unexpected happens. Our robust infrastructure ensures that your applications are resilient and reliable, so you can focus on what matters most.',
+      "With Netgoat AlwaysAvailable™, your services stay online even when the unexpected happens. Our robust infrastructure ensures that your applications are resilient and reliable, so you can focus on what matters most.",
     image: screenshotAlwaysAvailable,
     icon: function ReportingIcon() {
-      let id = useId()
+      let id = useId();
       return (
         <>
           <defs>
@@ -50,15 +50,15 @@ const features: Array<Feature> = [
             strokeLinejoin="round"
           />
         </>
-      )
+      );
     },
   },
   {
-    name: 'Custom Error Pages',
+    name: "Custom Error Pages",
     summary:
-      'Create custom error pages to enhance user experience and maintain brand consistency.',
+      "Create custom error pages to enhance user experience and maintain brand consistency.",
     description:
-      'With our custom error pages, you can turn a frustrating 404 or 500 error into an opportunity to engage your users. Design pages that reflect your brand and guide users back to the content they were looking for.',
+      "With our custom error pages, you can turn a frustrating 404 or 500 error into an opportunity to engage your users. Design pages that reflect your brand and guide users back to the content they were looking for.",
     image: screenshot503,
     icon: function InventoryIcon() {
       return (
@@ -78,15 +78,15 @@ const features: Array<Feature> = [
             fill="#fff"
           />
         </>
-      )
+      );
     },
   },
   {
-    name: 'Analytics Dashboard',
+    name: "Analytics Dashboard",
     summary:
-      'Gain insights into your services with our comprehensive analytics dashboard.',
+      "Gain insights into your services with our comprehensive analytics dashboard.",
     description:
-      'Track your service performance and user engagement with our intuitive analytics dashboard. Visualize key metrics and make data-driven decisions to optimize your applications.',
+      "Track your service performance and user engagement with our intuitive analytics dashboard. Visualize key metrics and make data-driven decisions to optimize your applications.",
     image: screenshotAnalytics,
     icon: function ContactsIcon() {
       return (
@@ -101,29 +101,29 @@ const features: Array<Feature> = [
             fill="#fff"
           />
         </>
-      )
+      );
     },
   },
-]
+];
 
 function Feature({
   feature,
   isActive,
   className,
   ...props
-}: React.ComponentPropsWithoutRef<'div'> & {
-  feature: Feature
-  isActive: boolean
+}: React.ComponentPropsWithoutRef<"div"> & {
+  feature: Feature;
+  isActive: boolean;
 }) {
   return (
     <div
-      className={clsx(className, !isActive && 'opacity-75 hover:opacity-100')}
+      className={clsx(className, !isActive && "opacity-75 hover:opacity-100")}
       {...props}
     >
       <div
         className={clsx(
-          'w-9 rounded-lg',
-          isActive ? 'bg-blue-600' : 'bg-slate-500',
+          "w-9 rounded-lg",
+          isActive ? "bg-blue-600" : "bg-slate-500",
         )}
       >
         <svg aria-hidden="true" className="h-9 w-9" fill="none">
@@ -132,8 +132,8 @@ function Feature({
       </div>
       <h3
         className={clsx(
-          'mt-6 text-sm font-medium',
-          isActive ? 'text-blue-600' : 'text-slate-600',
+          "mt-6 text-sm font-medium",
+          isActive ? "text-blue-600" : "text-slate-600",
         )}
       >
         {feature.name}
@@ -143,7 +143,7 @@ function Feature({
       </p>
       <p className="mt-4 text-sm text-slate-600">{feature.description}</p>
     </div>
-  )
+  );
 }
 
 function FeaturesMobile() {
@@ -166,7 +166,7 @@ function FeaturesMobile() {
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 function FeaturesDesktop() {
@@ -199,8 +199,8 @@ function FeaturesDesktop() {
                   static
                   key={feature.summary}
                   className={clsx(
-                    'px-5 transition duration-500 ease-in-out ui-not-focus-visible:outline-none',
-                    featureIndex !== selectedIndex && 'opacity-60',
+                    "px-5 transition duration-500 ease-in-out ui-not-focus-visible:outline-none",
+                    featureIndex !== selectedIndex && "opacity-60",
                   )}
                   style={{ transform: `translateX(-${selectedIndex * 100}%)` }}
                   aria-hidden={featureIndex !== selectedIndex}
@@ -221,7 +221,7 @@ function FeaturesDesktop() {
         </>
       )}
     </Tab.Group>
-  )
+  );
 }
 
 export function SecondaryFeatures() {
@@ -237,12 +237,13 @@ export function SecondaryFeatures() {
             Simplify everyday management.
           </h2>
           <p className="mt-4 text-lg tracking-tight text-slate-700">
-            Simple, effective, smart systems that simplify the way you manage your services and apps
+            Simple, effective, smart systems that simplify the way you manage
+            your services and apps
           </p>
         </div>
         <FeaturesMobile />
         <FeaturesDesktop />
       </Container>
     </section>
-  )
+  );
 }

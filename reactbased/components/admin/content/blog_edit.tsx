@@ -58,7 +58,9 @@ export default function BlogEdit({ slug, onBack }: BlogEditProps) {
           tags: data.tags || "",
           featuredImage: data.featuredImage || "",
           readTime: data.readTime || "",
-          content: Array.isArray(data.content) ? data.content.join("\n\n") : data.content || "",
+          content: Array.isArray(data.content)
+            ? data.content.join("\n\n")
+            : data.content || "",
           author: data.author || "",
         });
       } catch {
@@ -71,7 +73,7 @@ export default function BlogEdit({ slug, onBack }: BlogEditProps) {
   }, [slug]);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSave = async (e: React.FormEvent) => {
@@ -92,7 +94,10 @@ export default function BlogEdit({ slug, onBack }: BlogEditProps) {
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading post…</div>;
+  if (loading)
+    return (
+      <div className="p-8 text-center text-muted-foreground">Loading post…</div>
+    );
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">

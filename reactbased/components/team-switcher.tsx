@@ -34,7 +34,9 @@ export function TeamSwitcher({
   const { isMobile } = useSidebar();
   const [activeTeam, setActiveTeam] = React.useState(teams[0]);
   // Track image error per team by name
-  const [imgErrorMap, setImgErrorMap] = React.useState<{ [name: string]: boolean }>({});
+  const [imgErrorMap, setImgErrorMap] = React.useState<{
+    [name: string]: boolean;
+  }>({});
 
   if (!activeTeam) {
     return null;
@@ -70,7 +72,12 @@ export function TeamSwitcher({
                     width={24}
                     height={24}
                     className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg"
-                    onError={() => setImgErrorMap((prev) => ({ ...prev, [activeTeam.name]: true }))}
+                    onError={() =>
+                      setImgErrorMap((prev) => ({
+                        ...prev,
+                        [activeTeam.name]: true,
+                      }))
+                    }
                   />
                 )}
               </div>
@@ -112,7 +119,12 @@ export function TeamSwitcher({
                       width={24}
                       height={24}
                       className="flex size-6 items-center justify-center rounded-md border"
-                      onError={() => setImgErrorMap((prev) => ({ ...prev, [team.name]: true }))}
+                      onError={() =>
+                        setImgErrorMap((prev) => ({
+                          ...prev,
+                          [team.name]: true,
+                        }))
+                      }
                     />
                   )}
                 </div>

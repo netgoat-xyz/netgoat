@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 type ChartAreaInteractiveProps = {
   title?: string;
@@ -12,11 +12,10 @@ type ChartAreaInteractiveProps = {
   setTimeRange: (v: string) => void;
 };
 
+import * as React from "react";
+import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 
-import * as React from "react"
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
-
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Card,
   CardAction,
@@ -24,26 +23,23 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
+} from "@/components/ui/chart";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group"
+} from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
-export const description = "An interactive area chart"
+export const description = "An interactive area chart";
 
 export function ChartAreaInteractive({
   title,
@@ -117,8 +113,19 @@ export function ChartAreaInteractive({
             {gradientDefs ?? (
               <defs>
                 {areaKeys.map(({ key, color, gradient }, idx) => (
-                  <linearGradient key={gradient} id={gradient} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={color} stopOpacity={1 - idx * 0.2} />
+                  <linearGradient
+                    key={gradient}
+                    id={gradient}
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="5%"
+                      stopColor={color}
+                      stopOpacity={1 - idx * 0.2}
+                    />
                     <stop offset="95%" stopColor={color} stopOpacity={0.1} />
                   </linearGradient>
                 ))}

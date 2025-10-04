@@ -15,11 +15,7 @@ interface AuthFormProps extends React.ComponentProps<"div"> {
   onSuccess: () => void;
 }
 
-export function AuthForm({
-  onSuccess,
-  className,
-  ...props
-}: AuthFormProps) {
+export function AuthForm({ onSuccess, className, ...props }: AuthFormProps) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [direction, setDirection] = useState<1 | -1>(1);
   const [loading, setLoading] = useState(false);
@@ -121,7 +117,7 @@ export function AuthForm({
     <div
       className={cn(
         "flex flex-col w-full gap-6 items-center justify-center min-h-screen",
-        className
+        className,
       )}
       {...props}
     >

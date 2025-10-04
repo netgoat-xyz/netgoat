@@ -1,17 +1,16 @@
-
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { CalculatorIcon, ChevronDownIcon } from "lucide-react"
+import { CalculatorIcon, ChevronDownIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Label } from "@/components/ui/label";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover"
+} from "@/components/ui/popover";
 
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,7 +33,15 @@ import {
 } from "recharts";
 import { ChartContainer } from "@/components/ui/chart";
 import { CalendarDateRangeIcon } from "@heroicons/react/24/solid";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectLabel, SelectItem } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectLabel,
+  SelectItem,
+} from "@/components/ui/select";
 
 // Custom tooltip styled like Vercel
 function DarkTooltip({ active, payload, label }: any) {
@@ -56,8 +63,8 @@ function DarkTooltip({ active, payload, label }: any) {
 
 export default function AnalyticsReplica() {
   const [timeframe, setTimeframe] = useState("7d");
-  const [open, setOpen] = React.useState(false)
-  const [date, setDate] = React.useState<Date | undefined>(undefined)
+  const [open, setOpen] = React.useState(false);
+  const [date, setDate] = React.useState<Date | undefined>(undefined);
 
   const lineData = useMemo(
     () => [
@@ -70,7 +77,7 @@ export default function AnalyticsReplica() {
       { name: "Sep 11", Visitors: 43 },
       { name: "Sep 12", Visitors: 30 },
     ],
-    [timeframe]
+    [timeframe],
   );
 
   return (
@@ -80,62 +87,64 @@ export default function AnalyticsReplica() {
         <div>
           <h1 className="text-2xl font-bold text-white">Web Analytics</h1>
         </div>
-      <div className="flex flex-col gap-3">
-        
-        <div className="flex items-center">
-          <Select>
-      <SelectTrigger className="w-[180px] mr-2">
-        <SelectValue placeholder="All Subdomains" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          <SelectItem value="all">all</SelectItem>
-          <SelectItem value="@">@</SelectItem>
-          <SelectItem value="www">www</SelectItem>
-          <SelectItem value="api">api</SelectItem>
-          <SelectItem value="canary">canary</SelectItem>
-          <SelectItem value="beta">beta</SelectItem>
-        </SelectGroup>
-      </SelectContent>
-    </Select>
-                <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            id="date"
-            className="border-t-border border-b-border border-l-border border-r-0 rounded-r-none"
-          >
-            <CalendarDateRangeIcon />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto overflow-hidden p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={date}
-            captionLayout="dropdown"
-            onSelect={(date) => {
-              setDate(date)
-              setOpen(false)
-            }}
-          />
-        </PopoverContent>
-      </Popover>
-        <Select>
-      <SelectTrigger className="w-[180px] rounded-l-none mr-2">
-        <SelectValue placeholder="Last 7 Days" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          <SelectItem value="24h">Last 24 Hours</SelectItem>
-          <SelectItem value="7d">Last 7 Days</SelectItem>
-          <SelectItem value="30d">Last 30 Days</SelectItem>
-          <SelectItem value="3mon">Last 3 Months</SelectItem>
-          <SelectItem value="12mon">Last 12 Months</SelectItem>
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center">
+            <Select>
+              <SelectTrigger className="w-[180px] mr-2">
+                <SelectValue placeholder="All Subdomains" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">all</SelectItem>
+                  <SelectItem value="@">@</SelectItem>
+                  <SelectItem value="www">www</SelectItem>
+                  <SelectItem value="api">api</SelectItem>
+                  <SelectItem value="canary">canary</SelectItem>
+                  <SelectItem value="beta">beta</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  id="date"
+                  className="border-t-border border-b-border border-l-border border-r-0 rounded-r-none"
+                >
+                  <CalendarDateRangeIcon />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="w-auto overflow-hidden p-0"
+                align="start"
+              >
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  captionLayout="dropdown"
+                  onSelect={(date) => {
+                    setDate(date);
+                    setOpen(false);
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            <Select>
+              <SelectTrigger className="w-[180px] rounded-l-none mr-2">
+                <SelectValue placeholder="Last 7 Days" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="24h">Last 24 Hours</SelectItem>
+                  <SelectItem value="7d">Last 7 Days</SelectItem>
+                  <SelectItem value="30d">Last 30 Days</SelectItem>
+                  <SelectItem value="3mon">Last 3 Months</SelectItem>
+                  <SelectItem value="12mon">Last 12 Months</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-    </div>
       </div>
 
       {/* Line Chart */}
@@ -181,13 +190,13 @@ export default function AnalyticsReplica() {
           </div>
         </CardContent>
         <ChartContainer
-          config={{ Visitors: { color: "#3B82F6", label: "Visitors" } }} 
+          config={{ Visitors: { color: "#3B82F6", label: "Visitors" } }}
         >
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={lineData}>
               <XAxis
                 dataKey="name"
-                stroke={"#6b7280"} 
+                stroke={"#6b7280"}
                 tick={{ fontSize: 12, fill: "#374151" }}
                 axisLine={false}
                 tickLine={false}
@@ -203,12 +212,12 @@ export default function AnalyticsReplica() {
                 strokeDasharray="3 3"
                 vertical={false}
               />
-              <ReTooltip content={<DarkTooltip />} /> 
+              <ReTooltip content={<DarkTooltip />} />
               subtle shadow, background matching theme
               <Line
-                type="linear" 
+                type="linear"
                 dataKey="Visitors"
-                stroke="#3B82F6" 
+                stroke="#3B82F6"
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4, fill: "#3B82F6", strokeWidth: 0 }}
@@ -218,146 +227,145 @@ export default function AnalyticsReplica() {
         </ChartContainer>
       </div>
 
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Pages */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-white">Pages</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="routes">
-            <TabsList className="mb-4">
-              <TabsTrigger value="routes">Routes</TabsTrigger>
-              <TabsTrigger value="hostnames">Hostnames</TabsTrigger>
-            </TabsList>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pages */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-white">Pages</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="routes">
+              <TabsList className="mb-4">
+                <TabsTrigger value="routes">Routes</TabsTrigger>
+                <TabsTrigger value="hostnames">Hostnames</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="routes">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Path</TableHead>
-                    <TableHead className="text-right">Visitors</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>/</TableCell>
-                    <TableCell className="text-right">345</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>/register</TableCell>
-                    <TableCell className="text-right">46</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>/dashboard</TableCell>
-                    <TableCell className="text-right">41</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>/login</TableCell>
-                    <TableCell className="text-right">7</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TabsContent>
+              <TabsContent value="routes">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Path</TableHead>
+                      <TableHead className="text-right">Visitors</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>/</TableCell>
+                      <TableCell className="text-right">345</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>/register</TableCell>
+                      <TableCell className="text-right">46</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>/dashboard</TableCell>
+                      <TableCell className="text-right">41</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>/login</TableCell>
+                      <TableCell className="text-right">7</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TabsContent>
 
-            <TabsContent value="hostnames">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Hostname</TableHead>
-                    <TableHead className="text-right">Visitors</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>app.duckbot.dev</TableCell>
-                    <TableCell className="text-right">210</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>blog.duckbot.dev</TableCell>
-                    <TableCell className="text-right">120</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>docs.duckbot.dev</TableCell>
-                    <TableCell className="text-right">45</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+              <TabsContent value="hostnames">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Hostname</TableHead>
+                      <TableHead className="text-right">Visitors</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>app.duckbot.dev</TableCell>
+                      <TableCell className="text-right">210</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>blog.duckbot.dev</TableCell>
+                      <TableCell className="text-right">120</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>docs.duckbot.dev</TableCell>
+                      <TableCell className="text-right">45</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
 
-      {/* Referrers */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-white">Referrers</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="referrers">
-            <TabsList className="mb-4">
-              <TabsTrigger value="referrers">Referrers</TabsTrigger>
-              <TabsTrigger value="utm">UTM Parameters</TabsTrigger>
-            </TabsList>
+        {/* Referrers */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-white">Referrers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="referrers">
+              <TabsList className="mb-4">
+                <TabsTrigger value="referrers">Referrers</TabsTrigger>
+                <TabsTrigger value="utm">UTM Parameters</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="referrers">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="text-right">Visitors</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>youtube.com</TableCell>
-                    <TableCell className="text-right">104</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>google.com</TableCell>
-                    <TableCell className="text-right">76</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>duckduckgo.com</TableCell>
-                    <TableCell className="text-right">11</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>bing.com</TableCell>
-                    <TableCell className="text-right">2</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TabsContent>
+              <TabsContent value="referrers">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Source</TableHead>
+                      <TableHead className="text-right">Visitors</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>youtube.com</TableCell>
+                      <TableCell className="text-right">104</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>google.com</TableCell>
+                      <TableCell className="text-right">76</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>duckduckgo.com</TableCell>
+                      <TableCell className="text-right">11</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>bing.com</TableCell>
+                      <TableCell className="text-right">2</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TabsContent>
 
-            <TabsContent value="utm">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>UTM</TableHead>
-                    <TableHead className="text-right">Visitors</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>utm_source=twitter</TableCell>
-                    <TableCell className="text-right">52</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>utm_campaign=launch</TableCell>
-                    <TableCell className="text-right">38</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell>utm_medium=email</TableCell>
-                    <TableCell className="text-right">19</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
-    </div>
-
+              <TabsContent value="utm">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>UTM</TableHead>
+                      <TableHead className="text-right">Visitors</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>utm_source=twitter</TableCell>
+                      <TableCell className="text-right">52</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>utm_campaign=launch</TableCell>
+                      <TableCell className="text-right">38</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>utm_medium=email</TableCell>
+                      <TableCell className="text-right">19</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Countries / Devices / OS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

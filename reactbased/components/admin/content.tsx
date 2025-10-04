@@ -10,7 +10,11 @@ interface AdminContentProps {
   onTabChange: (tab: string) => void;
 }
 
-export function AdminContent({ activeTab, activeSection, onTabChange }: AdminContentProps) {
+export function AdminContent({
+  activeTab,
+  activeSection,
+  onTabChange,
+}: AdminContentProps) {
   const [editSlug, setEditSlug] = useState<string | null>(null);
 
   const handleEdit = (slug: string) => {
@@ -21,17 +25,31 @@ export function AdminContent({ activeTab, activeSection, onTabChange }: AdminCon
   if (activeTab === "overview") return <OverviewContent />;
 
   if (activeTab === "blog") {
-    const BlogHome = dynamic(() => import("./content/blog").then(mod => mod.default), { ssr: false });
-    return <BlogHome onCreate={() => onTabChange("blog_create")} onEdit={handleEdit} />;
+    const BlogHome = dynamic(
+      () => import("./content/blog").then((mod) => mod.default),
+      { ssr: false },
+    );
+    return (
+      <BlogHome
+        onCreate={() => onTabChange("blog_create")}
+        onEdit={handleEdit}
+      />
+    );
   }
 
   if (activeTab === "blog_create") {
-    const BlogCreate = dynamic(() => import("./content/blog_create").then(mod => mod.default), { ssr: false });
+    const BlogCreate = dynamic(
+      () => import("./content/blog_create").then((mod) => mod.default),
+      { ssr: false },
+    );
     return <BlogCreate />;
   }
 
   if (activeTab === "blog_edit" && editSlug) {
-    const BlogEdit = dynamic(() => import("./content/blog_edit").then(mod => mod.default), { ssr: false });
+    const BlogEdit = dynamic(
+      () => import("./content/blog_edit").then((mod) => mod.default),
+      { ssr: false },
+    );
     return <BlogEdit slug={editSlug} />;
   }
 

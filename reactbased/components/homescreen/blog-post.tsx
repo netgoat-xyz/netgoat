@@ -81,46 +81,46 @@ export default function BlogPost({ slug }: BlogPostProps) {
         {/* Category */}
 
         {/* Meta */}
-<div className="flex gap-4 items-center text-sm text-white/60 mb-12">
-  <span>
-    {post.date
-      ? new Date(post.date).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })
-      : new Date(0).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })}
-  </span>
-  • <span>{post.readTime}</span>
-  <div className="bg-white/25 h-6 w-[1px]"></div>
-
-  {/* Avatar + Author container */}
-  <div className="flex items-center gap-2">
-    <Avatar className="h-6 w-6">
-      <AvatarImage src={`https://www.tapback.co/api/avatar/${post.author}.webp`} />
-      <AvatarFallback>
-        {post.author
-          ? post.author
-              .trim()
-              .split(/\s+/)
-              .slice(0, 2)
-              .map(w => w[0].toUpperCase())
-              .join("")
-          : "UA"}
-      </AvatarFallback>
-    </Avatar>
-    <span>{post.author || "Unknown Author"}</span>
-  </div>
-
-  <div className="bg-white/25 h-6 w-[1px]"></div>
-  <span className="px-3 py-1 rounded-full bg-white/5 text-xs text-white/80">
-    {post.category}
-  </span>
-</div>
+        <div className="flex gap-4 items-center text-sm text-white/60 mb-12">
+          <span>
+            {post.date
+              ? new Date(post.date).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })
+              : new Date(0).toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+          </span>
+          • <span>{post.readTime}</span>
+          <div className="bg-white/25 h-6 w-[1px]"></div>
+          {/* Avatar + Author container */}
+          <div className="flex items-center gap-2">
+            <Avatar className="h-6 w-6">
+              <AvatarImage
+                src={`https://www.tapback.co/api/avatar/${post.author}.webp`}
+              />
+              <AvatarFallback>
+                {post.author
+                  ? post.author
+                      .trim()
+                      .split(/\s+/)
+                      .slice(0, 2)
+                      .map((w) => w[0].toUpperCase())
+                      .join("")
+                  : "UA"}
+              </AvatarFallback>
+            </Avatar>
+            <span>{post.author || "Unknown Author"}</span>
+          </div>
+          <div className="bg-white/25 h-6 w-[1px]"></div>
+          <span className="px-3 py-1 rounded-full bg-white/5 text-xs text-white/80">
+            {post.category}
+          </span>
+        </div>
         {/* Markdown content */}
         <article className="prose prose-invert max-w-none space-y-6">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>

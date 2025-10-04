@@ -16,7 +16,7 @@ export default function SiteHeader({ title, id }: SiteHeaderProps) {
           className="mx-2 data-[orientation=vertical]:h-4"
         />
 
-        { title }
+        {title}
 
         <div className="ml-auto flex items-center gap-2"></div>
       </div>

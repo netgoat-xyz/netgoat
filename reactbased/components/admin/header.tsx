@@ -1,30 +1,37 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
-import { Bell, HelpCircle, FileText, MessageSquare, ChevronDown } from "lucide-react"
+} from "@/components/ui/dropdown-menu";
+import {
+  Bell,
+  HelpCircle,
+  FileText,
+  MessageSquare,
+  ChevronDown,
+} from "lucide-react";
 
 export function AdminHeader() {
-  const [notifications, setNotifications] = useState<string[]>([])
+  const [notifications, setNotifications] = useState<string[]>([]);
 
   // Demo: simulate fetching notifications
   useEffect(() => {
     const timer = setInterval(() => {
-      setNotifications((prev) => [...prev, `Notification ${prev.length + 1}`])
-    }, 10000) // every 10s add a notification
-    return () => clearInterval(timer)
-  }, [])
+      setNotifications((prev) => [...prev, `Notification ${prev.length + 1}`]);
+    }, 10000); // every 10s add a notification
+    return () => clearInterval(timer);
+  }, []);
 
-  const username = JSON.parse(localStorage.getItem("session") ?? "{}").username ?? "JD"
+  const username =
+    JSON.parse(localStorage.getItem("session") ?? "{}").username ?? "JD";
 
   return (
     <header className="border-b border-border bg-background">
@@ -92,5 +99,5 @@ export function AdminHeader() {
         </div>
       </div>
     </header>
-  )
+  );
 }

@@ -1,8 +1,8 @@
-import Link from 'next/link'
+import Link from "next/link";
 
-import { Container } from '@/components/Container'
-import { Logo } from '@/components/Logo'
-import { NavLink } from '@/components/NavLink'
+import { Container } from "@/components/Container";
+import { Logo } from "@/components/Logo";
+import { NavLink } from "@/components/NavLink";
 
 export function Footer() {
   return (
@@ -20,7 +20,11 @@ export function Footer() {
         </div>
         <div className="flex flex-col items-center border-t border-slate-400/10 py-10 sm:flex-row-reverse sm:justify-between">
           <div className="flex gap-x-6">
-            <Link href="https://github.com/cloudable-dev/netgoat" className="group" aria-label="NetGoat on GitHub">
+            <Link
+              href="https://github.com/cloudable-dev/netgoat"
+              className="group"
+              aria-label="NetGoat on GitHub"
+            >
               <svg
                 className="h-6 w-6 fill-slate-500 group-hover:fill-slate-700"
                 aria-hidden="true"
@@ -31,11 +35,11 @@ export function Footer() {
             </Link>
           </div>
           <p className="mt-6 text-sm text-slate-500 sm:mt-0">
-            Copyright &copy; {new Date().getFullYear()} Cloudable Netgoat. All rights
-            reserved.
+            Copyright &copy; {new Date().getFullYear()} Cloudable Netgoat. All
+            rights reserved.
           </p>
         </div>
       </Container>
     </footer>
-  )
+  );
 }

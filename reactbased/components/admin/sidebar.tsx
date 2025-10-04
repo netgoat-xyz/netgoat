@@ -1,14 +1,14 @@
-"use client"
+"use client";
 
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Search } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface AdminSidebarProps {
-  activeSection: string
-  onSectionChange: (section: string) => void
+  activeSection: string;
+  onSectionChange: (section: string) => void;
 }
 
 const sidebarSections = [
@@ -30,9 +30,12 @@ const sidebarSections = [
   { id: "security", label: "Security" },
   { id: "secure-compute", label: "Secure Compute" },
   { id: "advanced", label: "Advanced" },
-]
+];
 
-export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarProps) {
+export function AdminSidebar({
+  activeSection,
+  onSectionChange,
+}: AdminSidebarProps) {
   return (
     <aside className="w-64 border-r border-border bg-card">
       <div className="p-4">
@@ -50,7 +53,8 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
               variant="ghost"
               className={cn(
                 "w-full justify-start text-sm font-normal mb-1",
-                activeSection === section.id && "bg-accent text-accent-foreground",
+                activeSection === section.id &&
+                  "bg-accent text-accent-foreground",
               )}
               onClick={() => onSectionChange(section.id)}
             >
@@ -60,5 +64,5 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
         </div>
       </ScrollArea>
     </aside>
-  )
+  );
 }

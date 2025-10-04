@@ -1,4 +1,4 @@
-import mongoose, { Schema } from "mongoose"
+import mongoose, { Schema } from "mongoose";
 
 const BlogPostSchema = new Schema({
   slug: { type: String, unique: true },
@@ -9,6 +9,7 @@ const BlogPostSchema = new Schema({
   author: String,
   category: String,
   content: [String],
-})
+});
 
-export default mongoose.models.BlogPost || mongoose.model("BlogPost", BlogPostSchema)
+export default mongoose.models.BlogPost ||
+  mongoose.model("BlogPost", BlogPostSchema);

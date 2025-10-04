@@ -1,8 +1,8 @@
-import Image from 'next/image'
+import Image from "next/image";
 
-import { Button } from '@/components/Button'
-import { Container } from '@/components/Container'
-import backgroundImage from '@/public/bg_img/background-call-to-action.jpg'
+import { Button } from "@/components/Button";
+import { Container } from "@/components/Container";
+import backgroundImage from "@/public/bg_img/background-call-to-action.jpg";
 
 export function CallToAction() {
   return (
@@ -24,7 +24,8 @@ export function CallToAction() {
             Get started today
           </h2>
           <p className="mt-4 text-lg tracking-tight text-white">
-            It&apos;s time to own whats yours, and manage your web trafic like its the last day on earth.
+            It&apos;s time to own whats yours, and manage your web trafic like
+            its the last day on earth.
             {/*
              i wanna goon right now
             */}
@@ -35,5 +36,5 @@ export function CallToAction() {
         </div>
       </Container>
     </section>
-  )
+  );
 }

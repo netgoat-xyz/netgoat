@@ -1,4 +1,10 @@
-import { CheckCircle2, AlertCircle, XCircle, Wrench, ChevronRight } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  Wrench,
+  ChevronRight,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 interface ServiceCardProps {
@@ -44,36 +50,40 @@ const statusConfig = {
     borderColor: "border-blue-700",
   },
 };
-export const ServiceCard = ({ 
-  name, 
-  status, 
-  uptime, 
-  responseTime, 
+export const ServiceCard = ({
+  name,
+  status,
+  uptime,
+  responseTime,
   onClick,
-  delay = 0 
+  delay = 0,
 }: ServiceCardProps) => {
   const config = statusConfig[status];
   const Icon = config.icon;
 
   return (
-    <Card 
+    <Card
       className={`p-6 rounded-3xl bg-white/[0.06] backdrop-blur-2xl border border-white/[0.08] hover:bg-white/[0.12] hover:border-white/[0.16] transition-all duration-500 ease-out h-full relative overflow-hidden transform hover:scale-[1.02] hover:-translate-y-1 flex flex-col`}
       style={{ animationDelay: `${delay}ms` }}
       onClick={onClick}
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className={`${config.bgColor} ${config.borderColor} border-2 p-2 rounded-lg`}>
+          <div
+            className={`${config.bgColor} ${config.borderColor} border-2 p-2 rounded-lg`}
+          >
             <Icon className={`w-5 h-5 ${config.color}`} />
           </div>
           <div>
             <h3 className="font-semibold text-lg -mb-2">{name}</h3>
-            <span className={`text-xs ${config.color} font-medium`}>{config.label}</span>
+            <span className={`text-xs ${config.color} font-medium`}>
+              {config.label}
+            </span>
           </div>
         </div>
         <ChevronRight className="w-5 h-5 text-muted-foreground transition-transform group-hover:translate-x-1" />
       </div>
-      
+
       <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-white/20 border-t">
         <div>
           <p className="text-xs text-muted-foreground mb-1">Uptime</p>

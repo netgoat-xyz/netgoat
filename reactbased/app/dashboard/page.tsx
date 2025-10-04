@@ -1,11 +1,10 @@
 "use client";
-import { AppSidebar } from "@/components/home-sidebar";
 import { DataTable } from "@/components/domains-table";
-import SiteHeader from "@/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import axios from "axios";
-
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { AppSidebar } from "@/components/home-sidebar";
+import SiteHeader from "@/components/site-header";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 type Domain = {
   group: string;
@@ -25,6 +24,7 @@ type Data = {
   createdAt: string; // or Date if you're parsing it
   updatedAt: string; // or Date if you're parsing it
 };
+
 export default function Page() {
   const [data, setData] = useState<Data | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -60,7 +60,7 @@ export default function Page() {
       })
       .then((res) => {
         setData(res.data || null);
-        localStorage.setItem("userFD", res.data);
+        localStorage.setItem("userFD", JSON.stringify(res.data));
         setLoaded(true);
         setError(null);
       })
@@ -112,38 +112,45 @@ export default function Page() {
   }
 
   return (
-    <>
-      <div className="flex flex-1 flex-col">
-        <div className="@container/main flex flex-1 flex-col gap-2">
-          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-            <div className="px-4 lg:px-6">
-              {/* Show error message if loaded but no data */}
-              {loaded &&
-              !error &&
-              (!data || !data.domains || data.domains.length === 0) ? (
-                <div className="text-center text-muted-foreground py-8 text-lg">
-                  No domains found. Add a domain to get started.
+    <SidebarProvider>
+      <AppSidebar variant="inset" id="AppSidebar" />
+      <SidebarInset id="SidebarInset">
+        <SiteHeader title="Manage domains" id="SiteHeader" />
+
+        <div>
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+                <div className="px-4 lg:px-6">
+                  {/* Show error message if loaded but no data */}
+                  {loaded &&
+                  !error &&
+                  (!data || !data.domains || data.domains.length === 0) ? (
+                    <div className="text-center text-muted-foreground py-8 text-lg">
+                      No domains found. Add a domain to get started.
+                    </div>
+                  ) : null}
+                  {/* Show table if data exists */}
+                  {loaded &&
+                  !error &&
+                  data &&
+                  data.domains &&
+                  data.domains.length > 0 ? (
+                    <DataTable data={data.domains} />
+                  ) : null}
+                  {/* Show error message if loaded and error */}
+                  {loaded && error ? (
+                    <div className="text-center text-destructive py-8 text-lg">
+                      {error}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-              {/* Show table if data exists */}
-              {loaded &&
-              !error &&
-              data &&
-              data.domains &&
-              data.domains.length > 0 ? (
-                <DataTable data={data.domains} />
-              ) : null}
-              {/* Show error message if loaded and error */}
-              {loaded && error ? (
-                <div className="text-center text-destructive py-8 text-lg">
-                  {error}
-                </div>
-              ) : null}
+              </div>
             </div>
-          </div>
+          </div>{" "}
+          {LoadingOverlay}
         </div>
-      </div>
-      {LoadingOverlay}
-    </>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

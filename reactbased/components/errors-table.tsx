@@ -19,11 +19,13 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
+import { id } from "date-fns/locale";
 
 const schema = z.object({
   name: z.string(),
   status: z.enum(["fixed", "patching", "on-going"]),
   site: z.string(),
+  id: z.string(),
   users: z.number(),
   lastSeen: z.string().datetime(),
 });
@@ -47,20 +49,23 @@ export default function DataTable({ data }: { data: Array<Row> }) {
           <TableBody>
             {data.map((row) => (
               <TableRow
-                key={row.name}
+                key={row.id}
+                id={row.id}
                 className="hover:bg-muted/50 transition-colors"
               >
-                <TableCell className="pl-6 font-medium"><Link href={`/dashboard/${row.name}`}>{row.name}</Link></TableCell>
+                <TableCell className="pl-6 font-medium">
+                  <Link href={`/dashboard/${row.name}`}>{row.name}</Link>
+                </TableCell>
                 <TableCell>
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                       row.status === "fixed"
                         ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
                         : row.status === "on-going"
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
-                        : row.status === "patching"
-                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
-                        : ""
+                          ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                          : row.status === "patching"
+                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
+                            : ""
                     }`}
                   >
                     {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
@@ -68,7 +73,9 @@ export default function DataTable({ data }: { data: Array<Row> }) {
                 </TableCell>
                 <TableCell>{row.site}</TableCell>
                 <TableCell>{row.users}</TableCell>
-                <TableCell className="text-right pr-6 text-sm">{new Date(row.lastSeen).toLocaleString()}</TableCell>
+                <TableCell className="text-right pr-6 text-sm">
+                  {new Date(row.lastSeen).toLocaleString()}
+                </TableCell>
                 <TableCell className="text-right pr-6 text-sm flex justify-end text-muted-foreground">
                   <DropdownMenu>
                     <DropdownMenuTrigger className="text-center ">
@@ -88,12 +95,28 @@ export default function DataTable({ data }: { data: Array<Row> }) {
                       </svg>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="opacity-60 filter backdrop-blur-md">
-                      <DropdownMenuLabel className="font-semibold text-foreground">{row.name}</DropdownMenuLabel>
+                      <DropdownMenuLabel className="font-semibold text-foreground">
+                        {row.name}
+                      </DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="hover:text-destructive dark:hover:text-destructive opacity-100">Delete</DropdownMenuItem>
-                      <DropdownMenuItem><Link href={`/dashboard/${row.name}/proxies`}>Proxies</Link></DropdownMenuItem>
-                      <DropdownMenuItem><Link href={`/dashboard/${row.name}/certs/`}>Certs</Link></DropdownMenuItem>
-                      <DropdownMenuItem><Link href={`/dashboard/${row.name}/access`}>Access</Link></DropdownMenuItem>
+                      <DropdownMenuItem className="hover:text-destructive dark:hover:text-destructive opacity-100">
+                        Delete
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link href={`/dashboard/${row.name}/proxies`}>
+                          Proxies
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link href={`/dashboard/${row.name}/certs/`}>
+                          Certs
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link href={`/dashboard/${row.name}/access`}>
+                          Access
+                        </Link>
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>

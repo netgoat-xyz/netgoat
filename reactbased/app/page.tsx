@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import Header from "@/components/homescreen/header"
-import HeroContent from "@/components/homescreen/hero-content"
-import ShaderBackground from "@/components/homescreen/shader-background"
+import Header from "@/components/homescreen/header";
+import HeroContent from "@/components/homescreen/hero-content";
+import ShaderBackground from "@/components/homescreen/shader-background";
 
 export default function ShaderShowcase() {
   return (
@@ -10,5 +10,5 @@ export default function ShaderShowcase() {
       <Header />
       <HeroContent />
     </ShaderBackground>
-  )
+  );
 }

@@ -1,13 +1,9 @@
 "use client";
 
-import { AppSidebar } from "@/components/domain-sidebar";
-
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
-import { SectionCards } from "@/components/section-cards";
-import SiteHeader from "@/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { SectionCards } from "@/components/section-cards";
 
 interface DashboardPageProps {
   params: Promise<{ domain: string; slug: string }>;
@@ -33,26 +29,58 @@ const cacheData: CacheData[] = [
 
 const isMobile = (ua: string) => /iPhone|iPad|iPod|Android|Mobile/i.test(ua);
 
-export default async function DashboardPage({ params }: DashboardPageProps) {
-  const slug = (await params).slug;
+export default function DashboardPage({ params }: DashboardPageProps) {
+  const [slug, setSlug] = useState<string>("");
   const [clients, setClients] = useState<ClientData[]>([]);
   const [timeRange, setTimeRange] = useState<string>("3mo");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isClient, setIsClient] = useState(false);
+
+  // Set client-side flag - this runs only on client
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Handle async params
+  useEffect(() => {
+    const resolveParams = async () => {
+      const resolvedParams = await params;
+      setSlug(resolvedParams.slug);
+    };
+    resolveParams();
+  }, [params]);
 
   useEffect(() => {
+    // Don't run on server side
+    if (!isClient || !slug) return;
+
     const fetchData = async () => {
       try {
+        setIsLoading(true);
+        
+        // Now we're sure we're on client side
+        const jwt = localStorage.getItem("jwt");
+
+        if (!jwt) {
+          console.error("No JWT token found");
+          setIsLoading(false);
+          return;
+        }
+
+        // Use environment variable with fallback
+        const logdbUrl = process.env.NEXT_PUBLIC_LOGDB || "http://localhost:3001";
+
         const res = await axios.get<{ time: string; userAgent: string }[]>(
-          `${process.env.logdb}/api/${slug}/analytics?timeframe=${timeRange}`,
+          `${logdbUrl}/api/${slug}/analytics?timeframe=${timeRange}`,
           {
             headers: {
-              Authorization: `Bearer ${localStorage.getItem("jwt")}`,
+              Authorization: `Bearer ${jwt}`,
             },
-          }
+          },
         );
 
         const logs = res.data;
-        const dailyCounts: Record<string, { mobile: number; desktop: number }> =
-          {};
+        const dailyCounts: Record<string, { mobile: number; desktop: number }> = {};
 
         for (const log of logs) {
           const date = new Date(log.time).toISOString().slice(0, 10);
@@ -70,11 +98,13 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         setClients(finalData);
       } catch (err) {
         console.error("Failed to fetch analytics:", err);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchData();
-  }, [slug, timeRange]);
+  }, [slug, timeRange, isClient]);
 
   const cacheConfig = {
     cache: { label: "cache" },
@@ -87,6 +117,15 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     desktop: { label: "Desktop", color: "var(--primary)" },
     mobile: { label: "Mobile", color: "var(--primary)" },
   };
+
+  // Show loading state while slug is being resolved or on server
+  if (!isClient || !slug || isLoading) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center">
+        <div className="text-muted-foreground">Loading analytics...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col">

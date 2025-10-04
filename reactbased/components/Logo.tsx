@@ -40,7 +40,9 @@ export function Logo(props: React.ComponentPropsWithoutRef<"svg">) {
         y="57"
         clipPath="url(#bgblur_0_0_1_clip_path)"
       >
-        <div style={{ backdropFilter: "blur(2px)", height: "100%", width: "100%" }} />
+        <div
+          style={{ backdropFilter: "blur(2px)", height: "100%", width: "100%" }}
+        />
       </foreignObject>
 
       <g data-figma-bg-blur-radius="4">
@@ -67,7 +69,9 @@ export function Logo(props: React.ComponentPropsWithoutRef<"svg">) {
         y="57"
         clipPath="url(#bgblur_1_0_1_clip_path)"
       >
-        <div style={{ backdropFilter: "blur(2px)", height: "100%", width: "100%" }} />
+        <div
+          style={{ backdropFilter: "blur(2px)", height: "100%", width: "100%" }}
+        />
       </foreignObject>
 
       <g data-figma-bg-blur-radius="4">
@@ -78,10 +82,7 @@ export function Logo(props: React.ComponentPropsWithoutRef<"svg">) {
         />
       </g>
 
-      <path
-        fill="#D3D3D3"
-        d="M160.4 92V58.4h5.088l16.368 19.44..."
-      />
+      <path fill="#D3D3D3" d="M160.4 92V58.4h5.088l16.368 19.44..." />
 
       <defs>
         <clipPath id="bgblur_0_0_1_clip_path" transform="translate(-10 -57)">
@@ -92,5 +93,5 @@ export function Logo(props: React.ComponentPropsWithoutRef<"svg">) {
         </clipPath>
       </defs>
     </svg>
-  )
+  );
 }

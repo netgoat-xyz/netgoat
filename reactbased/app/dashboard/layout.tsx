@@ -1,12 +1,11 @@
-import { ReactNode } from "react"
-import DashboardClientWrapper from "./layoutClient"
-import { Toaster } from "@/components/ui/sonner"
+import { ReactNode } from "react";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <DashboardClientWrapper>
+    <div>
       {children}
       <Toaster />
-    </DashboardClientWrapper>
-  )
+    </div>
+  );
 }

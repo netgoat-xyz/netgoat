@@ -37,7 +37,7 @@ export function signOut() {
   };
 }
 
-type User = { name: string; email: string; avatar: string }
+type User = { name: string; email: string; avatar: string };
 
 export function NavUser({ user }: { user: User }) {
   const { isMobile } = useSidebar();

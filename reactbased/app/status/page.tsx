@@ -33,7 +33,7 @@ const Index = () => {
       const data = await res.json();
 
       const healthPings = data.history.filter(
-        (entry: any) => entry.status === "health_ping"
+        (entry: any) => entry.status === "health_ping",
       );
 
       // group by service and get last status
@@ -62,90 +62,90 @@ const Index = () => {
     fetchServices();
   }, []);
 
-  const overallStatus = services.some(s => s.status === "outage")
+  const overallStatus = services.some((s) => s.status === "outage")
     ? "outage"
-    : services.some(s => s.status === "degraded")
-    ? "degraded"
-    : services.some(s => s.status === "maintenance")
-    ? "maintenance"
-    : "operational";
+    : services.some((s) => s.status === "degraded")
+      ? "degraded"
+      : services.some((s) => s.status === "maintenance")
+        ? "maintenance"
+        : "operational";
 
   return (
     <ShaderBackground>
-            <Header />
-      
-    <div className="relative min-h-screen text-white">
-      <div className="max-w-7xl mx-auto px-4 py-10">
-        {/* Header */}
-        <motion.div
-          className="flex items-center mb-10"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div>
-            <h1 className="text-3xl md:text-4xl font-extrabold drop-shadow-sm">
-              Netgoat Status
-            </h1>
-            <p className="text-gray-300">
-              Real-time monitoring of all services
-            </p>
-          </div>
-        </motion.div>
+      <Header />
 
-        {/* Overall Status */}
-        <StatusHeader status={overallStatus} />
-        <AnnouncementBanner />
-
-        {/* Services */}
-        <div className="mb-16">
-          <h2 className="text-2xl font-bold mb-6">Services</h2>
-          {loading ? (
-            <p>Loading services…</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {services.map((service, index) => (
-                <motion.div
-                  key={service.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{
-                    delay: index * 0.1,
-                    type: "spring",
-                    stiffness: 120,
-                  }}
-                  className=""
-                >
-                  <ServiceCard
-                    name={service.name}
-                    status={service.status}
-                    uptime={service.uptime}
-                    responseTime={service.responseTime}
-                    onClick={() => setSelectedService(service)}
-                    delay={index * 100}
-                  />
-                </motion.div>
-              ))}
+      <div className="relative min-h-screen text-white">
+        <div className="max-w-7xl mx-auto px-4 py-10">
+          {/* Header */}
+          <motion.div
+            className="flex items-center mb-10"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <div>
+              <h1 className="text-3xl md:text-4xl font-extrabold drop-shadow-sm">
+                Netgoat Status
+              </h1>
+              <p className="text-gray-300">
+                Real-time monitoring of all services
+              </p>
             </div>
+          </motion.div>
+
+          {/* Overall Status */}
+          <StatusHeader status={overallStatus} />
+          <AnnouncementBanner />
+
+          {/* Services */}
+          <div className="mb-16">
+            <h2 className="text-2xl font-bold mb-6">Services</h2>
+            {loading ? (
+              <p>Loading services…</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {services.map((service, index) => (
+                  <motion.div
+                    key={service.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{
+                      delay: index * 0.1,
+                      type: "spring",
+                      stiffness: 120,
+                    }}
+                    className=""
+                  >
+                    <ServiceCard
+                      name={service.name}
+                      status={service.status}
+                      uptime={service.uptime}
+                      responseTime={service.responseTime}
+                      onClick={() => setSelectedService(service)}
+                      delay={index * 100}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* History Timeline */}
+          <div className="p-6 rounded-3xl bg-white/[0.06] backdrop-blur-2xl border border-white/[0.08] hover:bg-white/[0.12] hover:border-white/[0.16] transition-all duration-500 ease-out h-full relative overflow-hidden transform flex flex-col">
+            <h2 className="text-xl font-semibold mb-4">History</h2>
+            <HistoryTimeline />
+          </div>
+
+          {/* Modal */}
+          {selectedService && (
+            <StatusModal
+              isOpen={!!selectedService}
+              onClose={() => setSelectedService(null)}
+              service={selectedService}
+            />
           )}
         </div>
-
-        {/* History Timeline */}
-        <div className="p-6 rounded-3xl bg-white/[0.06] backdrop-blur-2xl border border-white/[0.08] hover:bg-white/[0.12] hover:border-white/[0.16] transition-all duration-500 ease-out h-full relative overflow-hidden transform flex flex-col">
-          <h2 className="text-xl font-semibold mb-4">History</h2>
-          <HistoryTimeline />
-        </div>
-
-        {/* Modal */}
-        {selectedService && (
-          <StatusModal
-            isOpen={!!selectedService}
-            onClose={() => setSelectedService(null)}
-            service={selectedService}
-          />
-        )}
       </div>
-    </div>
     </ShaderBackground>
   );
 };
