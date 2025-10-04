@@ -99,7 +99,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     }
 
     axios
-      .get(`${process.env.backendapi}/api/${id}`, {
+      .get(`${process.env.NEXT_PUBLIC_BACKENDAPI}/api/${id}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("jwt")}`,
         },

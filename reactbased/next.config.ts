@@ -2,10 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
-  env: {
-    backendapi: "http://localhost:3001",
-    logdb: "http://localhost:3010",
-  },
   images: {
     remotePatterns: [
       {
