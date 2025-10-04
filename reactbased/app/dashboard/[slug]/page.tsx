@@ -68,7 +68,7 @@ export default function DashboardPage({ params }: DashboardPageProps) {
         }
 
         // Use environment variable with fallback
-        const logdbUrl = process.env.NEXT_PUBLIC_LOGDB || "http://localhost:3001";
+        const logdbUrl = process.env.NEXT_PUBLIC_LOGB || "http://localhost:3001";
 
         const res = await axios.get<{ time: string; userAgent: string }[]>(
           `${logdbUrl}/api/${slug}/analytics?timeframe=${timeRange}`,

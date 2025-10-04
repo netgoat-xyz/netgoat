@@ -48,7 +48,7 @@ export default function Page({
     setLoading(true);
     try {
       const res = await fetch(
-        `${process.env.backendapi}/api/domains/${(await params).slug}`,
+        `${process.env.NEXT_PUBLIC_BACKENDAPI}/api/domains/${(await params).slug}`,
         {
           method: "GET",
           headers: {
@@ -82,7 +82,7 @@ export default function Page({
     setSaving(true);
     try {
       await fetch(
-        `${process.env.backendapi}/api/manage-proxy?domain=${(await params).slug}`,
+        `${process.env.NEXT_PUBLIC_BACKENDAPI}/api/manage-proxy?domain=${(await params).slug}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

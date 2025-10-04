@@ -49,7 +49,7 @@ export function AuthForm({ onSuccess, className, ...props }: AuthFormProps) {
     const password = (form.elements.namedItem("password") as HTMLInputElement)
       ?.value;
     try {
-      const res = await axios.post(process.env.backendapi + "/api/auth/login", {
+      const res = await axios.post(process.env.NEXT_PUBLIC_BACKENDAPI + "/api/auth/login", {
         email,
         password,
       });
@@ -98,7 +98,7 @@ export function AuthForm({ onSuccess, className, ...props }: AuthFormProps) {
     const password = (form.elements.namedItem("password") as HTMLInputElement)
       ?.value;
     try {
-      await axios.post(process.env.backendapi + "/api/auth/register", {
+      await axios.post(process.env.NEXT_PUBLIC_BACKENDAPI + "/api/auth/register", {
         username,
         email,
         password,

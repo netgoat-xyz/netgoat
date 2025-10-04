@@ -1,7 +1,8 @@
 "use client";
+
 import { DataTable } from "@/components/domains-table";
 import axios from "axios";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/home-sidebar";
 import SiteHeader from "@/components/site-header";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -25,7 +26,9 @@ type Data = {
   updatedAt: string; // or Date if you're parsing it
 };
 
-export default function Page() {
+export const dynamic = "force-dynamic";
+
+export default function DashboardHomePage() {
   const [data, setData] = useState<Data | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +55,7 @@ export default function Page() {
       return;
     }
     axios
-      .get(`${process.env.backendapi}/api/${id}`, {
+      .get(`${process.env.NEXT_PUBLIC_BACKENDAPI}/api/${id}`, {
         withCredentials: true,
         headers: {
           Authorization: `Bearer ${localStorage.getItem("jwt")}`,
@@ -105,18 +108,11 @@ export default function Page() {
     </div>
   );
 
-  // Debug: log data and error
-  if (process.env.NODE_ENV !== "production") {
-    console.log("Data fetched:", data);
-    if (error) console.warn("Dashboard error:", error);
-  }
-
   return (
     <SidebarProvider>
       <AppSidebar variant="inset" id="AppSidebar" />
       <SidebarInset id="SidebarInset">
         <SiteHeader title="Manage domains" id="SiteHeader" />
-
         <div>
           <div className="flex flex-1 flex-col">
             <div className="@container/main flex flex-1 flex-col gap-2">
