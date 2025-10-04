@@ -140,7 +140,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           : "Active",
       }));
       const idx = mapped.findIndex(
-        (t) => t.name.toLowerCase() === String(currentDomain).toLowerCase()
+        (t) => t.name.toLowerCase() === String(currentDomain).toLowerCase(),
       );
       if (idx > 0) {
         // Move current domain to the front

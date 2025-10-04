@@ -1,13 +1,13 @@
-"use client"
+"use client";
 
-import { useRef, useState, useLayoutEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
-import { motion } from "framer-motion"
+import { useRef, useState, useLayoutEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 
 interface AdminNavProps {
-  activeTab: string
-  onTabChange: (tab: string) => void
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
 const navItems = [
@@ -23,36 +23,39 @@ const navItems = [
   { id: "AI", label: "AI" },
   { id: "blog", label: "Blog" },
   { id: "settings", label: "Settings" },
-]
+];
 
 export function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [underlineStyle, setUnderlineStyle] = useState({ left: 0, width: 0 })
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [underlineStyle, setUnderlineStyle] = useState({ left: 0, width: 0 });
 
   // normalize blog-related tabs
-  const normalizedTab = activeTab.startsWith("blog") ? "blog" : activeTab
+  const normalizedTab = activeTab.startsWith("blog") ? "blog" : activeTab;
 
   useLayoutEffect(() => {
-    if (!containerRef.current) return
-    const buttons = Array.from(containerRef.current.querySelectorAll("button"))
+    if (!containerRef.current) return;
+    const buttons = Array.from(containerRef.current.querySelectorAll("button"));
     const activeButton = buttons.find(
-      (btn) => btn.getAttribute("data-id") === normalizedTab
-    )
+      (btn) => btn.getAttribute("data-id") === normalizedTab,
+    );
     if (activeButton) {
-      const rect = activeButton.getBoundingClientRect()
-      const containerRect = containerRef.current.getBoundingClientRect()
+      const rect = activeButton.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
       setUnderlineStyle({
         left: rect.left - containerRect.left,
         width: rect.width,
-      })
+      });
     }
-  }, [normalizedTab])
+  }, [normalizedTab]);
 
   return (
     <nav className="border-b border-border bg-background">
-      <div ref={containerRef} className="relative flex items-center overflow-x-auto px-4">
+      <div
+        ref={containerRef}
+        className="relative flex items-center overflow-x-auto px-4"
+      >
         {navItems.map((item) => {
-          const isActive = normalizedTab === item.id
+          const isActive = normalizedTab === item.id;
           return (
             <Button
               key={item.id}
@@ -61,13 +64,13 @@ export function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
               className={cn(
                 "relative z-0 h-12 px-4 py-2 text-sm font-medium",
                 "hover:text-primary hover:bg-background",
-                isActive ? "text-primary" : "text-muted-foreground"
+                isActive ? "text-primary" : "text-muted-foreground",
               )}
               onClick={() => onTabChange(item.id)}
             >
               {item.label}
             </Button>
-          )
+          );
         })}
 
         <motion.div
@@ -79,5 +82,5 @@ export function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
         />
       </div>
     </nav>
-  )
+  );
 }

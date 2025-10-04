@@ -30,12 +30,11 @@ const schema = z.object({
 type Row = z.infer<typeof schema>;
 
 export function DataTable({ data }: { data: Array<Row> }) {
-
-console.log("Full data:", data);
-data.forEach((row, i) => {
-  console.log(`Row ${i}:`, row);
-});
-   if (!data || data.length === 0) {
+  console.log("Full data:", data);
+  data.forEach((row, i) => {
+    console.log(`Row ${i}:`, row);
+  });
+  if (!data || data.length === 0) {
     return (
       <Card className="rounded-2xl py-0 mt-2 border border-border bg-background shadow-sm">
         <CardContent className="p-6 text-center text-muted-foreground">
@@ -71,8 +70,8 @@ data.forEach((row, i) => {
                       row.status === "active"
                         ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
                         : row.status === "inactive"
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
-                        : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
+                          ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                          : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
                     }`}
                   >
                     {row.status}
@@ -111,10 +110,14 @@ data.forEach((row, i) => {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem>
-                        <Link href={`/dashboard/${row.name}/certs/`}>Certs</Link>
+                        <Link href={`/dashboard/${row.name}/certs/`}>
+                          Certs
+                        </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem>
-                        <Link href={`/dashboard/${row.name}/access`}>Access</Link>
+                        <Link href={`/dashboard/${row.name}/access`}>
+                          Access
+                        </Link>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

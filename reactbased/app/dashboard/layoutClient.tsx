@@ -1,46 +1,54 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { usePathname, useRouter } from "next/navigation"
-import { AnimatePresence, motion } from "framer-motion"
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/domain-sidebar";
 import SiteHeader from "@/components/site-header";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
-export default function DashboardClientWrapper({ children, params }: { children: React.ReactNode, params?: any }) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const [ready, setReady] = useState(false)
+export default function DashboardClientWrapper({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params?: any;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const jwt = localStorage.getItem("jwt")
+    const jwt = localStorage.getItem("jwt");
     if (!jwt) {
-      router.replace("/auth")
-      return
+      router.replace("/auth");
+      return;
     }
     fetch("/api/session?session=" + jwt)
       .then((res) => res.json())
       .then((data) => {
-        localStorage.setItem("session", JSON.stringify(data))
-        setReady(true)
+        localStorage.setItem("session", JSON.stringify(data));
+        setReady(true);
       })
-      .catch(() => router.replace("/auth"))
-  }, [router])
+      .catch(() => router.replace("/auth"));
+  }, [router]);
 
   if (!ready) {
     return (
       <div className="flex h-screen items-center justify-center text-muted-foreground">
         Loading dashboard...
       </div>
-    )
+    );
   }
 
   return (
     <SidebarProvider
-      style={{
-        "--sidebar-width": "calc(var(--spacing) * 72)",
-        "--header-height": "calc(var(--spacing) * 12)",
-      } as React.CSSProperties}
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
       id="DashboardSidebarProvider"
     >
       <AppSidebar variant="inset" id="AppSidebar" />
@@ -62,5 +70,5 @@ export default function DashboardClientWrapper({ children, params }: { children:
         </AnimatePresence>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }

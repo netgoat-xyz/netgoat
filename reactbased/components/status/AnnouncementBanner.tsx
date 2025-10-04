@@ -15,14 +15,16 @@ const announcements: Announcement[] = [
   {
     id: "1",
     title: "New API Version Released",
-    message: "We've released v2.0 of our API with improved performance and new features. Check the documentation for migration guide.",
+    message:
+      "We've released v2.0 of our API with improved performance and new features. Check the documentation for migration guide.",
     date: "2 hours ago",
     type: "success",
   },
   {
     id: "2",
     title: "Upcoming Maintenance Window",
-    message: "Scheduled maintenance on January 20th from 2:00 AM - 4:00 AM UTC. Services may be temporarily unavailable.",
+    message:
+      "Scheduled maintenance on January 20th from 2:00 AM - 4:00 AM UTC. Services may be temporarily unavailable.",
     date: "1 day ago",
     type: "warning",
   },
@@ -31,7 +33,9 @@ const announcements: Announcement[] = [
 export const AnnouncementBanner = () => {
   const [dismissed, setDismissed] = useState<string[]>([]);
 
-  const visibleAnnouncements = announcements.filter(a => !dismissed.includes(a.id));
+  const visibleAnnouncements = announcements.filter(
+    (a) => !dismissed.includes(a.id),
+  );
 
   if (visibleAnnouncements.length === 0) return null;
 
@@ -41,9 +45,9 @@ export const AnnouncementBanner = () => {
         <Megaphone className="w-6 h-6 text-primary" />
         Announcements
       </h2>
-      
+
       {visibleAnnouncements.map((announcement, index) => (
-        <Card 
+        <Card
           key={announcement.id}
           className={`p-6 rounded-3xl bg-white/[0.06] backdrop-blur-2xl border border-white/[0.08] hover:bg-white/[0.12] hover:border-white/[0.16] transition-all duration-500 ease-out h-full relative overflow-hidden transform hover:scale-[1.02] hover:-translate-y-1 flex flex-col`}
           style={{ animationDelay: `${index * 100}ms` }}
@@ -52,11 +56,15 @@ export const AnnouncementBanner = () => {
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="font-semibold text-lg">{announcement.title}</h3>
-                <span className="text-xs text-muted-foreground">{announcement.date}</span>
+                <span className="text-xs text-muted-foreground">
+                  {announcement.date}
+                </span>
               </div>
-              <p className="text-sm text-muted-foreground">{announcement.message}</p>
+              <p className="text-sm text-muted-foreground">
+                {announcement.message}
+              </p>
             </div>
-            
+
             <Button
               variant="ghost"
               size="sm"

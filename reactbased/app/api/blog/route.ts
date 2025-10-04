@@ -15,7 +15,10 @@ export async function GET() {
     return NextResponse.json(posts);
   } catch (err: any) {
     console.error("API /blog error:", err);
-    return NextResponse.json({ error: "Failed to fetch posts" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch posts" },
+      { status: 500 },
+    );
   }
 }
 
@@ -26,7 +29,10 @@ export async function POST(req: Request) {
     const { title, excerpt, category, author, readTime, content } = body;
 
     if (!title || !excerpt || !category || !readTime || !content) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 },
+      );
     }
 
     const slug = title
@@ -48,7 +54,9 @@ export async function POST(req: Request) {
     return NextResponse.json(newPost, { status: 201 });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: "Failed to create blog" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create blog" },
+      { status: 500 },
+    );
   }
 }
-

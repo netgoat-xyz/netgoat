@@ -102,25 +102,22 @@ export default function BlogGrid() {
                         {post.excerpt}
                       </p>
 
-                        <div className="flex items-center justify-between text-xs text-white/50 mt-auto pt-2 border-t w-full border-white/[0.06] flex-shrink-0">
-                          <span>
-                            {post.date
-                              ? new Date(post.date).toLocaleDateString(
-                                  "en-US",
-                                  {
-                                    year: "numeric",
-                                    month: "long",
-                                    day: "numeric",
-                                  }
-                                )
-                              : new Date(0).toLocaleDateString("en-US", {
-                                  year: "numeric",
-                                  month: "long",
-                                  day: "numeric",
-                                })}
-                          </span>
-                          <span>{post.readTime}</span>
-                        </div>
+                      <div className="flex items-center justify-between text-xs text-white/50 mt-auto pt-2 border-t w-full border-white/[0.06] flex-shrink-0">
+                        <span>
+                          {post.date
+                            ? new Date(post.date).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              })
+                            : new Date(0).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                              })}
+                        </span>
+                        <span>{post.readTime}</span>
+                      </div>
                     </div>
                   </div>
                 </article>

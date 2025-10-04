@@ -3,8 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   devIndicators: false,
   env: {
-   backendapi: "http://localhost:3001",
-   logdb: "http://localhost:3010",
+    backendapi: "http://localhost:3001",
+    logdb: "http://localhost:3010",
   },
   images: {
     remotePatterns: [
@@ -30,13 +30,13 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "cdnjs.cloudflare.com",
         port: "",
-        pathname: "/**"
+        pathname: "/**",
       },
       {
         protocol: "https",
         hostname: "t2.gstatic.com",
         port: "",
-        pathname: "/**"
+        pathname: "/**",
       },
       {
         protocol: "https",
@@ -55,9 +55,9 @@ const nextConfig: NextConfig = {
         hostname: "cdn.discordapp.com",
         port: "",
         pathname: "/**",
-      }
+      },
     ],
-  }
+  },
 };
 
 export default nextConfig;

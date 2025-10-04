@@ -53,7 +53,10 @@ export function CreateRecordSheet() {
             </div>
             <div className="w-full">
               <Label className="mb-2">Content</Label>
-              <Input value={content} onChange={(e) => setContent(e.target.value)} />
+              <Input
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
             </div>
           </>
         );
@@ -84,7 +87,10 @@ export function CreateRecordSheet() {
               </div>
               <div className="w-full">
                 <Label className="mb-2">Target</Label>
-                <Input value={target} onChange={(e) => setTarget(e.target.value)} />
+                <Input
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                />
               </div>
             </div>
             <div className="flex w-full items-center space-x-3">
@@ -124,7 +130,10 @@ export function CreateRecordSheet() {
             </div>
             <div className="w-full">
               <Label className="mb-2">Content</Label>
-              <Input value={content} onChange={(e) => setContent(e.target.value)} />
+              <Input
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
             </div>
           </div>
         );

@@ -6,11 +6,11 @@ export default function Header() {
   return (
     <header className="relative z-20 flex items-center justify-between p-6">
       {/* Logo */}
-        <Link href="/" className="flex items-center space-x-2">
-            <h1 className="text-2xl  tracking-normal text-white font-calsans">
-                NetGoat
-            </h1>
-   </Link>
+      <Link href="/" className="flex items-center space-x-2">
+        <h1 className="text-2xl  tracking-normal text-white font-calsans">
+          NetGoat
+        </h1>
+      </Link>
       {/* Navigation */}
       <nav className="flex items-center space-x-2">
         <Link
@@ -19,7 +19,7 @@ export default function Header() {
         >
           Features
         </Link>
-                <Link
+        <Link
           href="/blog"
           className="text-white/80 hover:text-white text-xs font-light px-3 py-2 rounded-full hover:bg-white/10 transition-all duration-200"
         >

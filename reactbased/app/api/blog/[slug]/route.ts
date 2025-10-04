@@ -36,7 +36,7 @@ const BlogPost = {
 // Fixed: Destructuring { params } from the context argument with the required inline type definition.
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ slug: string }> } // Destructured definition
+  { params }: { params: Promise<{ slug: string }> }, // Destructured definition
 ) {
   try {
     await connectDB();
@@ -53,7 +53,10 @@ export async function GET(
     return NextResponse.json(post);
   } catch (err) {
     console.error("GET /blog/:slug error:", err);
-    return NextResponse.json({ error: "Failed to fetch blog post" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch blog post" },
+      { status: 500 },
+    );
   }
 }
 
@@ -61,7 +64,7 @@ export async function GET(
 // Fixed: Destructuring { params } from the context argument with the required inline type definition.
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ slug: string }>  } // Destructured definition
+  { params }: { params: Promise<{ slug: string }> }, // Destructured definition
 ) {
   try {
     await connectDB();
@@ -78,7 +81,10 @@ export async function DELETE(
     return NextResponse.json({ message: "Blog deleted successfully" });
   } catch (err) {
     console.error("DELETE /blog/:slug error:", err);
-    return NextResponse.json({ error: "Failed to delete blog" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to delete blog" },
+      { status: 500 },
+    );
   }
 }
 
@@ -86,7 +92,7 @@ export async function DELETE(
 // Fixed: Destructuring { params } from the context argument with the required inline type definition.
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ slug: string }>  } // Destructured definition
+  { params }: { params: Promise<{ slug: string }> }, // Destructured definition
 ) {
   try {
     await connectDB();
@@ -94,12 +100,19 @@ export async function PATCH(
 
     const updates = await req.json();
     if (!updates || Object.keys(updates).length === 0) {
-      return NextResponse.json({ error: "No updates provided" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No updates provided" },
+        { status: 400 },
+      );
     }
 
     // Replace with your actual model logic:
     // const updatedPost = await BlogPost.findOneAndUpdate({ slug }, updates, { new: true });
-    const updatedPost = await (BlogPost as any).findOneAndUpdate({ slug }, updates, { new: true });
+    const updatedPost = await (BlogPost as any).findOneAndUpdate(
+      { slug },
+      updates,
+      { new: true },
+    );
 
     if (!updatedPost) {
       return NextResponse.json({ error: "Blog not found" }, { status: 404 });
@@ -108,6 +121,9 @@ export async function PATCH(
     return NextResponse.json(updatedPost);
   } catch (err) {
     console.error("PATCH /blog/:slug error:", err);
-    return NextResponse.json({ error: "Failed to update blog" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update blog" },
+      { status: 500 },
+    );
   }
 }

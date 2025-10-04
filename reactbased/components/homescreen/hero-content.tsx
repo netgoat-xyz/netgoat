@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 export default function HeroContent() {
   return (
@@ -11,14 +11,18 @@ export default function HeroContent() {
           }}
         >
           <div className="absolute top-0 left-1 right-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent rounded-full" />
-          <span className="text-white/90 text-xs font-light relative z-10">✨ Public Beta - Released </span>
+          <span className="text-white/90 text-xs font-light relative z-10">
+            ✨ Public Beta - Released{" "}
+          </span>
         </div>
 
         {/* Main Heading */}
         <h1 className="text-5xl md:text-6xl md:leading-16 tracking-tight w-full font-light text-white mb-4">
           <span className="font-medium italic instrument">Calm</span> Networking
           <br />
-          <span className="font-light tracking-tight text-white">With the internet</span>
+          <span className="font-light tracking-tight text-white">
+            With the internet
+          </span>
         </h1>
 
         {/* Description */}
@@ -39,5 +43,5 @@ export default function HeroContent() {
         </div>
       </div>
     </main>
-  )
+  );
 }

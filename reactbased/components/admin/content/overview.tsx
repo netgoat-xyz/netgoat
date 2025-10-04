@@ -19,10 +19,10 @@ export function OverviewContent() {
   return (
     <div>
       <div className="p-6">
-              <PageTitle
-        title="System Overview"
-        subtitle="Key metrics and insights at a glance"
-      />
+        <PageTitle
+          title="System Overview"
+          subtitle="Key metrics and insights at a glance"
+        />
         <div className="grid grid-cols-4 space-x-4 my-4">
           <Card className="@container/card">
             <CardHeader>

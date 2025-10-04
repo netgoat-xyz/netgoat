@@ -1,63 +1,63 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import Image from 'next/image'
-import { Tab } from '@headlessui/react'
-import clsx from 'clsx'
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import { Tab } from "@headlessui/react";
+import clsx from "clsx";
 
-import { Container } from '@/components/Container'
-import backgroundImage from '@/public/bg_img/background-features.jpg'
-import screenshotCentralmon from '@/public/screenshots/centralmon.png'
-import screenshotDashboard from '@/public/screenshots/dashboard_demo.png'
-import screenshotSSLCerts from '@/public/screenshots/sslcerts.png'
-import screenshotReverseProxies from '@/public/screenshots/reverse_proxies.png'
+import { Container } from "@/components/Container";
+import backgroundImage from "@/public/bg_img/background-features.jpg";
+import screenshotCentralmon from "@/public/screenshots/centralmon.png";
+import screenshotDashboard from "@/public/screenshots/dashboard_demo.png";
+import screenshotSSLCerts from "@/public/screenshots/sslcerts.png";
+import screenshotReverseProxies from "@/public/screenshots/reverse_proxies.png";
 
 const features = [
   {
-    title: 'Dashboard',
+    title: "Dashboard",
     description:
       "Manage your domains, view analytics, and get a quick overview of your site's performance.",
     image: screenshotDashboard,
   },
   {
-    title: 'View health of netgoat services',
+    title: "View health of netgoat services",
     description:
       "Selfhosted? No problem, you can view the info and health of your netgoat microservices giving you peace of mind. ",
     image: screenshotCentralmon,
   },
   {
-    title: 'Reverse Proxies',
+    title: "Reverse Proxies",
     description:
       "Manage your reverse proxies with ease, allowing you to route traffic to different services seamlessly.",
     image: screenshotReverseProxies,
   },
   {
-    title: 'SSL Certificate Management',
+    title: "SSL Certificate Management",
     description:
-      'Easily manage SSL certificates for your domains, ensuring secure connections.',
+      "Easily manage SSL certificates for your domains, ensuring secure connections.",
     image: screenshotSSLCerts,
   },
-]
+];
 
 export function PrimaryFeatures() {
-  let [tabOrientation, setTabOrientation] = useState<'horizontal' | 'vertical'>(
-    'horizontal',
-  )
+  let [tabOrientation, setTabOrientation] = useState<"horizontal" | "vertical">(
+    "horizontal",
+  );
 
   useEffect(() => {
-    let lgMediaQuery = window.matchMedia('(min-width: 1024px)')
+    let lgMediaQuery = window.matchMedia("(min-width: 1024px)");
 
     function onMediaQueryChange({ matches }: { matches: boolean }) {
-      setTabOrientation(matches ? 'vertical' : 'horizontal')
+      setTabOrientation(matches ? "vertical" : "horizontal");
     }
 
-    onMediaQueryChange(lgMediaQuery)
-    lgMediaQuery.addEventListener('change', onMediaQueryChange)
+    onMediaQueryChange(lgMediaQuery);
+    lgMediaQuery.addEventListener("change", onMediaQueryChange);
 
     return () => {
-      lgMediaQuery.removeEventListener('change', onMediaQueryChange)
-    }
-  }, [])
+      lgMediaQuery.removeEventListener("change", onMediaQueryChange);
+    };
+  }, []);
 
   return (
     <section
@@ -79,13 +79,14 @@ export function PrimaryFeatures() {
             Everything you need to run your app.
           </h2>
           <p className="mt-6 text-lg tracking-tight text-blue-100">
-            Includes everything needed to proxy, secure, and manage your app, All in one centralized place.
+            Includes everything needed to proxy, secure, and manage your app,
+            All in one centralized place.
           </p>
         </div>
         <Tab.Group
           as="div"
           className="mt-16 grid grid-cols-1 items-center gap-y-2 pt-10 sm:gap-y-6 md:mt-20 lg:grid-cols-12 lg:pt-0"
-          vertical={tabOrientation === 'vertical'}
+          vertical={tabOrientation === "vertical"}
         >
           {({ selectedIndex }) => (
             <>
@@ -95,19 +96,19 @@ export function PrimaryFeatures() {
                     <div
                       key={feature.title}
                       className={clsx(
-                        'group relative rounded-full px-4 py-1 lg:rounded-l-xl lg:rounded-r-none lg:p-6',
+                        "group relative rounded-full px-4 py-1 lg:rounded-l-xl lg:rounded-r-none lg:p-6",
                         selectedIndex === featureIndex
-                          ? 'bg-white lg:bg-white/10 lg:ring-1 lg:ring-inset lg:ring-white/10'
-                          : 'hover:bg-white/10 lg:hover:bg-white/5',
+                          ? "bg-white lg:bg-white/10 lg:ring-1 lg:ring-inset lg:ring-white/10"
+                          : "hover:bg-white/10 lg:hover:bg-white/5",
                       )}
                     >
                       <h3>
                         <Tab
                           className={clsx(
-                            'font-display text-lg ui-not-focus-visible:outline-none',
+                            "font-display text-lg ui-not-focus-visible:outline-none",
                             selectedIndex === featureIndex
-                              ? 'text-blue-600 lg:text-white'
-                              : 'text-blue-100 hover:text-white lg:text-white',
+                              ? "text-blue-600 lg:text-white"
+                              : "text-blue-100 hover:text-white lg:text-white",
                           )}
                         >
                           <span className="absolute inset-0 rounded-full lg:rounded-l-xl lg:rounded-r-none" />
@@ -116,10 +117,10 @@ export function PrimaryFeatures() {
                       </h3>
                       <p
                         className={clsx(
-                          'mt-2 hidden text-sm lg:block',
+                          "mt-2 hidden text-sm lg:block",
                           selectedIndex === featureIndex
-                            ? 'text-white'
-                            : 'text-blue-100 group-hover:text-white',
+                            ? "text-white"
+                            : "text-blue-100 group-hover:text-white",
                         )}
                       >
                         {feature.description}
@@ -154,5 +155,5 @@ export function PrimaryFeatures() {
         </Tab.Group>
       </Container>
     </section>
-  )
+  );
 }

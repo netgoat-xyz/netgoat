@@ -24,27 +24,39 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Skeleton } from "@/components/ui/skeleton"
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
-export default function Page({ params }: { params: Promise<{ slug: string }>  }) {
+export default function Page({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   const [filter, setFilter] = useState("all");
   const [proxies, setProxies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ slug: "", target: "", port: 80, ssl: false });
+  const [form, setForm] = useState({
+    slug: "",
+    target: "",
+    port: 80,
+    ssl: false,
+  });
 
   const fetchProxies = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.backendapi}/api/domains/${(await params).slug}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("jwt")}`,
+      const res = await fetch(
+        `${process.env.backendapi}/api/domains/${(await params).slug}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("jwt")}`,
+          },
         },
-      });
+      );
       if (!res.ok) return setProxies([]);
       const data = await res.json();
       setProxies(data.proxied || []);
@@ -55,13 +67,12 @@ export default function Page({ params }: { params: Promise<{ slug: string }>  })
     }
   };
 
-useEffect(() => {
-  const load = async () => {
-    await fetchProxies();
-  };
-  load();
-}, [params]);
-
+  useEffect(() => {
+    const load = async () => {
+      await fetchProxies();
+    };
+    load();
+  }, [params]);
 
   const handleSubmit = async () => {
     if (!form.slug || !form.target) {
@@ -70,17 +81,20 @@ useEffect(() => {
     }
     setSaving(true);
     try {
-      await fetch(`${process.env.backendapi}/api/manage-proxy?domain=${(await params).slug}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slug: form.slug,
-          domain: (await params).slug,
-          ip: form.target,
-          port: form.port,
-          SSL: form.ssl,
-        }),
-      });
+      await fetch(
+        `${process.env.backendapi}/api/manage-proxy?domain=${(await params).slug}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slug: form.slug,
+            domain: (await params).slug,
+            ip: form.target,
+            port: form.port,
+            SSL: form.ssl,
+          }),
+        },
+      );
       setForm({ slug: "", target: "", port: 80, ssl: false });
       setModalOpen(false);
       fetchProxies();
@@ -103,9 +117,11 @@ useEffect(() => {
     filter === "all" ? proxies : proxies.filter((p) => p.status === filter);
 
   const statusColors = {
-    active: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+    active:
+      "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
     down: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-    error: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+    error:
+      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
   };
 
   return (
@@ -133,7 +149,9 @@ useEffect(() => {
                     <Input
                       placeholder="e.g. app"
                       value={form.slug}
-                      onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                      onChange={(e) =>
+                        setForm({ ...form, slug: e.target.value })
+                      }
                     />
                   </div>
                   <div className="flex-1">
@@ -141,7 +159,9 @@ useEffect(() => {
                     <Input
                       placeholder="e.g. 192.168.1.10"
                       value={form.target}
-                      onChange={(e) => setForm({ ...form, target: e.target.value })}
+                      onChange={(e) =>
+                        setForm({ ...form, target: e.target.value })
+                      }
                     />
                   </div>
                 </div>
@@ -151,14 +171,18 @@ useEffect(() => {
                     <Input
                       type="number"
                       value={form.port}
-                      onChange={(e) => setForm({ ...form, port: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setForm({ ...form, port: Number(e.target.value) })
+                      }
                     />
                   </div>
                   <div className="flex items-center gap-2">
                     <Label>SSL</Label>
                     <Switch
                       checked={form.ssl}
-                      onCheckedChange={(checked) => setForm({ ...form, ssl: checked })}
+                      onCheckedChange={(checked) =>
+                        setForm({ ...form, ssl: checked })
+                      }
                     />
                   </div>
                 </div>
@@ -166,7 +190,9 @@ useEffect(() => {
 
               <div className="flex justify-end mt-6">
                 <Button onClick={handleSubmit} disabled={saving}>
-                  {saving && <RefreshCw className="w-4 h-4 animate-spin mr-2" />}
+                  {saving && (
+                    <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  )}
                   Save
                 </Button>
               </div>
@@ -187,7 +213,9 @@ useEffect(() => {
         {/* Table / Empty / Loading */}
         <motion.div
           layout
-          transition={{ layout: { duration: 0.35, type: "spring", bounce: 0.12 } }}
+          transition={{
+            layout: { duration: 0.35, type: "spring", bounce: 0.12 },
+          }}
           className="overflow-x-auto rounded-lg border bg-background"
         >
           {loading ? (
@@ -199,7 +227,9 @@ useEffect(() => {
           ) : filteredProxies.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-center space-y-3">
               <Globe className="w-10 h-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No reverse proxies found.</p>
+              <p className="text-sm text-muted-foreground">
+                No reverse proxies found.
+              </p>
               <Button onClick={() => setModalOpen(true)}>Add Proxy</Button>
             </div>
           ) : (
@@ -231,8 +261,9 @@ useEffect(() => {
                       <TableCell>
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            statusColors[proxy.status as keyof typeof statusColors] ||
-                            "bg-gray-100 text-gray-800"
+                            statusColors[
+                              proxy.status as keyof typeof statusColors
+                            ] || "bg-gray-100 text-gray-800"
                           }`}
                         >
                           {proxy.status || "unknown"}
