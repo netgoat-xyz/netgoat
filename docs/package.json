@@ -18,7 +18,7 @@
     "@mdx-js/react": "^3.0.0",
     "@next/mdx": "^14.2.32",
     "@sindresorhus/slugify": "^2.1.1",
-    "@tailwindcss/typography": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.18",
     "@types/mdx": "^2.0.8",
     "@types/node": "^20.10.8",
     "@types/react": "^18.2.47",
