@@ -47,7 +47,7 @@
     "typescript": "^5.9.2",
     "unist-util-filter": "^5.0.1",
     "unist-util-visit": "^5.0.0",
-    "zustand": "^4.3.2"
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "eslint": "^8.56.0",
