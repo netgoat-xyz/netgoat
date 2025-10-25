@@ -29,7 +29,7 @@
     "autoprefixer": "^10.4.7",
     "clsx": "^2.1.0",
     "fast-glob": "^3.3.0",
-    "flexsearch": "^0.7.31",
+    "flexsearch": "^0.8.212",
     "framer-motion": "^10.18.0",
     "mdast-util-to-string": "^4.0.0",
     "mdx-annotations": "^0.1.1",
