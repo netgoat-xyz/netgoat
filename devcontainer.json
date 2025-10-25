@@ -2,7 +2,6 @@
   "name": "Fullstack Dev + DinD",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {},
-  "postCreateCommand": "./scripts/init-docker-in-docker.sh",
   "runArgs": [
     "--privileged"
   ],
