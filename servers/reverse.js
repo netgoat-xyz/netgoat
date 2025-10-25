@@ -1,172 +1,345 @@
-import mongoose from "mongoose";
+import fs from "fs";
+import path from "path";
+import http from "http";
+import https from "https";
+import net from "net";
+import tls from "tls";
+import crypto from "crypto";
 import { Elysia } from "elysia";
-import { parse } from "tldts";
 import { Eta } from "eta";
 import { request } from "undici";
-import path from "path";
-import Score from "../database/mongodb/schema/score.js";
+import { parse } from "tldts";
+import Redis from "ioredis";
+import mongoose from "mongoose";
+import acme from "acme-client";
+import WAF from "../utils/ruleScript.js";
+import Users from "../database/mongodb/schema/users.js";
 import domains from "../database/mongodb/schema/domains.js";
-import packageInfo from "../package.json" assert { type: "json" };
-import logger from "../utils/logger.js";
-import tracelet from "../utils/tracelet.js";
+import Score from "../database/mongodb/schema/score.js";
 
-// --- App setup
+// --- Configuration and Setup
+const CERTS_DIR = path.join(process.cwd(), "database", "certs");
+if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
+
 const app = new Elysia();
 const eta = new Eta({ views: path.join(process.cwd(), "views") });
-const domainCache = new Map();
+const redis = new Redis(process.env.REDIS_URL);
+redis.connect().catch(e => console.error("Redis Connection Failed:", e.message));
+
+const waf = new WAF();
 
 // --- Helpers
-const getClientIp = (req) => {
-  const xff = req.headers.get("x-forwarded-for");
-  return xff
-    ? xff.split(",")[0].trim()
-    : req.headers.get("x-real-ip") || "unknown";
-};
+function getClientIp(req) {
+  const xff = req.headers["x-forwarded-for"];
+  if (xff) return xff.split(",")[0].trim();
+  return req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
+}
 
-const logToLogDB = async (domain, subdomain, req, time, traceletId) => {
-  try {
-    const payload = {
-        method: req.method,
-      path: new URL(req.url).pathname,
-        headers: Object.fromEntries(req.headers),
-      ip: getClientIp(req),
-      time: time.toISOString(),
-      traceletId,
-    };
-    const sd = subdomain || "@"; // <-- default here
-    await fetch(
-      `${process.env.LogDB_instance}/api/${domain}/analytics?subdomain=${sd}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    );
-  } catch (err) {
-    logger.warn("Failed to send log to LogDB:", err);
+function getCertPaths(userId, domain, subdomain = "@") {
+  const base = path.join(CERTS_DIR, userId, domain, subdomain);
+  return {
+    dir: base,
+    cert: path.join(base, "fullchain.pem"),
+    key: path.join(base, "privkey.pem")
+  };
+}
+
+async function loadOrCreateAccountKey() {
+  const ACCOUNT_KEY_PATH = path.join(CERTS_DIR, "acme-account.key");
+  if (fs.existsSync(ACCOUNT_KEY_PATH)) return fs.readFileSync(ACCOUNT_KEY_PATH, "utf8");
+  const key = await acme.openssl.createPrivateKey();
+  fs.writeFileSync(ACCOUNT_KEY_PATH, key, { mode: 0o600 });
+  return key;
+}
+
+async function getAcmeClient() {
+  const accountKey = await loadOrCreateAccountKey();
+  return new acme.Client({
+    directoryUrl: acme.directory.letsencrypt.production,
+    accountKey
+  });
+}
+
+async function ensureCertificateForUserDomain(userId, domain, subdomain = "@") {
+  const { dir, cert, key } = getCertPaths(userId, domain, subdomain);
+
+  if (fs.existsSync(cert) && fs.existsSync(key)) {
+    try {
+      const certData = fs.readFileSync(cert, "utf8");
+      const info = acme.openssl.readCertificateInfo(certData);
+      if (new Date(info.notAfter).getTime() - Date.now() > 1000 * 60 * 60 * 24 * 14)
+        return { cert: fs.readFileSync(cert), key: fs.readFileSync(key) };
+    } catch {}
   }
-};
 
-// --- Reverse proxy handler
-app.all("/*", async ({ request: req, set }) => {
-  const traceletId = tracelet(process.env.regionID);
+  const client = await getAcmeClient();
+  const [privKey, csr] = await acme.openssl.createCSR({ commonName: domain });
+  const order = await client.createOrder({ identifiers: [{ type: "dns", value: domain }] });
+  const authzs = await client.getAuthorizations(order);
 
+  for (const auth of authzs) {
+    const challenge = auth.challenges.find(c => c.type === "http-01");
+    if (!challenge) throw new Error("No http-01 challenge");
+    const keyAuth = await client.getChallengeKeyAuthorization(challenge);
+    await redis.setex(`acme:http:${challenge.token}`, 300, keyAuth);
+    await client.verifyChallenge(auth, challenge);
+    await client.completeChallenge(challenge);
+    await client.waitForValidStatus(challenge);
+  }
+
+  const finalized = await client.finalizeOrder(order, csr);
+  const newCert = await client.getCertificate(finalized);
+
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(cert, newCert);
+  fs.writeFileSync(key, privKey, { mode: 0o600 });
+
+  return { cert: fs.readFileSync(cert), key: fs.readFileSync(key) };
+}
+
+// --- Domain caching
+async function getDomainData(domain) {
+  const cacheKey = `domain:${domain}`;
+
+  const cached = await redis.get(cacheKey);
+  if (cached != null) return JSON.parse(cached);
+
+  const doc = await domains.findOne({ domain: domain }).lean();
+  if (doc) {
+    const jsonDoc = JSON.stringify(doc);
+    redis.setex(cacheKey, 60, jsonDoc).catch(e => console.error("Redis setex failed:", e.message)); 
+    return doc; 
+  }
+
+  return doc;
+}
+
+function cacheResponse(key, value, ttl = 30) {
+  redis.setex(key, ttl, value).catch(e => console.error("Redis setex failed:", e.message));
+}
+async function getCachedResponse(key) { return redis.get(key); }
+
+// --- WAF + challenge handling
+async function handleWafAndChallenge(req, res) {
+  const wafReq = {
+    method: req.method,
+    url: req.url,
+    headers: req.headers,
+    ip: getClientIp(req),
+    body: null
+  };
+  const result = await waf.checkRequest(wafReq);
+
+  if (result.action === "block") {
+    res.writeHead(403, { "Content-Type": "text/html" });
+    res.end(await eta.render("error/waf.ejs", { reason: "blocked" }));
+    return true;
+  }
+  if (result.action === "redirect") {
+    res.writeHead(302, { Location: result.url });
+    res.end();
+    return true;
+  }
+  if (result.action === "challenge") {
+    const token = crypto.randomUUID();
+    const payload = { ip: wafReq.ip, ua: req.headers["user-agent"] || "", created: Date.now(), type: result.type || "basic" };
+    redis.setex(`challenge:${token}`, 300, JSON.stringify(payload)).catch(e => console.error("Redis setex failed:", e.message));
+    const html = await eta.render("challenge.eta", { token });
+    res.writeHead(403, { "Content-Type": "text/html" });
+    res.end(html);
+    return true;
+  }
+  return false;
+}
+
+// --- HTTP reverse proxy (Optimized Logic without Injection)
+async function proxyHttp(req, res) {
   try {
-    const host = req.headers.get("host")?.split(":")[0];
-    if (!host) return new Response("Missing Host header", { status: 400 });
-
-    const { domain, subdomain } = parse(host);
-    if (!domain) return new Response("Invalid domain", { status: 400 });
-
-    let domainData = domainCache.get(domain);
-    if (!domainData) {
-      domainData = await domains.findOne({ domain });
-      if (domainData) domainCache.set(domain, domainData);
-    }
-    if (!domainData)
-      return new Response("Domain not configured", { status: 404 });
-
-    // pick first proxied target for example
-    const urlPath = new URL(req.url).pathname;
-    const requestedSub = subdomain || "@";
-
-    // find proxied entry matching the slug (default "@" for root)
-    const targetService =
-      domainData.proxied?.find((p) => p.slug === requestedSub) ||
-      domainData.proxied?.find((p) => p.slug === "@");
-
-    if (!targetService) return new Response("Unknown host", { status: 502 });
-    const ipAddress = getClientIp(req);
-
-    // Banned IP check
-    if (targetService.SeperateBannedIP?.some((b) => b.ip === ipAddress))
-      return new Response("Forbidden", { status: 403 });
-
-    // ACL check
-    const userACL = targetService.SeperateACL?.find(
-      (a) => a.user === ipAddress
-    );
-    if (userACL && !userACL.permission.access)
-      return new Response("Access denied", { status: 403 });
-
-    // Rate limit
-    if (targetService.rateRules?.length) {
-      const { requestsPerMinute } = targetService.rateRules[0];
-      const cutoff = new Date(Date.now() - 60 * 1000);
-      const recentReqs = await Score.countDocuments({
-        ipAddress,
-        createdAt: { $gte: cutoff },
-      });
-      if (recentReqs >= requestsPerMinute) {
-        await domains.updateOne(
-          { domain, "proxied.slug": targetService.slug },
-          {
-            $push: {
-              "proxied.$.violations": {
-                ip: ipAddress,
-                reason: "Rate limit exceeded",
-                path: new URL(req.url).pathname,
-              },
-            },
-          }
-        );
-        return new Response("Rate limit exceeded", { status: 429 });
-      }
-    }
-
-    // Forward to IP + PORT
-    const protocol = targetService.SSL ? "https" : "http";
-    const targetUrl = `${protocol}://${targetService.ip}:${targetService.port}${
-      new URL(req.url).pathname
-    }${new URL(req.url).search}`;
-
+    const rawUrl = req.url || "/";
+    const host = (req.headers.host || "").split(":")[0];
+    if (!host) { res.writeHead(400); res.end("Missing Host"); return; }
+    
     const method = req.method;
-    const hasBody = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-    const reqBody = hasBody ? await req.text() : undefined;
 
-    const upstream = await request(targetUrl, {
-      method,
-      headers: Object.fromEntries(req.headers),
-      body: reqBody,
-    });
-
-    const headers = new Headers(upstream.headers);
-    headers.set("x-tracelet-id", traceletId);
-    headers.set("x-powered-by", `NetGoat ${packageInfo.version}`);
-    headers.set(
-      "Access-Control-Expose-Headers",
-      "x-tracelet-id,x-powered-by,x-worker-id"
-    );
-
-    // logging
-    await logToLogDB(domain, subdomain, req, new Date(), traceletId);
-
-    const bodyText = await upstream.body.text();
-    if ((upstream.headers["content-type"] || "").includes("text/html")) {
-      const injectedScript = `
-        <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
-        <script src="https://api.netgoat.cloudable.dev/monitor.js"></script>
-      `;
-      return new Response(
-        bodyText.replace("</body>", `${injectedScript}</body>`),
-        { status: upstream.statusCode, headers }
-      );
+    // ACME challenge
+    if (rawUrl.startsWith("/.well-known/acme-challenge/")) {
+      const token = rawUrl.split("/").pop();
+      const keyAuth = await redis.get(`acme:http:${token}`);
+      if (keyAuth) { res.writeHead(200, { "Content-Type": "text/plain" }); res.end(keyAuth); return; }
     }
 
-    return new Response(bodyText, { status: upstream.statusCode, headers });
+    const wafHandled = await handleWafAndChallenge(req, res);
+    if (wafHandled) return;
+    
+    // --- Domain Lookup & Fallback Logic ---
+    let domainData = await getDomainData(host);
+
+    if (!domainData) { 
+        const { domain: tldtsDomain } = parse(host);
+        if (tldtsDomain && tldtsDomain !== host) {
+            domainData = await getDomainData(tldtsDomain);
+        }
+    }
+    
+    if (!domainData) { 
+        res.writeHead(404); 
+        res.end("Domain not configured"); 
+        return; 
+    }
+
+    // --- Determine the correct slug ---
+    let requestedSlug = "";
+    
+    if (host === domainData.domain) {
+        requestedSlug = ""; 
+    } else if (host.endsWith('.' + domainData.domain)) {
+        const baseLength = domainData.domain.length + 1;
+        requestedSlug = host.substring(0, host.length - baseLength);
+    } 
+
+    const targetService = domainData.proxied?.find(p => (p.slug === requestedSlug || (p.slug === "@" && requestedSlug === "")));
+    
+    if (!targetService) { res.writeHead(502); res.end("Unknown host"); return; }
+    
+    // --- Check Cache HIT BEFORE Upstream Request ---
+    const cacheKey = `resp:${host}:${rawUrl}`;
+    const shouldCache = (method === "GET" && targetService.cacheable);
+    
+    if (shouldCache) {
+      const cached = await getCachedResponse(cacheKey);
+      if (cached) { 
+          // Note: Assuming cached content is text/html for this header, adjust if caching other types.
+          res.writeHead(200, { "Content-Type": "text/html", "x-cache": "HIT" }); 
+          res.end(cached); 
+          return; 
+      }
+    }
+
+    // --- Connection and Proxy Setup ---
+    const ip = getClientIp(req);
+    if (targetService.SeperateBannedIP?.some(b => b.ip === ip)) { res.writeHead(403); res.end("Forbidden"); return; }
+
+    const protocol = targetService.SSL ? "https" : "http";
+    const targetUrl = `${protocol}://${targetService.ip}:${targetService.port}${rawUrl}`;
+    
+    const headers = { ...req.headers };
+    delete headers.connection; 
+    delete headers["keep-alive"];
+    delete headers["transfer-encoding"]; 
+    delete headers["proxy-authorization"];
+    delete headers["proxy-authenticate"];
+    // Disable backend compression
+    delete headers["accept-encoding"]; 
+
+    const upstream = await request(targetUrl, { method, headers, body: method === "GET" ? undefined : req });
+
+    const outHeaders = {};
+    for (const [k, v] of Object.entries(upstream.headers || {})) {
+        const lowerK = k.toLowerCase();
+        // Strip compression and transfer headers on the way back
+        if (lowerK !== 'content-length' && lowerK !== 'transfer-encoding' && lowerK !== 'content-encoding') {
+            outHeaders[k] = v;
+        }
+    }
+    outHeaders["x-powered-by"] = `NetGoat`;
+    outHeaders["x-tracelet-id"] = crypto.randomUUID();
+
+    // --- Stream or Buffer for Caching ---
+    
+    if (shouldCache) {
+        // MUST buffer here to save the whole body to Redis.
+        const bodyBuffer = await upstream.body.arrayBuffer();
+        let bodyText = Buffer.from(bodyBuffer).toString();
+        
+        // Cache the response
+        cacheResponse(cacheKey, bodyText, targetService.cacheTTL || 30); // No await
+        
+        // Since we buffered, we need to explicitly set Content-Length for the client
+        outHeaders['content-length'] = Buffer.byteLength(bodyText);
+
+        // Send the buffered response
+        res.writeHead(upstream.statusCode, outHeaders);
+        res.end(bodyText);
+
+    } else {
+        // FASTEST PATH: Stream directly for all non-cacheable responses
+        res.writeHead(upstream.statusCode, outHeaders);
+        upstream.body.pipe(res); 
+    }
+
   } catch (err) {
-    const html = await eta.render("error/500.ejs", {
-      traceletId: tracelet(process.env.regionID),
-      error: err.message,
-    });
-    return new Response(html, {
-      status: 500,
-      headers: { "Content-Type": "text/html" },
-    });
+    console.error("Proxy Error:", err);
+    const html = await eta.render("error/500.ejs", { error: err.message || String(err) });
+    res.writeHead(500, { "Content-Type": "text/html" });
+    res.end(html);
   }
-});
+}
 
-app.listen({ port: 80 });
-app.listen({ port: 443 });
+// --- WebSocket / TCP upgrade
+async function handleUpgrade(req, socket, head) {
+  try {
+    const host = (req.headers.host || "").split(":")[0];
+    const lookupDomain = host; 
+    
+    let domainData = await getDomainData(lookupDomain);
+    
+    if (!domainData) {
+        const { domain: tldtsDomain } = parse(host);
+        if (tldtsDomain && tldtsDomain !== host) {
+            domainData = await getDomainData(tldtsDomain);
+        }
+    }
+    if (!domainData) { socket.destroy(); return; }
 
-logger.info("Reverse proxy running on port 80");
+    let requestedSlug = "";
+    if (host.endsWith('.' + domainData.domain)) {
+        const baseLength = domainData.domain.length + 1;
+        requestedSlug = host.substring(0, host.length - baseLength);
+    } 
+
+    const targetService = domainData.proxied?.find(p => (p.slug === requestedSlug || (p.slug === "@" && requestedSlug === "")));
+    
+    if (!targetService || !targetService.WS) { socket.destroy(); return; }
+
+    const targetSocket = net.connect(targetService.port, targetService.ip, () => {
+      targetSocket.write(head);
+      socket.pipe(targetSocket).pipe(socket);
+    });
+    targetSocket.on("error", () => socket.destroy());
+  } catch { socket.destroy(); }
+}
+
+// --- Start HTTP + HTTPS
+async function start() {
+  const httpServer = http.createServer(proxyHttp);
+  httpServer.timeout = 30000; 
+  httpServer.on("upgrade", handleUpgrade);
+  httpServer.listen(80, () => console.log("HTTP listening on 80"));
+
+  const defaultCert = fs.existsSync(path.join(CERTS_DIR, "default.pem")) ? fs.readFileSync(path.join(CERTS_DIR, "default.pem")) : null;
+  const defaultKey = fs.existsSync(path.join(CERTS_DIR, "default.key")) ? fs.readFileSync(path.join(CERTS_DIR, "default.key")) : null;
+
+  const options = defaultCert && defaultKey ? {
+    key: defaultKey,
+    cert: defaultCert,
+    SNICallback: async (servername, cb) => {
+      try {
+        const domainDoc = await domains.findOne({ domain: servername }).lean();
+        if (!domainDoc) return cb(new Error("No domain"));
+        const userId = domainDoc.ownerId;
+        const { cert, key } = await ensureCertificateForUserDomain(userId, servername);
+        cb(null, tls.createSecureContext({ key, cert }));
+      } catch (e) { cb(e); }
+    }
+  } : {
+    key: fs.readFileSync(path.join(CERTS_DIR, "dummy.key")),
+    cert: fs.readFileSync(path.join(CERTS_DIR, "dummy.crt"))
+  };
+
+  const httpsServer = https.createServer(options, proxyHttp);
+  httpsServer.timeout = 30000;
+  httpsServer.on("upgrade", handleUpgrade);
+  httpsServer.listen(443, () => console.log("HTTPS listening on 443"));
+}
+
+start();
