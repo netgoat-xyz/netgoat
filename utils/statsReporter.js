@@ -1,5 +1,6 @@
 import os from "os";
 import process from "process";
+import logger from "./logger"
 
 let reportingInterval = null;
 let currentSecretKey = null;
@@ -7,9 +8,8 @@ let lastCpuUsage = process.cpuUsage();
 let lastHr = process.hrtime.bigint();
 
 function log(level, ...args) {
-  const l = global.logger?.[level] || console[level] || console.log;
   if (level === "debug" && process.env.DEBUG !== "true") return; // only log debug if DEBUG=true
-  l("[StatsReporter]", ...args);
+  logger.stats(...args);
 }
 
 async function sampleAppCpu() {

@@ -74,7 +74,7 @@ const proxiedSchema = new Schema(
       rateRules: [rateLimitSchema],
   violations: [violations],
   },
-  { _id: false }
+  { _id: true }
 );
 
 // 🔌 Integrations Schema
@@ -97,11 +97,27 @@ const integrationsSchema = new Schema(
 );
 
 
+const recordSchema = new Schema(
+  {
+    type: { type: String, required: true },
+    name: { type: String, required: true },
+    content: { type: String, required: true },
+    ttl: { type: Number, default: 3600 },
+    priority: { type: Number, default: 10 },
+    proxied: { type: Boolean, default: false },
+    active: { type: Boolean, default: true },
+    zoneHost: { type: String },
+    createdAt: { type: Date, default: Date.now() },
+    updatedAt: { type: Date, default: Date.now() },
+  },
+  { _id: false }
+);
 
-// 🧩 Final Domain Schema
+
 const domainSchema = new Schema({
   domain: { type: String, required: true, unique: true, trim: true, index: true },
   nameservers: { type: Boolean, default: false },
+  records: [recordSchema],
   proxied: [proxiedSchema],
   acl: [aclSchema],
   rules: [ruleSchema],
