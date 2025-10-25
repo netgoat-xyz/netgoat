@@ -6,6 +6,7 @@ const levels = {
   error: { color: chalk.red,     emoji: '❌ '  },
   debug: { color: chalk.magenta, emoji: '🐛 '  },
   success: { color: chalk.green, emoji: '✅'  },
+  stats: { color: chalk.blue, emoji: '📢' }
 };
 
 const log = (level, ...msg) => {
@@ -20,4 +21,5 @@ export default {
   error:   (...msg) => log('error', ...msg),
   debug:   (...msg) => log('debug', ...msg),
   success: (...msg) => log('success', ...msg),
+  stats: (...msg) => log('stats', ...msg)
 };
