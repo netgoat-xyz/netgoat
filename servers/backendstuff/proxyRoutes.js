@@ -365,6 +365,15 @@ export function registerProxyRoutes(app) {
   // ---------------- WAF Script Upload ----------------
   app.post("/api/waf/upload", async ({ body, headers }, reply) => {
     try {
+      // Only allow safe filenames: letters, numbers, underscores, hyphens
+      if (
+        typeof body.name !== "string" ||
+        !body.name.match(/^[a-zA-Z0-9_-]+$/)
+      ) {
+        return reply
+          .status(400)
+          .send({ success: false, error: "Invalid rule name" });
+      }
       const filePath = path.join(
         process.cwd(),
         "waf",
