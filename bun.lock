@@ -25,7 +25,7 @@
         "chalk": "^5.6.2",
         "cli-progress": "^3.12.0",
         "cors": "^2.8.5",
-        "daisyui": "^5.3.2",
+        "daisyui": "^5.3.10",
         "dns-packet": "^5.6.1",
         "dotenv": "^17.2.3",
         "elysia": "^1.4.13",
@@ -693,7 +693,7 @@
 
     "culvert": ["culvert@0.1.2", "", {}, "sha512-yi1x3EAWKjQTreYWeSd98431AV+IEE0qoDyOoaHJ7KJ21gv6HtBXHVLX74opVSGqcR8/AbjJBHAHpcOy2bj5Gg=="],
 
-    "daisyui": ["daisyui@5.3.2", "", {}, "sha512-hw6NmQvFHdZI1Zb94EX+vA0DhuXGfqwQInDQ6XNZ5dgkoDy+e01P4OkJ8umAQAAzVSKGwm6QDMXOw6eJV63OEQ=="],
+    "daisyui": ["daisyui@5.3.10", "", {}, "sha512-vmjyPmm0hvFhA95KB6uiGmWakziB2pBv6CUcs5Ka/3iMBMn9S+C3SZYx9G9l2JrgTZ1EFn61F/HrPcwaUm2kLQ=="],
 
     "data-uri-to-buffer": ["data-uri-to-buffer@6.0.2", "", {}, "sha512-7hvf7/GW8e86rW0ptuwS3OcBGDjIi6SZva7hCyWC0yYry2cOPmLIjXAUHI6DK2HsnwJd9ifmt57i8eV2n4YNpw=="],
 
