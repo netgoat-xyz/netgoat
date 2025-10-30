@@ -24,7 +24,7 @@
     "daisyui": "^5.3.2",
     "dns-packet": "^5.6.1",
     "dotenv": "^17.2.3",
-    "elysia": "^1.4.11",
+    "elysia": "^1.4.13",
     "escape-html": "^1.0.3",
     "eta": "^3.5.0",
     "express": "^5.1.0",
