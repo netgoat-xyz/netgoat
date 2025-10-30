@@ -7,7 +7,7 @@
 
 # Copilot Prompt: make this code follow community standards, with Labels and such, add human like comments, seprators, etc
 
-FROM bun:latest AS base
+FROM oven/bun:latest AS base
 
 # ---- Metadata ----
 LABEL org.opencontainers.image.title="NetGoat"
