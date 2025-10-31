@@ -10,7 +10,7 @@ import { execSync } from "child_process";
 import { startReporting } from "./utils/statsReporter.js";
 
 await import("./utils/loader.js");
-import("./database/mongodb/init.js")
+import("./database/mongodb/init.js");
 
 function getDiskInfo() {
   try {
@@ -18,7 +18,9 @@ function getDiskInfo() {
       const lsblk = execSync("lsblk -d -o name,rota | grep -v NAME").toString();
       return lsblk.includes("0") ? "SSD/NVMe (rota=0)" : "HDD (rota=1)";
     } else if (process.platform === "darwin") {
-      const diskutil = execSync('diskutil info / | grep "Solid State"').toString();
+      const diskutil = execSync(
+        'diskutil info / | grep "Solid State"',
+      ).toString();
       return diskutil.includes("Yes") ? "SSD" : "HDD";
     }
   } catch {
@@ -31,7 +33,7 @@ function getNetworkSpeed() {
   try {
     if (process.platform === "linux") {
       const iface = Object.keys(os.networkInterfaces()).find(
-        (name) => !name.includes("lo")
+        (name) => !name.includes("lo"),
       );
       if (!iface) return "Unknown";
       const speed = execSync(`ethtool ${iface} | grep Speed`).toString();
@@ -70,7 +72,10 @@ for (const [key, value] of Object.entries(systemSpecs)) {
   systemTable.addRow(key, value);
 }
 
-const workersTable = new AsciiTable("Recommended Workers").setHeading("Service", "Workers");
+const workersTable = new AsciiTable("Recommended Workers").setHeading(
+  "Service",
+  "Workers",
+);
 for (const [key, value] of Object.entries(workers)) {
   workersTable.addRow(key, value);
 }
@@ -109,7 +114,7 @@ if (cluster.isPrimary) {
     sharedJwt: process.env.Central_JWT,
     intervalMinutes: 1,
     service: process.env.service || role,
-    workerId: String(process.pid),   // use own pid here
+    workerId: String(process.pid), // use own pid here
     regionId: process.env.regionID || "local",
   });
 
