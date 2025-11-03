@@ -6,7 +6,7 @@
       "dependencies": {
         "@coreui/coreui": "^5.4.3",
         "@coreui/react": "^5.9.1",
-        "@elysiajs/static": "^1.4.4",
+        "@elysiajs/static": "^1.4.6",
         "@fastify/cors": "^11.1.0",
         "@fastify/http-proxy": "^11.3.0",
         "@fastify/static": "^8.2.0",
@@ -145,7 +145,7 @@
 
     "@coreui/react": ["@coreui/react@5.9.1", "", { "dependencies": { "@coreui/coreui": "^5.4.3", "@popperjs/core": "^2.11.8", "prop-types": "^15.8.1" }, "peerDependencies": { "react": ">=17", "react-dom": ">=17" } }, "sha512-bMAzJELRmrY23LXuqmuyF2EGDLLqTStQkV3anTQaOYMC5nIo9WFwVdEXoG9xC+ero/gzCIhcTcDKhRSsFCl4KA=="],
 
-    "@elysiajs/static": ["@elysiajs/static@1.4.4", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-PT/uGvBHQL5I+APAGiuRjhVfySe5YmrJdPtSc2QyM6CgNp4WDCmPfhPoVYkHNaH5QGWdP62hMq0HUnClNxR3zw=="],
+    "@elysiajs/static": ["@elysiajs/static@1.4.6", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-cd61aY/DHOVhlnBjzTBX8E1XANIrsCH8MwEGHeLMaZzNrz0gD4Q8Qsde2dFMzu81I7ZDaaZ2Rim9blSLtUrYBg=="],
 
     "@emnapi/core": ["@emnapi/core@1.5.0", "", { "dependencies": { "@emnapi/wasi-threads": "1.1.0", "tslib": "^2.4.0" } }, "sha512-sbP8GzB1WDzacS8fgNPpHlp6C9VZe+SJP3F90W9rLemaQj2PzIuTEl1qDOYQf58YIpyjViI24y9aPWCjEzY2cg=="],
 
