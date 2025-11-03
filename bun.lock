@@ -21,7 +21,7 @@
         "body-parser": "^2.2.0",
         "bun": "^1.3.1",
         "cal-sans": "^1.0.1",
-        "canvas-confetti": "^1.9.3",
+        "canvas-confetti": "^1.9.4",
         "chalk": "^5.6.2",
         "cli-progress": "^3.12.0",
         "cors": "^2.8.5",
@@ -619,7 +619,7 @@
 
     "caniuse-lite": ["caniuse-lite@1.0.30001743", "", {}, "sha512-e6Ojr7RV14Un7dz6ASD0aZDmQPT/A+eZU+nuTNfjqmRrmkmQlnTNWH0SKmqagx9PeW87UVqapSurtAXifmtdmw=="],
 
-    "canvas-confetti": ["canvas-confetti@1.9.3", "", {}, "sha512-rFfTURMvmVEX1gyXFgn5QMn81bYk70qa0HLzcIOSVEyl57n6o9ItHeBtUSWdvKAPY0xlvBHno4/v3QPrT83q9g=="],
+    "canvas-confetti": ["canvas-confetti@1.9.4", "", {}, "sha512-yxQbJkAVrFXWNbTUjPqjF7G+g6pDotOUHGbkZq2NELZUMDpiJ85rIEazVb8GTaAptNW2miJAXbs1BtioA251Pw=="],
 
     "chalk": ["chalk@5.6.2", "", {}, "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="],
 
