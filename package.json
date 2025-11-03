@@ -28,7 +28,7 @@
     "escape-html": "^1.0.3",
     "eta": "^4.0.1",
     "express": "^5.1.0",
-    "express-rate-limit": "^8.1.0",
+    "express-rate-limit": "^8.2.1",
     "fastify": "^5.6.1",
     "figlet": "^1.9.3",
     "fs": "^0.0.1-security",
