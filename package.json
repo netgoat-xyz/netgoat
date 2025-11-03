@@ -2,7 +2,7 @@
   "dependencies": {
     "@coreui/coreui": "^5.4.3",
     "@coreui/react": "^5.9.1",
-    "@elysiajs/static": "^1.4.4",
+    "@elysiajs/static": "^1.4.6",
     "@fastify/cors": "^11.1.0",
     "@fastify/http-proxy": "^11.3.0",
     "@fastify/static": "^8.2.0",
