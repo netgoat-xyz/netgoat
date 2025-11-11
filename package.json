@@ -40,7 +40,7 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "mineflayer-pathfinder": "^2.4.5",
-    "mongoose": "^8.19.1",
+    "mongoose": "^8.19.3",
     "native-dns": "^0.7.0",
     "node-cache": "^5.1.2",
     "passport": "^0.7.0",
