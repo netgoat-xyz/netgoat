@@ -1,0 +1,13 @@
+{
+  "name": "licensing",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.2"
+  }
+}
