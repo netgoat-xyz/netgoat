@@ -52,6 +52,7 @@
     "svg-captcha": "^1.4.0",
     "tailwindcss": "^4.1.14",
     "tldts": "^7.0.17",
+    "vm2": "^3.10.0",
     "zod": "^4.1.12"
   },
   "name": "netgoat",

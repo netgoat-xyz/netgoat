@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Traffic AI Analyzer</title>
+    <!-- Load Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font family -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background matching GitHub/Dark Mode */
+            color: #c9d1d9; /* Light text */
+        }
+        .prediction-card-base {
+            transition: all 0.5s ease-in-out;
+            min-height: 250px;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="text-center mb-10 p-4 border-b border-gray-700">
+            <h1 class="text-4xl font-extrabold text-white">AI Network Traffic Analyzer</h1>
+            <p class="text-gray-400 mt-2">Simulate network flows and predict traffic type using the Monte Carlo Dropout model.</p>
+        </header>
+
+        <!-- Main Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Feature Input Panel (Left & Center Columns) -->
+            <div class="lg:col-span-2 space-y-6 p-6 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
+                <h2 class="text-2xl font-bold text-white mb-4 border-b border-gray-700 pb-2">1. Adjust Network Features</h2>
+
+                <!-- Input Form -->
+                <div id="feature-inputs" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- Feature 1: Packet Count -->
+                    <div class="feature-group">
+                        <label for="packetCount" class="block text-sm font-medium text-gray-300 mb-2">Packet Count (1 to 10000)</label>
+                        <input type="range" id="packetCount" min="1" max="10000" step="10" value="50" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs mt-1">
+                            <span class="text-gray-400">Min: 1</span>
+                            <span class="text-white font-semibold" id="packetCountValue">50</span>
+                            <span class="text-gray-400">Max: 10k</span>
+                        </div>
+                    </div>
+
+                    <!-- Feature 2: Duration (Seconds) -->
+                    <div class="feature-group">
+                        <label for="durationSec" class="block text-sm font-medium text-gray-300 mb-2">Duration (Seconds) (0.1 to 30.0)</label>
+                        <input type="range" id="durationSec" min="0.1" max="30.0" step="0.1" value="6.5" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs mt-1">
+                            <span class="text-gray-400">Min: 0.1s</span>
+                            <span class="text-white font-semibold" id="durationSecValue">6.5</span>
+                            <span class="text-gray-400">Max: 30s</span>
+                        </div>
+                    </div>
+
+                    <!-- Feature 3: Source IP Entropy (Diversity) -->
+                    <div class="feature-group">
+                        <label for="ipEntropy" class="block text-sm font-medium text-gray-300 mb-2">Source IP Entropy (0.0 Low Diversity to 1.0 High Diversity)</label>
+                        <input type="range" id="ipEntropy" min="0.0" max="1.0" step="0.01" value="0.90" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs mt-1">
+                            <span class="text-gray-400">Low (DoS)</span>
+                            <span class="text-white font-semibold" id="ipEntropyValue">0.90</span>
+                            <span class="text-gray-400">High (DDoS/Normal)</span>
+                        </div>
+                    </div>
+
+                    <!-- Feature 4: Flow Rate (MBps) -->
+                    <div class="feature-group">
+                        <label for="flowRate" class="block text-sm font-medium text-gray-300 mb-2">Flow Rate (MBps) (0.1 to 100.0)</label>
+                        <input type="range" id="flowRate" min="0.1" max="100.0" step="0.1" value="0.2" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs mt-1">
+                            <span class="text-gray-400">Min: 0.1</span>
+                            <span class="text-white font-semibold" id="flowRateValue">0.2</span>
+                            <span class="text-gray-400">Max: 100</span>
+                        </div>
+                    </div>
+
+                    <!-- Feature 5: Impossible IP Ratio (Spoofing) -->
+                    <div class="feature-group">
+                        <label for="impossibleIpRatio" class="block text-sm font-medium text-gray-300 mb-2">Impossible IP Ratio (0.0 Legitimate to 1.0 High Spoofing)</label>
+                        <input type="range" id="impossibleIpRatio" min="0.0" max="1.0" step="0.01" value="0.01" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        <div class="flex justify-between text-xs mt-1">
+                            <span class="text-gray-400">Low (Normal)</span>
+                            <span class="text-white font-semibold" id="impossibleIpRatioValue">0.01</span>
+                            <span class="text-gray-400">High (Attack)</span>
+                        </div>
+                    </div>
+                    
+                </div>
+                
+                <button id="predict-button" onclick="predictTraffic()" class="w-full py-3 mt-6 text-lg font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/50">
+                    Run Prediction
+                </button>
+                
+                <div id="error-message" class="hidden text-center p-3 mt-4 bg-red-900 border border-red-700 rounded-lg text-red-300 font-medium">
+                    <!-- Error messages displayed here -->
+                </div>
+            </div>
+
+            <!-- Prediction Output Card (Right Column) -->
+            <div class="lg:col-span-1">
+                <div id="prediction-card" class="prediction-card-base p-6 rounded-xl shadow-2xl border border-gray-700 text-center flex flex-col justify-center">
+                    <h2 class="text-xl font-bold mb-4 text-white">2. AI Classification Result</h2>
+                    
+                    <div id="prediction-status" class="text-gray-400 text-lg">
+                        Adjust features and click 'Run Prediction' to start.
+                    </div>
+                    
+                    <div id="prediction-output" class="hidden">
+                        <p class="text-4xl font-extrabold mt-4" id="prediction-label">---</p>
+                        
+                        <div class="mt-6 p-4 bg-gray-700 rounded-lg">
+                            <div class="text-lg font-semibold text-gray-300">Confidence: <span id="confidence-score" class="text-green-400">---</span></div>
+                        </div>
+
+                        <div class="mt-4 text-left p-4 bg-gray-700 rounded-lg">
+                            <p class="text-sm font-semibold text-gray-300 mb-2">Key Reasoning:</p>
+                            <p class="text-base text-gray-200 italic" id="reasoning-text">---</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5000/predict';
+        const predictionCard = document.getElementById('prediction-card');
+        const predictButton = document.getElementById('predict-button');
+        const errorMessage = document.getElementById('error-message');
+        const predictionStatus = document.getElementById('prediction-status');
+        const predictionOutput = document.getElementById('prediction-output');
+        
+        // Map elements to update their display values
+        const features = {
+            packetCount: { element: document.getElementById('packetCount'), valueDisplay: document.getElementById('packetCountValue') },
+            durationSec: { element: document.getElementById('durationSec'), valueDisplay: document.getElementById('durationSecValue') },
+            ipEntropy: { element: document.getElementById('ipEntropy'), valueDisplay: document.getElementById('ipEntropyValue') },
+            flowRate: { element: document.getElementById('flowRate'), valueDisplay: document.getElementById('flowRateValue') },
+            impossibleIpRatio: { element: document.getElementById('impossibleIpRatio'), valueDisplay: document.getElementById('impossibleIpRatioValue') },
+        };
+
+        // --- Utility Functions ---
+
+        /**
+         * Attaches event listeners to sliders to update their displayed value in real-time.
+         */
+        function initializeSliders() {
+            Object.values(features).forEach(feature => {
+                feature.element.addEventListener('input', () => {
+                    // Use toFixed(2) for floating point numbers
+                    const val = feature.element.step === '0.01' || feature.element.step === '0.1' 
+                                ? parseFloat(feature.element.value).toFixed(2) 
+                                : parseInt(feature.element.value, 10);
+                    feature.valueDisplay.textContent = val;
+                });
+                // Initial update
+                feature.element.dispatchEvent(new Event('input'));
+            });
+        }
+
+        /**
+         * Sets the visual styling of the prediction card based on the prediction category.
+         */
+        function setCardStyle(prediction) {
+            // Reset existing classes to the common base set
+            predictionCard.className = 'prediction-card-base p-6 rounded-xl shadow-2xl border text-center flex flex-col justify-center';
+
+            let baseClass = 'bg-gray-800 border-gray-700';
+            let labelColor = 'text-white';
+            let shadow = 'shadow-gray-700/50';
+
+            if (prediction.includes('Normal')) {
+                // Green for safe traffic
+                baseClass = 'bg-green-900/30 border-green-600';
+                labelColor = 'text-green-400';
+                shadow = 'shadow-green-500/30';
+            } else if (prediction.includes('Heavy Traffic')) {
+                // Yellow/Orange for high load
+                baseClass = 'bg-yellow-900/30 border-yellow-600';
+                labelColor = 'text-yellow-400';
+                shadow = 'shadow-yellow-500/30';
+            } else if (prediction.includes('DoS') || prediction.includes('DDoS')) {
+                // Red for attack
+                baseClass = 'bg-red-900/30 border-red-600';
+                labelColor = 'text-red-400';
+                shadow = 'shadow-red-500/30';
+            }
+
+            // FIX: Use split() and spread operator to correctly add multiple classes 
+            // from the string variables, preventing the whitespace DOMException.
+            predictionCard.classList.add(...baseClass.split(' '), ...shadow.split(' '));
+            
+            document.getElementById('prediction-label').classList.remove('text-white', 'text-green-400', 'text-yellow-400', 'text-red-400');
+            document.getElementById('prediction-label').classList.add(labelColor);
+            document.getElementById('confidence-score').classList.remove('text-green-400', 'text-yellow-400', 'text-red-400');
+            document.getElementById('confidence-score').classList.add(labelColor);
+        }
+
+        /**
+         * Displays a temporary message in the error area.
+         */
+        function displayError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            setTimeout(() => {
+                errorMessage.classList.add('hidden');
+            }, 5000);
+        }
+
+        // --- Main Prediction Function ---
+
+        async function predictTraffic() {
+            errorMessage.classList.add('hidden');
+            predictionOutput.classList.add('hidden');
+            predictionStatus.classList.remove('hidden');
+            predictionStatus.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-400 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Running Monte Carlo Dropout...';
+
+            predictButton.disabled = true;
+            predictButton.textContent = "Analyzing...";
+
+            // 1. Collect features from sliders
+            const rawFeatures = [
+                parseFloat(features.packetCount.element.value),
+                parseFloat(features.durationSec.element.value),
+                parseFloat(features.ipEntropy.element.value),
+                parseFloat(features.flowRate.element.value),
+                parseFloat(features.impossibleIpRatio.element.value),
+            ];
+            
+            // 2. Prepare payload
+            const payload = {
+                features: rawFeatures
+            };
+
+            try {
+                // 3. Send request to the Flask server
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    // 4. Update UI with successful prediction
+                    document.getElementById('prediction-label').textContent = result.prediction;
+                    document.getElementById('confidence-score').textContent = result.confidence;
+                    document.getElementById('reasoning-text').textContent = result.reasoning;
+                    
+                    setCardStyle(result.prediction);
+                    
+                    predictionStatus.classList.add('hidden');
+                    predictionOutput.classList.remove('hidden');
+
+                } else {
+                    // 5. Handle API-level errors (e.g., bad request 400 or server error 500)
+                    const errorMsg = result.message || "Prediction failed. Check server logs.";
+                    displayError(`[Server Error] ${errorMsg}`);
+                    predictionStatus.textContent = "Error during classification.";
+                    setCardStyle('');
+                }
+
+            } catch (error) {
+                // 6. Handle Network/Connection errors (e.g., Flask server is not running)
+                console.error("Fetch error:", error);
+                displayError("Connection failed. Is the Python Flask server running on http://localhost:5000?");
+                predictionStatus.textContent = "Server Offline / Network Error";
+                setCardStyle('');
+            } finally {
+                predictButton.disabled = false;
+                predictButton.textContent = "Run Prediction";
+            }
+        }
+
+        // Initialize the slider display values when the page loads
+        document.addEventListener('DOMContentLoaded', initializeSliders);
+
+    </script>
+</body>
+</html>

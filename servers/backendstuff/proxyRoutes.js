@@ -146,11 +146,11 @@ export function registerProxyRoutes(app) {
   app.get("/api/waf/rules/:domain", async ({ params, headers }, reply) => {
     try {
       const token = headers.authorization?.split(" ")[1] || "";
-      if (!token)
-        throw { status: 401, message: "Invalid Authorization header" };
-      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      if (!token) throw { status: 401, message: "Invalid Authorization header" };
 
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
       await ensureDomainOwnership(payload.userId, params.domain);
+
       const domainDoc = await domains.findOne({ domain: params.domain });
       return domainDoc?.proxied?.map((p) => p.seperateRules || []) || [];
     } catch (err) {
@@ -160,33 +160,44 @@ export function registerProxyRoutes(app) {
     }
   });
 
-  app.post(
-    "/api/waf/rules/:domain/:slug",
-    async ({ params, body, headers }, reply) => {
-      try {
-        const token = headers.authorization?.split(" ")[1] || "";
-        if (!token)
-          throw { status: 401, message: "Invalid Authorization header" };
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
-
-        await ensureDomainOwnership(payload.userId, params.domain);
-        const updated = await domains.findOneAndUpdate(
-          { domain: params.domain, "proxied.slug": params.slug },
-          { $push: { "proxied.$.seperateRules": body } },
-          { new: true }
-        );
-        return (
-          updated ||
-          reply.status(404).send({ error: "Domain or subdomain not found" })
-        );
-      } catch (err) {
-        return reply
-          .status(err.status || 500)
-          .send({ success: false, error: err.message || err });
-      }
+  app.post("/api/waf/rules/:domain", async (ctx, reply) => {
+    try {
+      const params = { ...ctx.params };
+      const headers = { ...ctx.headers };
+      const body = ctx.body; // body’s usually safe
+      
+      const token = headers.authorization?.split(" ")[1] || "";
+      if (!token) throw { status: 401, message: "Invalid Authorization header" };
+  
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      await ensureDomainOwnership(payload.userId, params.domain);
+  
+      const updated = await domains.findOneAndUpdate(
+        { domain: params.domain, "proxied.slug": params.slug },
+        { $push: { "proxied.$.seperateRules": body } },
+        { new: true }
+      );
+      if (!updated)
+        return reply.status(404).send({ error: "Domain or subdomain not found" });
+  
+      const subdir = params.slug === "@" ? "@" : params.slug;
+      const dir = path.join(RULES_DIR, params.domain, subdir);
+      await fs.mkdir(dir, { recursive: true });
+  
+      const ruleName = body.name?.replace(/\s+/g, "_").toLowerCase() || "unnamed_rule";
+      const rulePath = path.join(dir, `${ruleName}.js`);
+      const ruleContent = `export default ${JSON.stringify(body, null, 2)};\n`;
+  
+      await fs.writeFile(rulePath, ruleContent);
+  
+      return reply.send({ success: true, updated, rulePath });
+    } catch (err) {
+      return reply
+        .status(err.status || 500)
+        .send({ success: false, error: err.message || err });
     }
-  );
-
+  });
+  
   // ---------------- SSL ----------------
   app.get(
     "/api/ssl/:userId/:domain/:subdomain",
@@ -365,28 +376,19 @@ export function registerProxyRoutes(app) {
   // ---------------- WAF Script Upload ----------------
   app.post("/api/waf/upload", async ({ body, headers }, reply) => {
     try {
-      // Only allow safe filenames: letters, numbers, underscores, hyphens
-      if (
-        typeof body.name !== "string" ||
-        !body.name.match(/^[a-zA-Z0-9_-]+$/)
-      ) {
-        return reply
-          .status(400)
-          .send({ success: false, error: "Invalid rule name" });
+      if (typeof body.name !== "string" || !body.name.match(/^[a-zA-Z0-9_-]+$/)) {
+        return reply.status(400).send({ success: false, error: "Invalid rule name" });
       }
-      const filePath = path.join(
-        process.cwd(),
-        "waf",
-        "rules",
-        `${body.name}.js`
-      );
+  
+      const filePath = path.join(process.cwd(), "waf", "rules", `${body.name}.js`);
       fs.writeFileSync(filePath, body.code);
-      await waf.loadRule(filePath);
+  
+      // FIX: call the correct method
+      await waf.loadRuleFile(filePath);
+  
       return reply.send({ success: true, file: filePath });
     } catch (err) {
-      return reply
-        .status(500)
-        .send({ success: false, error: err.message || err });
+      return reply.status(500).send({ success: false, error: err.message || err });
     }
   });
 }
