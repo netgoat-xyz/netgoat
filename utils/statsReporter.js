@@ -1,6 +1,5 @@
 import os from "os";
 import process from "process";
-import logger from "./logger"
 
 let reportingInterval = null;
 let currentSecretKey = null;
@@ -8,8 +7,9 @@ let lastCpuUsage = process.cpuUsage();
 let lastHr = process.hrtime.bigint();
 
 function log(level, ...args) {
+  const l = global.logger?.[level] || console[level] || console.log;
   if (level === "debug" && process.env.DEBUG !== "true") return; // only log debug if DEBUG=true
-  logger.stats(...args);
+  l("[StatsReporter]", ...args);
 }
 
 async function sampleAppCpu() {
@@ -65,7 +65,7 @@ function decodeJwt(token) {
 function getServiceEndpoint() {
   if (!process.env.NODE_ENV) process.env.NODE_ENV = "development";
   if (process.env.NODE_ENV === "development") {
-    return `http://localhost:${process.env.PORT || 3001}/api/health`;
+    return `http://localhost:${process.env.PORT || 3010}/api/health`;
   } else {
     // use HOSTNAME env if set, otherwise find first non-internal IPv4
     let host = process.env.HOSTNAME;
@@ -80,7 +80,7 @@ function getServiceEndpoint() {
         }
       }
     }
-    const port = process.env.PORT || 3001;
+    const port = process.env.PORT || 3010;
     return `http://${host}:${port}/api/health`;
   }
 }

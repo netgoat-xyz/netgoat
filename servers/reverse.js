@@ -10,7 +10,6 @@ import { Eta } from "eta";
 import { request, Agent } from "undici";
 import { parse } from "tldts";
 import Redis from "ioredis";
-import mongoose from "mongoose";
 import acme from "acme-client";
 import WAF from "../utils/ruleScript.js";
 import Users from "../database/mongodb/schema/users.js";
@@ -256,7 +255,7 @@ async function start() {
   const httpServer = http.createServer(proxyHttp);
   httpServer.timeout = 30000;
   httpServer.on("upgrade", handleUpgrade);
-  httpServer.listen(80, ()=>console.log("HTTP listening on 80"));
+  httpServer.listen(80, ()=>logger.success("Reverse Proxy active (80)"));
 
   const defaultCert = fs.existsSync(path.join(CERTS_DIR,"default.pem")) ? fs.readFileSync(path.join(CERTS_DIR,"default.pem")) : null;
   const defaultKey = fs.existsSync(path.join(CERTS_DIR,"default.key")) ? fs.readFileSync(path.join(CERTS_DIR,"default.key")) : null;
@@ -280,7 +279,8 @@ async function start() {
   const httpsServer = https.createServer(options, proxyHttp);
   httpsServer.timeout = 30000;
   httpsServer.on("upgrade", handleUpgrade);
-  httpsServer.listen(443, ()=>console.log("HTTPS listening on 443"));
+  httpsServer.listen(443, ()=>  logger.success("Reverse Proxy active (443)")
+  );
 }
 
 start();
