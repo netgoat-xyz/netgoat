@@ -1,9 +1,9 @@
 import Fastify from "fastify";
-import mongoose from "mongoose";
 import { registerRoutes } from "./backendstuff/routes.js";
 import { registerProxyRoutes } from "./backendstuff/proxyRoutes.js";
 import fastifyStatic from "@fastify/static";
 import { join } from "path";
+import logger from "../utils/logger.js";
 const app = Fastify();
 
 app.register(require('@fastify/cors'), { 
@@ -36,5 +36,5 @@ app.listen({ port: 3001, host: '0.0.0.0' }, (err, address) => {
     console.error(err)
     process.exit(1)
   }
-  console.log(`Backend loaded at ${address}`)
+  logger.success("Backend Active on 3001")
 })
