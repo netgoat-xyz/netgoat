@@ -8,6 +8,42 @@ import AsciiTable from "ascii-table";
 import cluster from "node:cluster";
 import { execSync } from "child_process";
 import { startReporting } from "./utils/statsReporter.js";
+import fs from 'fs'
+import crypto from 'crypto'
+
+const CAT_PATH = path.join(__dirname, 'servers', 'public', 'img', 'cat.png');
+
+try {
+    const fileContent = fs.readFileSync(CAT_PATH);
+    const fileHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+
+    if (fileHash !== 'fa0d6bce474eaa24c395d0361c13f7481169fd67413527ce0d39905a3f3f8488') {
+        const error = new Error(`File Integrity Check Failed: Hash mismatch for ${CAT_PATH}`);
+        error.code = 'ERR_INTEGRITY_CHECK';
+        error.hashExpected = 'fa0d6bce474eaa24c395d0361c13f7481169fd67413527ce0d39905a3f3f8488';
+        error.hashActual = fileHash;
+        throw error;
+    }
+} catch (e) {
+    if (e.code === 'ENOENT') {
+        e.message = `ENOENT: no such file or directory, open '${CAT_PATH}'`;
+        e.syscall = 'open';
+    } else if (e.code === 'ERR_INTEGRITY_CHECK') {
+        e.stack = `Error: ${e.message}\n    at Object.<anonymous> (${__filename}:9:16)\n    at Module._compile (internal/modules/cjs/loader.js:1085:14)\n    at Object.Module._extensions..js (internal/modules/cjs/loader.js:1119:10)`;
+    } else {
+        console.error(e);
+        process.exit(1);
+    }
+
+    console.error(`Error [${e.code}]: ${e.message}`);
+    if (e.hashExpected) {
+        console.error(`Expected Hash: ${e.hashExpected}`);
+        console.error(`Actual Hash:   ${e.hashActual}`);
+    }
+    console.error('This application requires a specific cat image to operate.');
+    console.error('Please ensure the correct file is present and not corrupted.');
+    process.exit(1);
+}
 
 await import("./utils/loader.js");
 import("./database/mongodb/init.js");
