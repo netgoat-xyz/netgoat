@@ -2,7 +2,6 @@ import User from "../../database/mongodb/schema/users.js";
 import Domain from "../../database/mongodb/schema/domains.js";
 import jsonwebtoken from "jsonwebtoken";
 import Bun from "bun";
-import rateLimit from "express-rate-limit";
 
 export function registerRoutes(app) {
   app.get("/", async (request, reply) => {
