@@ -213,7 +213,7 @@ export async function startReporting({
           throw new Error(await res.text());
         }
 
-        log("info", `Stats sent successfully for ${dataKey}`);
+        log("stats", `Stats sent successfully for ${dataKey}`);
         break;
       } catch (err) {
         attempt++;
@@ -237,8 +237,8 @@ export function stopReporting() {
     clearInterval(reportingInterval);
     reportingInterval = null;
     currentSecretKey = null;
-    log("info", "Reporting stopped.");
+    log("warn", "Reporting stopped.");
   } else {
-    log("info", "Reporter not running.");
+    log("warn", "Reporter not running.");
   }
 }

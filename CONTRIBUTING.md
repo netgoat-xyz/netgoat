@@ -4,6 +4,7 @@
 [pr]: /compare
 [style]: https://standardjs.com/
 [code-of-conduct]: CODE_OF_CONDUCT.md
+[DeepWiki]: https://deepwiki.com/netgoat-xyz/netgoat
 
 Hi there! We're thrilled that you'd like to contribute to this project. Your help is essential for keeping it great.
 
