@@ -2,15 +2,33 @@ import User from "../../database/mongodb/schema/users.js";
 import Domain from "../../database/mongodb/schema/domains.js";
 import jsonwebtoken from "jsonwebtoken";
 import Bun from "bun";
-import fs from "fs";
-import path from "path";
+import { S3Client } from "bun";
 
+const WAFRules = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "waf-rules",
+  endpoint: process.env.MINIO_ENDPOINT,
+});
+
+const SSLCerts = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "ssl-certs",
+  endpoint: process.env.MINIO_ENDPOINT,
+});
+
+const UserGeneratedContent = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "user-generated-content",
+  endpoint: process.env.MINIO_ENDPOINT,
+});
 export function registerRoutes(app) {
   app.get("/", async (request, reply) => {
     return { message: "Welcome to the backend Server!" };
   });
 
-  // Auth Register
   app.post("/api/auth/register", async (request, reply) => {
     const { username, password, email } = request.body;
     if (!username || !password) {
@@ -22,29 +40,28 @@ export function registerRoutes(app) {
     }
     let hash = await Bun.password.hash(password);
     const user = new User({ username, password: hash, email, role: "user" });
-    user
-      .save()
-      .then((doc) => {
-        reply.code(201).send({ success: true, reply: "User created successfully" });
-      })
-      .catch((err) => {
-        console.error("Error creating user:", err);
-        reply.code(500).send({ reply: "Internal server error", success: false });
-      });
-              reply.code(201).send({ success: true, reply: "User created successfully" });
-
+    try {
+      await user.save();
+      reply
+        .code(201)
+        .send({ success: true, reply: "User created successfully" });
+    } catch (err) {
+      console.error("Error creating user:", err);
+      reply.code(500).send({ reply: "Internal server error", success: false });
+    }
   });
 
-  // Auth Login
   app.post("/api/auth/login", async (request, reply) => {
     const { username, email, password } = request.body;
     if ((!username && !email) || !password) {
-      return reply.code(400).send({ error: "Username or email and password required" });
+      return reply
+        .code(400)
+        .send({ error: "Username or email and password required" });
     }
     try {
       const user = await User.findOne({ email: email });
       if (!user) return reply.code(401).send({ error: "Invalid user" });
-      if (!await Bun.password.verify(password, user.password)) {
+      if (!(await Bun.password.verify(password, user.password))) {
         return reply.code(401).send({ error: "Invalid credentials" });
       }
       let jwttoken = jsonwebtoken.sign(
@@ -56,7 +73,7 @@ export function registerRoutes(app) {
         },
         process.env.JWT_SECRET
       );
-      console.log(jwttoken)
+      console.log(jwttoken);
       const requires2FA =
         user.integrations &&
         user.integrations.twofa &&
@@ -66,21 +83,21 @@ export function registerRoutes(app) {
       }
       reply.send({ requires2FA: false, jwt: jwttoken });
     } catch (err) {
-      console.error(err)
+      console.error(err);
       reply.code(500).send({ error: err.message });
     }
   });
 
-  // Update Profile
   app.post("/api/profile/update", async (request, reply) => {
     try {
-      // Extract JWT from Authorization header
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return reply.code(401).send({ error: "Missing or invalid authorization header" });
+        return reply
+          .code(401)
+          .send({ error: "Missing or invalid authorization header" });
       }
-      
-      const token = authHeader.slice(7); // Remove "Bearer " prefix
+
+      const token = authHeader.slice(7);
       let decoded;
       try {
         decoded = jsonwebtoken.verify(token, process.env.JWT_SECRET);
@@ -91,28 +108,32 @@ export function registerRoutes(app) {
       const userId = decoded.userId;
       const { firstName, lastName, email, username, timezone } = request.body;
 
-      // Validate input
       if (!firstName && !lastName && !email && !username && !timezone) {
-        return reply.code(400).send({ error: "At least one field must be provided" });
+        return reply
+          .code(400)
+          .send({ error: "At least one field must be provided" });
       }
 
-      // Check if new username is already taken (if username is being changed)
       if (username) {
-        const existingUser = await User.findOne({ username, _id: { $ne: userId } });
+        const existingUser = await User.findOne({
+          username,
+          _id: { $ne: userId },
+        });
         if (existingUser) {
           return reply.code(409).send({ error: "Username already taken" });
         }
       }
 
-      // Check if new email is already taken (if email is being changed)
       if (email) {
-        const existingUser = await User.findOne({ email, _id: { $ne: userId } });
+        const existingUser = await User.findOne({
+          email,
+          _id: { $ne: userId },
+        });
         if (existingUser) {
           return reply.code(409).send({ error: "Email already in use" });
         }
       }
 
-      // Update user profile
       const updateData = {};
       if (firstName) updateData.firstName = firstName;
       if (lastName) updateData.lastName = lastName;
@@ -120,12 +141,13 @@ export function registerRoutes(app) {
       if (username) updateData.username = username;
       if (timezone) updateData.timezone = timezone;
 
-      const user = await User.findByIdAndUpdate(userId, updateData, { new: true });
+      const user = await User.findByIdAndUpdate(userId, updateData, {
+        new: true,
+      });
       if (!user) {
         return reply.code(404).send({ error: "User not found" });
       }
 
-      // Return sanitized user data (no passwords or sensitive fields)
       reply.send({
         success: true,
         message: "Profile updated successfully",
@@ -147,20 +169,39 @@ export function registerRoutes(app) {
     }
   });
 
-  // Upload Avatar
+  app.get("/avatars/:filename", async (request, reply) => {
+    const { filename } = request.params;
+
+    try {
+      const file = UserGeneratedContent.file(filename);
+
+      // Bun S3 file objects have a .stream() method
+      const exists = await file.exists();
+      if (!exists) return reply.code(404).send("Not found");
+
+      reply.header("Content-Type", file.type || "image/png");
+      reply.header("Cache-Control", "public, max-age=86400"); // Cache for 1 day
+
+      return file.stream();
+    } catch (err) {
+      return reply.code(404).send("Avatar not found");
+    }
+  });
+
   app.post("/api/profile/avatar", async (request, reply) => {
     try {
-      // Extract JWT from Authorization header
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return reply.code(401).send({ error: "Missing or invalid authorization header" });
+        return reply
+          .code(401)
+          .send({ error: "Missing or invalid authorization header" });
       }
 
-      const token = authHeader.slice(7); // Remove "Bearer " prefix
+      const token = authHeader.slice(7);
       let decoded;
       try {
         decoded = jsonwebtoken.verify(token, process.env.JWT_SECRET);
-        console.log(decoded)
+        console.log(decoded);
       } catch (err) {
         return reply.code(401).send({ error: "Invalid or expired token" });
       }
@@ -172,39 +213,28 @@ export function registerRoutes(app) {
         return reply.code(400).send({ error: "No file provided" });
       }
 
-      // Validate file type
       const allowedMimes = ["image/jpeg", "image/gif", "image/png"];
       if (!allowedMimes.includes(data.mimetype)) {
-        return reply.code(400).send({ error: "Only JPG, GIF, or PNG files are allowed" });
+        return reply
+          .code(400)
+          .send({ error: "Only JPG, GIF, or PNG files are allowed" });
       }
 
-      // Read file buffer
       const buffer = await data.toBuffer();
 
-      // Validate file size (1MB max)
       const maxSize = 1024 * 1024;
       if (buffer.length > maxSize) {
         return reply.code(400).send({ error: "File size exceeds 1MB limit" });
       }
 
-      // Create avatars directory if it doesn't exist
-      const avatarsDir = path.join(process.cwd(), "assets", "avatars");
-      if (!fs.existsSync(avatarsDir)) {
-        fs.mkdirSync(avatarsDir, { recursive: true });
-      }
-
-      // Generate filename
       const fileExtension = data.mimetype.split("/")[1];
       const filename = `${userId}-${Date.now()}.${fileExtension}`;
-      const filepath = path.join(avatarsDir, filename);
 
-      // Write file to disk
-      fs.writeFileSync(filepath, buffer);
+      await UserGeneratedContent.write(filename, buffer);
 
-      // Update user avatar field in MongoDB
       const user = await User.findByIdAndUpdate(
         userId,
-        { avatar: `/avatars/${filename}` },
+        { avatar: `/${filename}` },
         { new: true }
       );
 
@@ -215,7 +245,7 @@ export function registerRoutes(app) {
       reply.send({
         success: true,
         message: "Avatar uploaded successfully",
-        avatarUrl: `/avatars/${filename}`,
+        avatarUrl: `/${filename}`,
       });
     } catch (err) {
       console.error("Error uploading avatar:", err);
@@ -223,55 +253,55 @@ export function registerRoutes(app) {
     }
   });
 
-  // Create Domain
   if (process.env.NODE_ENV !== "production") {
-  app.get("/cd", async (request, reply) => {
-    try {
-      const user = await User.findOne({ username: request.query?.username });
-      if (!user) return reply.code(404).send({ error: "No user found" });
-      const domainName = request.body?.domain || request.query?.domain || "testdomain.com";
-      if (!domainName || typeof domainName !== "string") {
-        return reply.code(400).send({ error: "Domain name required" });
-      }
-      const testDomain = {
-        domain: domainName,
-        proxied: [],
-        acl: [],
-        rules: [],
-        bannedIp: [],
-        integrations: {},
-      };
-      let domainDoc = await Domain.findOne({ domain: testDomain.domain });
-      if (!domainDoc) {
-        domainDoc = await Domain.create(testDomain);
-      }
-      const alreadyOwned = user.domains.some(
-        (d) => d.name === testDomain.domain
-      );
-      if (!alreadyOwned) {
-        user.domains.push({
-          group: "default",
-          name: testDomain.domain,
-          status: "active",
-          lastSeen: new Date(),
+    app.get("/cd", async (request, reply) => {
+      try {
+        const user = await User.findOne({ username: request.query?.username });
+        if (!user) return reply.code(404).send({ error: "No user found" });
+        const domainName =
+          request.body?.domain || request.query?.domain || "testdomain.com";
+        if (!domainName || typeof domainName !== "string") {
+          return reply.code(400).send({ error: "Domain name required" });
+        }
+        const testDomain = {
+          domain: domainName,
+          proxied: [],
+          acl: [],
+          rules: [],
+          bannedIp: [],
+          integrations: {},
+        };
+        let domainDoc = await Domain.findOne({ domain: testDomain.domain });
+        if (!domainDoc) {
+          domainDoc = await Domain.create(testDomain);
+        }
+        const alreadyOwned = user.domains.some(
+          (d) => d.name === testDomain.domain
+        );
+        if (!alreadyOwned) {
+          user.domains.push({
+            group: "default",
+            name: testDomain.domain,
+            status: "active",
+            lastSeen: new Date(),
+          });
+          await user.save();
+        }
+        reply.send({
+          message: `Domain '${domainName}' created and added to user.`,
+          user: {
+            username: user.username,
+            domains: user.domains,
+          },
+          domain: domainDoc,
         });
-        await user.save();
+      } catch (err) {
+        console.error(err);
+        reply.code(500).send({ error: err.message });
       }
-      reply.send({
-        message: `Domain '${domainName}' created and added to user.`,
-        user: {
-          username: user.username,
-          domains: user.domains,
-        },
-        domain: domainDoc,
-      });
-    } catch (err) {
-      console.error(err);
-      reply.code(500).send({ error: err.message });
-    }
-  });
-  }4
-  // Monitor.js
+    });
+  }
+
   app.get("/monitor.js", async (request, reply) => {
     reply.type("application/javascript");
     return `
@@ -308,15 +338,13 @@ export function registerRoutes(app) {
     `;
   });
 
-  
   app.get("/api/:id/:action?", async (request, reply) => {
     const { id, action } = request.params;
     if (!id) return reply.code(400).send({ error: "ID is required" });
-    
+
     const user = await User.findOne({ _id: id }).lean();
     if (!user) return reply.code(404).send({ error: "User not found" });
-    
-    // Return sanitized user data matching User schema (no password or sensitive data)
+
     const safe = {
       _id: user._id,
       username: user.username,
@@ -325,21 +353,25 @@ export function registerRoutes(app) {
       domains: user.domains || [],
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
-      // Include non-sensitive integration info (e.g., enabled status, not tokens)
-      integrations: user.integrations ? {
-        twofa: user.integrations.twofa ? {
-          enabled: user.integrations.twofa.enabled,
-          method: user.integrations.twofa.method,
-        } : null,
-        // Include integration names without sensitive data
-        cloudflare: user.integrations.cloudflare ? { connected: true } : null,
-        google: user.integrations.google ? { connected: true } : null,
-        discord: user.integrations.discord ? { connected: true } : null,
-        github: user.integrations.github ? { connected: true } : null,
-        microsoft: user.integrations.microsoft ? { connected: true } : null,
-      } : null,
+      integrations: user.integrations
+        ? {
+            twofa: user.integrations.twofa
+              ? {
+                  enabled: user.integrations.twofa.enabled,
+                  method: user.integrations.twofa.method,
+                }
+              : null,
+            cloudflare: user.integrations.cloudflare
+              ? { connected: true }
+              : null,
+            google: user.integrations.google ? { connected: true } : null,
+            discord: user.integrations.discord ? { connected: true } : null,
+            github: user.integrations.github ? { connected: true } : null,
+            microsoft: user.integrations.microsoft ? { connected: true } : null,
+          }
+        : null,
     };
-    
+
     if (!action) return safe;
     if (typeof user[action] === "function") {
       return reply.code(400).send({ error: "Action not allowed" });
