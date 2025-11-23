@@ -2,6 +2,8 @@ import User from "../../database/mongodb/schema/users.js";
 import Domain from "../../database/mongodb/schema/domains.js";
 import jsonwebtoken from "jsonwebtoken";
 import Bun from "bun";
+import fs from "fs";
+import path from "path";
 
 export function registerRoutes(app) {
   app.get("/", async (request, reply) => {
@@ -66,6 +68,158 @@ export function registerRoutes(app) {
     } catch (err) {
       console.error(err)
       reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // Update Profile
+  app.post("/api/profile/update", async (request, reply) => {
+    try {
+      // Extract JWT from Authorization header
+      const authHeader = request.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return reply.code(401).send({ error: "Missing or invalid authorization header" });
+      }
+      
+      const token = authHeader.slice(7); // Remove "Bearer " prefix
+      let decoded;
+      try {
+        decoded = jsonwebtoken.verify(token, process.env.JWT_SECRET);
+      } catch (err) {
+        return reply.code(401).send({ error: "Invalid or expired token" });
+      }
+
+      const userId = decoded.userId;
+      const { firstName, lastName, email, username, timezone } = request.body;
+
+      // Validate input
+      if (!firstName && !lastName && !email && !username && !timezone) {
+        return reply.code(400).send({ error: "At least one field must be provided" });
+      }
+
+      // Check if new username is already taken (if username is being changed)
+      if (username) {
+        const existingUser = await User.findOne({ username, _id: { $ne: userId } });
+        if (existingUser) {
+          return reply.code(409).send({ error: "Username already taken" });
+        }
+      }
+
+      // Check if new email is already taken (if email is being changed)
+      if (email) {
+        const existingUser = await User.findOne({ email, _id: { $ne: userId } });
+        if (existingUser) {
+          return reply.code(409).send({ error: "Email already in use" });
+        }
+      }
+
+      // Update user profile
+      const updateData = {};
+      if (firstName) updateData.firstName = firstName;
+      if (lastName) updateData.lastName = lastName;
+      if (email) updateData.email = email;
+      if (username) updateData.username = username;
+      if (timezone) updateData.timezone = timezone;
+
+      const user = await User.findByIdAndUpdate(userId, updateData, { new: true });
+      if (!user) {
+        return reply.code(404).send({ error: "User not found" });
+      }
+
+      // Return sanitized user data (no passwords or sensitive fields)
+      reply.send({
+        success: true,
+        message: "Profile updated successfully",
+        user: {
+          userId: user._id,
+          username: user.username,
+          email: user.email,
+          firstName: user.firstName || "",
+          lastName: user.lastName || "",
+          timezone: user.timezone || "",
+          role: user.role,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+      });
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      reply.code(500).send({ error: "Internal server error" });
+    }
+  });
+
+  // Upload Avatar
+  app.post("/api/profile/avatar", async (request, reply) => {
+    try {
+      // Extract JWT from Authorization header
+      const authHeader = request.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return reply.code(401).send({ error: "Missing or invalid authorization header" });
+      }
+
+      const token = authHeader.slice(7); // Remove "Bearer " prefix
+      let decoded;
+      try {
+        decoded = jsonwebtoken.verify(token, process.env.JWT_SECRET);
+        console.log(decoded)
+      } catch (err) {
+        return reply.code(401).send({ error: "Invalid or expired token" });
+      }
+
+      const userId = decoded.userId;
+      const data = await request.file();
+
+      if (!data) {
+        return reply.code(400).send({ error: "No file provided" });
+      }
+
+      // Validate file type
+      const allowedMimes = ["image/jpeg", "image/gif", "image/png"];
+      if (!allowedMimes.includes(data.mimetype)) {
+        return reply.code(400).send({ error: "Only JPG, GIF, or PNG files are allowed" });
+      }
+
+      // Read file buffer
+      const buffer = await data.toBuffer();
+
+      // Validate file size (1MB max)
+      const maxSize = 1024 * 1024;
+      if (buffer.length > maxSize) {
+        return reply.code(400).send({ error: "File size exceeds 1MB limit" });
+      }
+
+      // Create avatars directory if it doesn't exist
+      const avatarsDir = path.join(process.cwd(), "assets", "avatars");
+      if (!fs.existsSync(avatarsDir)) {
+        fs.mkdirSync(avatarsDir, { recursive: true });
+      }
+
+      // Generate filename
+      const fileExtension = data.mimetype.split("/")[1];
+      const filename = `${userId}-${Date.now()}.${fileExtension}`;
+      const filepath = path.join(avatarsDir, filename);
+
+      // Write file to disk
+      fs.writeFileSync(filepath, buffer);
+
+      // Update user avatar field in MongoDB
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { avatar: `/avatars/${filename}` },
+        { new: true }
+      );
+
+      if (!user) {
+        return reply.code(404).send({ error: "User not found" });
+      }
+
+      reply.send({
+        success: true,
+        message: "Avatar uploaded successfully",
+        avatarUrl: `/avatars/${filename}`,
+      });
+    } catch (err) {
+      console.error("Error uploading avatar:", err);
+      reply.code(500).send({ error: "Internal server error" });
     }
   });
 
@@ -158,17 +312,34 @@ export function registerRoutes(app) {
   app.get("/api/:id/:action?", async (request, reply) => {
     const { id, action } = request.params;
     if (!id) return reply.code(400).send({ error: "ID is required" });
+    
     const user = await User.findOne({ _id: id }).lean();
     if (!user) return reply.code(404).send({ error: "User not found" });
+    
+    // Return sanitized user data matching User schema (no password or sensitive data)
     const safe = {
+      _id: user._id,
       username: user.username,
       email: user.email,
       role: user.role,
-      domains: user.domains,
-      _id: user._id,
+      domains: user.domains || [],
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      // Include non-sensitive integration info (e.g., enabled status, not tokens)
+      integrations: user.integrations ? {
+        twofa: user.integrations.twofa ? {
+          enabled: user.integrations.twofa.enabled,
+          method: user.integrations.twofa.method,
+        } : null,
+        // Include integration names without sensitive data
+        cloudflare: user.integrations.cloudflare ? { connected: true } : null,
+        google: user.integrations.google ? { connected: true } : null,
+        discord: user.integrations.discord ? { connected: true } : null,
+        github: user.integrations.github ? { connected: true } : null,
+        microsoft: user.integrations.microsoft ? { connected: true } : null,
+      } : null,
     };
+    
     if (!action) return safe;
     if (typeof user[action] === "function") {
       return reply.code(400).send({ error: "Action not allowed" });
