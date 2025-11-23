@@ -1,13 +1,32 @@
 import escapeHtml from "escape-html";
-import fs from "fs";
-import path from "path";
 import domains from "../../database/mongodb/schema/domains.js";
 import Users from "../../database/mongodb/schema/users.js";
 import WAF from "../../utils/ruleScript.js";
 import jwt from "jsonwebtoken";
+import { S3Client } from "bun";
 
 const waf = new WAF();
-const CERTS_DIR = path.join(process.cwd(), "database/certs");
+
+const WAFRules = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "waf-rules",
+  endpoint: process.env.MINIO_ENDPOINT, 
+});
+
+const SSLCerts = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "ssl-certs",
+  endpoint: process.env.MINIO_ENDPOINT, 
+});
+
+const UserGeneratedContent = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "user-generated-content",
+  endpoint: process.env.MINIO_ENDPOINT, 
+});
 
 export function registerProxyRoutes(app) {
   async function userOwnsDomain(userId, domainName) {
@@ -23,7 +42,6 @@ export function registerProxyRoutes(app) {
     if (!owns) throw { status: 403, message: "You do not own this domain" };
   }
 
-  // ---------------- Domains ----------------
   app.get("/api/domains/:domain", async ({ params, headers }, reply) => {
     try {
       const token = headers.authorization?.split(" ")[1] || "";
@@ -41,7 +59,6 @@ export function registerProxyRoutes(app) {
     }
   });
 
-  // ---------------- Proxies ----------------
   app.post("/api/manage-proxy", async ({ query, body, headers }, reply) => {
     try {
       const domain = query.domain;
@@ -118,7 +135,7 @@ export function registerProxyRoutes(app) {
         case "delete": {
           updatedDoc = await domains.findOneAndUpdate(
             { domain },
-            { $pull: { proxied: { _id: body.proxyId } } }, // use the proxy's unique ID    
+            { $pull: { proxied: { _id: body.proxyId } } },    
             { new: true }
           );
           if (!updatedDoc)
@@ -142,7 +159,6 @@ export function registerProxyRoutes(app) {
     }
   });
 
-  // ---------------- WAF ----------------
   app.get("/api/waf/rules/:domain", async ({ params, headers }, reply) => {
     try {
       const token = headers.authorization?.split(" ")[1] || "";
@@ -164,7 +180,7 @@ export function registerProxyRoutes(app) {
     try {
       const params = { ...ctx.params };
       const headers = { ...ctx.headers };
-      const body = ctx.body; // body’s usually safe
+      const body = ctx.body; 
       
       const token = headers.authorization?.split(" ")[1] || "";
       if (!token) throw { status: 401, message: "Invalid Authorization header" };
@@ -181,16 +197,13 @@ export function registerProxyRoutes(app) {
         return reply.status(404).send({ error: "Domain or subdomain not found" });
   
       const subdir = params.slug === "@" ? "@" : params.slug;
-      const dir = path.join(RULES_DIR, params.domain, subdir);
-      await fs.mkdir(dir, { recursive: true });
-  
       const ruleName = body.name?.replace(/\s+/g, "_").toLowerCase() || "unnamed_rule";
-      const rulePath = path.join(dir, `${ruleName}.js`);
+      const s3Key = `${params.domain}/${subdir}/${ruleName}.js`;
       const ruleContent = `export default ${JSON.stringify(body, null, 2)};\n`;
   
-      await fs.writeFile(rulePath, ruleContent);
+      await WAFRules.write(s3Key, ruleContent);
   
-      return reply.send({ success: true, updated, rulePath });
+      return reply.send({ success: true, updated, rulePath: s3Key });
     } catch (err) {
       return reply
         .status(err.status || 500)
@@ -198,7 +211,6 @@ export function registerProxyRoutes(app) {
     }
   });
   
-  // ---------------- SSL ----------------
   app.get(
     "/api/ssl/:userId/:domain/:subdomain",
     async ({ params, headers }, reply) => {
@@ -213,18 +225,17 @@ export function registerProxyRoutes(app) {
           throw { status: 403, message: "Cannot access other users' certs" };
 
         await ensureDomainOwnership(payload.userId, params.domain);
-        const dir = path.join(
-          CERTS_DIR,
-          params.userId,
-          params.domain,
-          params.subdomain
-        );
-        if (!fs.existsSync(dir))
+        
+        const certKey = `${params.userId}/${params.domain}/${params.subdomain}/fullchain.pem`;
+        const privKey = `${params.userId}/${params.domain}/${params.subdomain}/privkey.pem`;
+
+        try {
+          const cert = await SSLCerts.file(certKey).text();
+          const key = await SSLCerts.file(privKey).text();
+          return { cert, key };
+        } catch (e) {
           return reply.status(404).send({ error: "No certs found" });
-
-        const cert = fs.readFileSync(path.join(dir, "fullchain.pem"), "utf8");
-        const key = fs.readFileSync(path.join(dir, "privkey.pem"), "utf8");
-        return { cert, key };
+        }
       } catch (err) {
         return reply
           .status(err.status || 500)
@@ -248,19 +259,13 @@ export function registerProxyRoutes(app) {
 
         await ensureDomainOwnership(payload.userId, params.domain);
 
-        const dir = path.join(
-          CERTS_DIR,
-          params.userId,
-          params.domain,
-          params.subdomain
-        );
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        fs.writeFileSync(path.join(dir, "fullchain.pem"), body.cert);
-        fs.writeFileSync(path.join(dir, "privkey.pem"), body.key, {
-          mode: 0o600,
-        });
+        const certKey = `${params.userId}/${params.domain}/${params.subdomain}/fullchain.pem`;
+        const privKey = `${params.userId}/${params.domain}/${params.subdomain}/privkey.pem`;
 
-        return reply.send({ success: true, path: dir });
+        await SSLCerts.write(certKey, body.cert);
+        await SSLCerts.write(privKey, body.key);
+
+        return reply.send({ success: true, path: `${params.userId}/${params.domain}/${params.subdomain}` });
       } catch (err) {
         return reply
           .status(err.status || 500)
@@ -269,7 +274,6 @@ export function registerProxyRoutes(app) {
     }
   );
 
-  // ---------------- Error Pages ----------------
   app.get(
     "/api/error-page/:domain/:code",
     async ({ params, headers }, reply) => {
@@ -281,15 +285,14 @@ export function registerProxyRoutes(app) {
         const payload = jwt.verify(token, process.env.JWT_SECRET);
 
         await ensureDomainOwnership(payload.userId, params.domain);
-        const filePath = path.join(
-          process.cwd(),
-          "views",
-          "error",
-          `${params.domain}_${params.code}.ejs`
-        );
-        if (!fs.existsSync(filePath))
-          return reply.status(404).send({ error: "Not found" });
-        return fs.readFileSync(filePath, "utf8");
+        
+        const s3Key = `error-pages/${params.domain}_${params.code}.ejs`;
+        try {
+          const content = await UserGeneratedContent.file(s3Key).text();
+          return content;
+        } catch (e) {
+           return reply.status(404).send({ error: "Not found" });
+        }
       } catch (err) {
         return reply
           .status(err.status || 500)
@@ -309,13 +312,10 @@ export function registerProxyRoutes(app) {
         const payload = jwt.verify(token, process.env.JWT_SECRET);
 
         await ensureDomainOwnership(payload.userId, params.domain);
-        const filePath = path.join(
-          process.cwd(),
-          "views",
-          "error",
-          `${params.domain}_${params.code}.ejs`
-        );
-        fs.writeFileSync(filePath, body.html, { mode: 0o644 });
+        
+        const s3Key = `error-pages/${params.domain}_${params.code}.ejs`;
+        await UserGeneratedContent.write(s3Key, body.html);
+        
         return reply.send({ success: true });
       } catch (err) {
         return reply
@@ -325,7 +325,6 @@ export function registerProxyRoutes(app) {
     }
   );
 
-  // ---------------- Zero-Trust / Users ----------------
   app.get("/api/users/:userId", async ({ params, headers }, reply) => {
     try {
       const token = headers.authorization?.split(" ")[1] || "";
@@ -373,20 +372,16 @@ export function registerProxyRoutes(app) {
     }
   );
 
-  // ---------------- WAF Script Upload ----------------
   app.post("/api/waf/upload", async ({ body, headers }, reply) => {
     try {
       if (typeof body.name !== "string" || !body.name.match(/^[a-zA-Z0-9_-]+$/)) {
         return reply.status(400).send({ success: false, error: "Invalid rule name" });
       }
   
-      const filePath = path.join(process.cwd(), "waf", "rules", `${body.name}.js`);
-      fs.writeFileSync(filePath, body.code);
+      const s3Key = `custom-rules/${body.name}.js`;
+      await WAFRules.write(s3Key, body.code);
   
-      // FIX: call the correct method
-      await waf.loadRuleFile(filePath);
-  
-      return reply.send({ success: true, file: filePath });
+      return reply.send({ success: true, file: s3Key });
     } catch (err) {
       return reply.status(500).send({ success: false, error: err.message || err });
     }
