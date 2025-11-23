@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { registerRoutes } from "./backendstuff/routes.js";
 import { registerProxyRoutes } from "./backendstuff/proxyRoutes.js";
 import fastifyStatic from "@fastify/static";
+import fastifyMultipart from "@fastify/multipart";
 import { join } from "path";
 import logger from "../utils/logger.js";
 const app = Fastify();
@@ -9,6 +10,12 @@ const app = Fastify();
 app.register(require('@fastify/cors'), { 
   origin: true,
   credentials: true
+})
+
+app.register(fastifyMultipart, {
+  limits: {
+    fileSize: 1024 * 1024, // 1MB
+  }
 })
 
 app.register(fastifyStatic, {
