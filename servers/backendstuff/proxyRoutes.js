@@ -176,27 +176,36 @@ export function registerProxyRoutes(app) {
     }
   });
 
-  app.post("/api/waf/rules/:domain", async (ctx, reply) => {
+app.post("/api/waf/rules/:domain", async (ctx, reply) => {
     try {
-      const params = { ...ctx.params };
+      const params = { ...ctx.params }; // Contains only { domain: '...' }
       const headers = { ...ctx.headers };
       const body = ctx.body; 
       
       const token = headers.authorization?.split(" ")[1] || "";
       if (!token) throw { status: 401, message: "Invalid Authorization header" };
   
+      // Get the slug from the request body, defaulting to '@' for the root path
+      const subdomainSlug = body.slug || "@"; // FIX: Use body.slug
+      
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       await ensureDomainOwnership(payload.userId, params.domain);
   
+      // FIX: Use the extracted subdomainSlug in the query
       const updated = await domains.findOneAndUpdate(
-        { domain: params.domain, "proxied.slug": params.slug },
+        { domain: params.domain, "proxied.slug": subdomainSlug },
         { $push: { "proxied.$.seperateRules": body } },
         { new: true }
       );
+      
       if (!updated)
-        return reply.status(404).send({ error: "Domain or subdomain not found" });
+        // Ensure the error message clarifies which part wasn't found
+        return reply.status(404).send({ 
+          error: `Domain '${params.domain}' or subdomain slug '${subdomainSlug}' not found.` 
+        });
   
-      const subdir = params.slug === "@" ? "@" : params.slug;
+      // FIX: Use the extracted subdomainSlug for S3 key generation
+      const subdir = subdomainSlug === "@" ? "@" : subdomainSlug; 
       const ruleName = body.name?.replace(/\s+/g, "_").toLowerCase() || "unnamed_rule";
       const s3Key = `${params.domain}/${subdir}/${ruleName}.js`;
       const ruleContent = `export default ${JSON.stringify(body, null, 2)};\n`;

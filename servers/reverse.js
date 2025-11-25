@@ -11,41 +11,44 @@ import { request, Agent } from "undici";
 import { parse } from "tldts";
 import Redis from "ioredis";
 import acme from "acme-client";
+import { S3Client } from "bun";
 import WAF from "../utils/ruleScript.js";
-import Users from "../database/mongodb/schema/users.js";
 import domains from "../database/mongodb/schema/domains.js";
-import Score from "../database/mongodb/schema/score.js";
 
-// --- Config & Setup ---
 const CERTS_DIR = path.join(process.cwd(), "database", "certs");
 if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
 
 const app = new Elysia();
 const eta = new Eta({ views: path.join(process.cwd(), "views") });
+
 const redis = new Redis(process.env.REDIS_URL);
 redis.connect().catch(e => console.error("Redis Connection Failed:", e.message));
+
+const WAFRules = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "waf-rules",
+  endpoint: process.env.MINIO_ENDPOINT, 
+});
+
+const SSLCerts = new S3Client({
+  accessKeyId: process.env.MINIO_ACCESS,
+  secretAccessKey: process.env.MINIO_SECRET,
+  bucket: "ssl-certs",
+  endpoint: process.env.MINIO_ENDPOINT, 
+});
 
 const waf = new WAF();
 const undiciAgent = new Agent({ connections: 100, pipelining: 1 });
 http.globalAgent.keepAlive = true;
 https.globalAgent.keepAlive = true;
 
-const domainMemoryCache = new Map(); // in-memory cache for hot domains
+const domainMemoryCache = new Map(); 
 
-// --- Helpers ---
 function getClientIp(req) {
   const xff = req.headers["x-forwarded-for"];
   if (xff) return xff.split(",")[0].trim();
   return req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
-}
-
-function getCertPaths(userId, domain, subdomain = "@") {
-  const base = path.join(CERTS_DIR, userId, domain, subdomain);
-  return {
-    dir: base,
-    cert: path.join(base, "fullchain.pem"),
-    key: path.join(base, "privkey.pem")
-  };
 }
 
 async function loadOrCreateAccountKey() {
@@ -65,19 +68,28 @@ async function getAcmeClient() {
 }
 
 async function ensureCertificateForUserDomain(userId, domain, subdomain = "@") {
-  const { dir, cert, key } = getCertPaths(userId, domain, subdomain);
-  if (fs.existsSync(cert) && fs.existsSync(key)) {
+  const certKey = `${userId}/${domain}/${subdomain}/fullchain.pem`;
+  const privKeyKey = `${userId}/${domain}/${subdomain}/privkey.pem`;
+
+  const s3Cert = SSLCerts.file(certKey);
+  const s3Key = SSLCerts.file(privKeyKey);
+
+  if (await s3Cert.exists() && await s3Key.exists()) {
     try {
-      const certData = fs.readFileSync(cert, "utf8");
+      const certData = await s3Cert.text();
+      const keyData = await s3Key.text();
       const info = acme.openssl.readCertificateInfo(certData);
-      if (new Date(info.notAfter).getTime() - Date.now() > 1000 * 60 * 60 * 24 * 14)
-        return { cert: fs.readFileSync(cert), key: fs.readFileSync(key) };
+      if (new Date(info.notAfter).getTime() - Date.now() > 1000 * 60 * 60 * 24 * 14) {
+        return { cert: certData, key: keyData };
+      }
     } catch {}
   }
+
   const client = await getAcmeClient();
   const [privKey, csr] = await acme.openssl.createCSR({ commonName: domain });
   const order = await client.createOrder({ identifiers: [{ type: "dns", value: domain }] });
   const authzs = await client.getAuthorizations(order);
+  
   for (const auth of authzs) {
     const challenge = auth.challenges.find(c => c.type === "http-01");
     const keyAuth = await client.getChallengeKeyAuthorization(challenge);
@@ -86,15 +98,16 @@ async function ensureCertificateForUserDomain(userId, domain, subdomain = "@") {
     await client.completeChallenge(challenge);
     await client.waitForValidStatus(challenge);
   }
+
   const finalized = await client.finalizeOrder(order, csr);
   const newCert = await client.getCertificate(finalized);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(cert, newCert);
-  fs.writeFileSync(key, privKey, { mode: 0o600 });
-  return { cert: fs.readFileSync(cert), key: fs.readFileSync(key) };
+
+  await SSLCerts.write(certKey, newCert);
+  await SSLCerts.write(privKeyKey, privKey);
+
+  return { cert: newCert, key: privKey };
 }
 
-// --- Domain caching ---
 async function getDomainData(domain) {
   if (domainMemoryCache.has(domain)) return domainMemoryCache.get(domain);
   const cacheKey = `domain:${domain}`;
@@ -112,24 +125,60 @@ async function getDomainData(domain) {
   return doc;
 }
 
+async function getCustomWafRules(domain) {
+  const cacheKey = `waf:rules:${domain}`;
+  
+  const cachedRules = await redis.get(cacheKey);
+  if (cachedRules) return cachedRules;
+
+  try {
+    const s3Key = `custom-rules/${domain}.js`;
+    const file = WAFRules.file(s3Key);
+    
+    if (await file.exists()) {
+      const ruleScript = await file.text();
+      await redis.setex(cacheKey, 300, ruleScript);
+      return ruleScript;
+    } else {
+      await redis.setex(cacheKey, 300, "");
+      return "";
+    }
+  } catch (err) {
+    return null;
+  }
+}
+
 function cacheResponse(key, value, ttl = 30) {
   redis.setex(key, ttl, value).catch(console.error);
 }
 
 async function getCachedResponse(key) { return redis.get(key); }
 
-// --- WAF + challenge ---
-async function handleWafAndChallenge(req, res) {
+async function handleWafAndChallenge(req, res, domain) {
+  const customRulesCode = await getCustomWafRules(domain);
+
   const wafReq = {
     method: req.method,
     url: req.url,
     headers: req.headers,
     ip: getClientIp(req),
-    body: null
+    body: null 
   };
-  const result = await waf.checkRequest(wafReq);
-  if (result.action === "block") { res.writeHead(403, { "Content-Type": "text/html" }); res.end(await eta.render("error/waf.ejs", { reason: "blocked" })); return true; }
-  if (result.action === "redirect") { res.writeHead(302, { Location: result.url }); res.end(); return true; }
+
+  const result = await waf.checkRequest(wafReq, customRulesCode);
+
+  if (result.action === "block") { 
+    res.writeHead(403, { "Content-Type": "text/html" }); 
+    res.end(await eta.render("error/waf.ejs", { reason: "blocked" })); 
+    return true; 
+  }
+  
+  if (result.action === "redirect") { 
+    res.writeHead(302, { Location: result.url }); 
+    res.end(); 
+    return true; 
+  }
+
   if (result.action === "challenge") {
     const token = crypto.randomUUID();
     redis.setex(`challenge:${token}`, 300, JSON.stringify({ ip: wafReq.ip, ua: req.headers["user-agent"] || "", created: Date.now(), type: result.type || "basic" })).catch(console.error);
@@ -140,7 +189,6 @@ async function handleWafAndChallenge(req, res) {
   return false;
 }
 
-// --- HTTP Proxy ---
 async function proxyHttp(req, res) {
   try {
     const rawUrl = req.url || "/";
@@ -173,14 +221,16 @@ async function proxyHttp(req, res) {
       }
     }
 
-    const wafHandled = await handleWafAndChallenge(req, res);
-    if (wafHandled) return;
-
     let domainData = await getDomainData(host);
     if (!domainData) {
       const { domain: tldtsDomain } = parse(host);
       if (tldtsDomain && tldtsDomain !== host) domainData = await getDomainData(tldtsDomain);
     }
+    
+    const effectiveDomain = domainData ? domainData.domain : host;
+    const wafHandled = await handleWafAndChallenge(req, res, effectiveDomain);
+    if (wafHandled) return;
+
     if (!domainData) { res.writeHead(404).end("Domain not configured"); return; }
 
     let requestedSlug = host === domainData.domain ? "" : host.endsWith('.'+domainData.domain) ? host.slice(0, host.length-domainData.domain.length-1) : "";
@@ -230,7 +280,6 @@ async function proxyHttp(req, res) {
   }
 }
 
-// --- WS / TCP upgrade ---
 async function handleUpgrade(req, socket, head) {
   try {
     const host = (req.headers.host||"").split(":")[0];
@@ -250,12 +299,11 @@ async function handleUpgrade(req, socket, head) {
   } catch { socket.destroy(); }
 }
 
-// --- Start Servers ---
 async function start() {
   const httpServer = http.createServer(proxyHttp);
   httpServer.timeout = 30000;
   httpServer.on("upgrade", handleUpgrade);
-  httpServer.listen(80, ()=>logger.success("Reverse Proxy active (80)"));
+  httpServer.listen(80, ()=> console.log("Reverse Proxy active (80)"));
 
   const defaultCert = fs.existsSync(path.join(CERTS_DIR,"default.pem")) ? fs.readFileSync(path.join(CERTS_DIR,"default.pem")) : null;
   const defaultKey = fs.existsSync(path.join(CERTS_DIR,"default.key")) ? fs.readFileSync(path.join(CERTS_DIR,"default.key")) : null;
@@ -279,8 +327,7 @@ async function start() {
   const httpsServer = https.createServer(options, proxyHttp);
   httpsServer.timeout = 30000;
   httpsServer.on("upgrade", handleUpgrade);
-  httpsServer.listen(443, ()=>  logger.success("Reverse Proxy active (443)")
-  );
+  httpsServer.listen(443, ()=> console.log("Reverse Proxy active (443)"));
 }
 
 start();
