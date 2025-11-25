@@ -178,48 +178,116 @@ export function registerProxyRoutes(app) {
 
 app.post("/api/waf/rules/:domain", async (ctx, reply) => {
     try {
-      const params = { ...ctx.params }; // Contains only { domain: '...' }
+      const params = { ...ctx.params }; // { domain: '...' }
       const headers = { ...ctx.headers };
-      const body = ctx.body; 
+      const body = ctx.body; // New rule configuration
       
       const token = headers.authorization?.split(" ")[1] || "";
       if (!token) throw { status: 401, message: "Invalid Authorization header" };
   
-      // Get the slug from the request body, defaulting to '@' for the root path
-      const subdomainSlug = body.slug || "@"; // FIX: Use body.slug
+      const subdomainSlug = body.slug || "@";
       
+      // Ensure the rule has a name for uniqueness tracking
+      const ruleName = body.name?.replace(/\s+/g, "_").toLowerCase() || "unnamed_" + Date.now();
+      body.name = ruleName;
+      
+      // 1. Authentication and Authorization Check
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       await ensureDomainOwnership(payload.userId, params.domain);
   
-      // FIX: Use the extracted subdomainSlug in the query
-      const updated = await domains.findOneAndUpdate(
-        { domain: params.domain, "proxied.slug": subdomainSlug },
-        { $push: { "proxied.$.seperateRules": body } },
-        { new: true }
+      // 2. MongoDB Update: Find the document and attempt to update the rules array.
+      // We use array filtering to either update an existing rule by name, or push a new one.
+
+      const filter = { domain: params.domain, "proxied.slug": subdomainSlug };
+      
+      // 2a. Attempt to update an existing rule by name within the correct slug array
+      let updatedDocument = await domains.findOneAndUpdate(
+        { ...filter, "proxied.seperateRules.name": ruleName }, // Find if the rule name already exists
+        { 
+          // Use the array filter positional operator ($[...]) to set the new rule body
+          $set: { 
+            "proxied.$[proxiedEl].seperateRules.$[ruleEl]": body
+          }
+        },
+        { 
+          new: true,
+          // Define the array filters to target the correct 'proxied' element and 'rule' element
+          arrayFilters: [
+            { "proxiedEl.slug": subdomainSlug }, 
+            { "ruleEl.name": ruleName } 
+          ]
+        }
       );
       
-      if (!updated)
-        // Ensure the error message clarifies which part wasn't found
+      // 2b. If the rule did not exist (updatedDocument is null), push it as a new rule.
+      if (!updatedDocument) {
+        updatedDocument = await domains.findOneAndUpdate(
+          filter, // Filter only by domain and slug
+          { $push: { "proxied.$.seperateRules": body } },
+          { new: true }
+        );
+      }
+      
+      if (!updatedDocument) {
         return reply.status(404).send({ 
           error: `Domain '${params.domain}' or subdomain slug '${subdomainSlug}' not found.` 
         });
+      }
+
+      // 3. Rule Consolidation (Align with Proxy's expectation)
+      
+      const targetProxyConfig = updatedDocument.proxied.find(p => p.slug === subdomainSlug);
+      const allRules = targetProxyConfig?.seperateRules || [];
+      
+      let consolidatedCode = '';
+
+      for (const ruleConfig of allRules) {
+          if (ruleConfig.code) {
+              // Stitch all raw rule code strings together into a single executable block
+              consolidatedCode += `
+// Rule: ${ruleConfig.name || 'Unnamed'} (Slug: ${subdomainSlug})
+${ruleConfig.code}
+
+`; // Add newlines for readability in the final script
+          }
+      }
+      
+      // 4. Wrap the consolidated code into the single 'export default' structure 
+      //    that the WAF parser (checkRequestWithCode) expects.
+      const finalExecutableScript = `
+export default {
+    "name": "${params.domain}-${subdomainSlug}-consolidated",
+    "domain": "${params.domain}",
+    "slug": "${subdomainSlug}",
+    "code": ${JSON.stringify(consolidatedCode)},
+    "description": "Consolidated WAF rules for ${params.domain}/${subdomainSlug}. Total rules: ${allRules.length}"
+};
+`;
+
+      // 5. Upload the single consolidated script to the requested S3 path format
+      // 🚩 S3 Key now includes the slug for organization.
+      const s3RuleName = "consolidated"; 
+      const s3Key = `custom-rules/${params.domain}/${subdomainSlug}/${s3RuleName}.js`; // e.g., custom-rules/semecom.com/@/consolidated.js
+      await WAFRules.write(s3Key, finalExecutableScript);
+      
+      // 6. Optional: Invalidate Redis cache
+      // 🚩 Redis key now includes the slug. The proxy must be updated to match!
+      await redis.del(`waf:rules:${params.domain}_${subdomainSlug}`); // e.g., waf:rules:semecom.com_@
   
-      // FIX: Use the extracted subdomainSlug for S3 key generation
-      const subdir = subdomainSlug === "@" ? "@" : subdomainSlug; 
-      const ruleName = body.name?.replace(/\s+/g, "_").toLowerCase() || "unnamed_rule";
-      const s3Key = `${params.domain}/${subdir}/${ruleName}.js`;
-      const ruleContent = `export default ${JSON.stringify(body, null, 2)};\n`;
-  
-      await WAFRules.write(s3Key, ruleContent);
-  
-      return reply.send({ success: true, updated, rulePath: s3Key });
+      return reply.send({ 
+          success: true, 
+          message: `Consolidated ${allRules.length} rules and updated S3 for ${params.domain}/${subdomainSlug}.`,
+          rulePath: s3Key 
+      });
+      
     } catch (err) {
-      return reply
-        .status(err.status || 500)
-        .send({ success: false, error: err.message || err });
+        console.error("WAF Rule API Error:", err);
+        return reply
+            .status(err.status || 500)
+            .send({ success: false, error: err.message || err });
     }
-  });
-  
+});
+
   app.get(
     "/api/ssl/:userId/:domain/:subdomain",
     async ({ params, headers }, reply) => {
