@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { NodeVM } from "vm2";
+import vm from "node:vm"; // Use native Node VM instead of vm2
 import threatLists from "./threatLists.js";
 
 export default class WAF {
@@ -8,96 +8,94 @@ export default class WAF {
     this.rules = [];
   }
 
-  // 👇 FIX APPLIED HERE: Two-stage loading process
-  loadRuleFile(filePath) {
-    const ruleFileContent = fs.readFileSync(filePath, "utf8");
-
-    // --- Stage 1: Load the configuration object from the file (e.g., to get the name and .code property) ---
-    const vmLoader = new NodeVM({
-      console: "off",
-      sandbox: {},
-      require: false,
-      timeout: 100,
-    });
-    
-    let ruleConfig;
-    try {
-        // 1. Execute the file content to get the exported object (e.g., { default: { name: '...', code: '...' } })
-        ruleConfig = vmLoader.run(ruleFileContent, filePath).default;
-    } catch (e) {
-        console.error(`[WAF Loader Error] Syntax: Failed to parse rule config file ${filePath}. Ensure 'export default { ... }' is valid.`, e.message);
-        return;
-    }
-
-    // 2. Validate and extract the executable code string
-    if (!ruleConfig || typeof ruleConfig.code !== 'string') {
-        console.error(`[WAF Loader Error] Config: Rule file ${filePath} does not contain a valid 'code' property.`);
-        return;
-    }
-    
-    const codeToExecute = ruleConfig.code; 
-
-    // --- Stage 2: Wrap and execute the code string safely ---
-    
-    // Create a new VM execution environment
-    const vmExecutor = new NodeVM({
-      console: "inherit", // Allow the rule's console.log to show up in the main console
-      sandbox: {},
-      require: false,
-      timeout: 200, 
-    });
-
-    // Wrap ONLY the raw executable code string inside the function to avoid syntax errors
-    const wrapped = `module.exports = async function(req, lists, helpers){ ${codeToExecute} }`;
-    
-    try {
-        const func = vmExecutor.run(wrapped, filePath);
-        this.rules.push({ func, file: filePath, name: ruleConfig.name || path.basename(filePath) });
-    } catch (e) {
-        console.error(`[WAF Executor Error] Runtime: Failed to wrap and run executable code in ${filePath}.`, e.message);
-    }
+  _getHelpers() {
+    return {
+      block: () => { throw { action: "block" }; },
+      allow: () => { throw { action: "allow" }; },
+      redirect: (url) => { throw { action: "redirect", url }; },
+      challenge: (type = "basic") => { throw { action: "challenge", type }; },
+    };
   }
 
-  loadRule(filePath) {
-    return this.loadRuleFile(filePath);
-  }
-  
-  loadRulesDir(dir) {
-    if (!fs.existsSync(dir)) return;
-    for (const f of fs.readdirSync(dir)) {
-      if (!f.endsWith(".js")) continue;
-      this.loadRuleFile(path.join(dir, f));
+  /**
+   * Executes dynamic WAF rules fetched from S3/Redis.
+   * Uses native node:vm for Bun compatibility.
+   */
+  async checkRequestWithCode(req, customRulesCode, ruleName = "s3-dynamic-rule") {
+    if (!customRulesCode || customRulesCode.trim() === '') {
+        return { action: "allow" };
     }
-  }
 
-  async checkRequest(req) {
-    const helpers = {
-      block: () => {
-        throw { action: "block" };
-      },
-      allow: () => {
-        throw { action: "allow" };
-      },
-      redirect: (url) => {
-        throw { action: "redirect", url };
-      },
-      challenge: (type = "basic") => {
-        throw { action: "challenge", type };
-      },
+    const helpers = this._getHelpers();
+    let codeToExecute = customRulesCode;
+
+    // --- Stage 1: Handle Configuration Objects (export default) ---
+    if (customRulesCode.trim().startsWith('export default')) {
+        try {
+            // Convert "export default" to CommonJS style for VM execution
+            const scriptContent = customRulesCode.replace('export default', 'module.exports =');
+            
+            // Create a temporary context to parse the config
+            const configSandbox = { module: { exports: {} }, console };
+            vm.createContext(configSandbox);
+            vm.runInContext(scriptContent, configSandbox);
+            
+            const ruleConfig = configSandbox.module.exports;
+            
+            if (ruleConfig && typeof ruleConfig.code === 'string') {
+                codeToExecute = ruleConfig.code;
+            } else {
+                console.error(`[WAF Parser] Rule ${ruleName} invalid: missing 'code' string.`);
+                return { action: "allow" };
+            }
+        } catch (e) {
+            console.error(`[WAF Parser] Syntax error in config for ${ruleName}:`, e.message);
+            return { action: "allow" };
+        }
+    }
+
+    // --- Stage 2: Execute the Rule Logic ---
+    // We wrap the code in an async IIFE to allow top-level returns (via throwing) and await.
+    const wrappedCode = `
+      (async () => {
+        try {
+          ${codeToExecute}
+        } catch (e) {
+          throw e;
+        }
+      })();
+    `;
+
+    const sandbox = {
+      req,
+      lists: threatLists,
+      helpers,
+      console, // Allow rules to log
+      Buffer,  // Allow buffer operations
+      module: {},
+      exports: {}
     };
 
-    for (const r of this.rules) {
-      try {
-        await r.func(req, threatLists, helpers);
-      } catch (err) {
-        // If the error object contains 'action', it was intentionally thrown by a helper
-        if (err && err.action) return err;
-        // Otherwise, it's a real unexpected error
-        console.error(`WAF Rule ${r.name} caused a runtime error:`, err);
-        throw err;
-      }
+    vm.createContext(sandbox);
+
+    try {
+      await vm.runInContext(wrappedCode, sandbox);
+    } catch (err) {
+      // 1. Catch intentional WAF actions (Block/Allow/Redirect)
+      if (err && err.action) return err;
+
+      // 2. Catch actual runtime errors in the rule
+      console.error(`[WAF Execution] Error in ${ruleName}:`, err.message);
+      // Optional: Uncomment to block on error, currently fails open (allow)
+      // throw err; 
     }
 
     return { action: "allow" };
   }
+
+  // --- Deprecated Methods (kept for API shape compatibility) ---
+  loadRuleFile() {}
+  loadRule() {}
+  loadRulesDir() {}
+  async checkRequest() { return { action: "allow" }; }
 }
