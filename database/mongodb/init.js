@@ -14,7 +14,7 @@ const sanitize = (uri) => {
 
 const raw = process.env.MONGODB_URI || ""
 if (!raw) {
-  logger("error", "No MONGODB_URI provided")
+  logger.error("No MONGODB_URI provided")
   process.exit(1)
 }
 
@@ -26,11 +26,11 @@ await mongoose
   .connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
   .then(() => {
     DB_READY = true
-    logger("success", `Mongo connected`)
+    logger.success(`Mongo connected`)
   })
   .catch((e) => {
-    logger("error", e.message)
-    logger("error", "Crashing to prevent further damage")
+    logger.error(e.message)
+    logger.error("Crashing to prevent further damage")
     process.exit(1)
   })
 
