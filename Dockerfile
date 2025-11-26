@@ -29,10 +29,10 @@ RUN bun install
 # 80: Reverse proxy No-SSL, 443: Reverse proxy SSL, 3333: Backend API
 EXPOSE 80
 EXPOSE 443
-EXPOSE 3333
+EXPOSE 3001
 
 # ---- Set environment variables ----
 ENV NODE_ENV=production
 
 # ---- Start the application ----
-CMD ["bun", "."]
+CMD ["bun", "index.js"]
