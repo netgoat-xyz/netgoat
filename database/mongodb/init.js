@@ -1,5 +1,5 @@
 import mongoose from "mongoose"
-import logger from "./logger"
+import logger from "../../utils/logger.js"
 
 const sanitize = (uri) => {
   const match = uri.match(/mongodb(?:\+srv)?:\/\/([^:]+):([^@]+)@(.+)/)
