@@ -29,7 +29,7 @@
     "escape-html": "^1.0.3",
     "eta": "^4.0.1",
     "fastify": "^5.6.1",
-    "figlet": "^1.9.3",
+    "figlet": "^1.9.4",
     "fs": "^0.0.1-security",
     "fs-extra": "^11.3.2",
     "geoip-lite": "^1.4.10",
