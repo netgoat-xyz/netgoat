@@ -1,0 +1,131 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    restart: unless-stopped
+    env_file:
+      - ./envs/mongodb.env
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: unless-stopped
+    env_file:
+      - ./envs/redis.env
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    env_file:
+      - ./envs/minio.env
+    command: server /data --console-address ":9090"
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  central_monitor:
+    image: "netgoat/centralmon:latest"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    env_file:
+      - ./envs/central_monitor.env
+    ports:
+      - "1933:1933"
+    environment:
+      - NODE_ENV=production
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    restart: unless-stopped
+    env_file:
+      - ./envs/clickhouse.env
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./configs/clickhouse-server/users.xml:/etc/clickhouse-server/users.xml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      - CLICKHOUSE_DB=netgoat
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+
+  backend:
+    image: "netgoat/netgoat:latest"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    env_file:
+      - ./envs/backend.env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+
+  frontend:
+    image: "netgoat/frontend:latest"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./envs/frontend.env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config.json:/app/public/config.json
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  mongodb_data:
+  redis_data:
+  minio_data:
+  clickhouse_data:
+
+# The 'networks' block was removed. Docker Compose will automatically create a 
+# working internal network for all services.
