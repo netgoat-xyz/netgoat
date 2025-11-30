@@ -3,6 +3,7 @@ import Domain from "../../database/mongodb/schema/domains.js";
 import jsonwebtoken from "jsonwebtoken";
 import Bun from "bun";
 import { S3Client } from "bun";
+import { queryLogs, getLogStats } from "../../utils/clickhouseClient.js";
 
 const WAFRules = new S3Client({
   accessKeyId: process.env.MINIO_ACCESS,
@@ -380,5 +381,116 @@ export function registerRoutes(app) {
       return reply.code(400).send({ error: "Invalid action" });
     }
     return { action: safe[action] };
+  });
+
+  // ClickHouse log retrieval endpoints
+  app.get("/api/v1/logs", async (request, reply) => {
+    try {
+      const limit = Math.min(
+        parseInt(request.query.limit || "100", 10),
+        10000
+      );
+      const domain = request.query.domain || null;
+      const startDate = request.query.startDate || null;
+      const endDate = request.query.endDate || null;
+
+      // Fetch all log data
+      const logs = await queryLogs({
+        limit,
+        domain,
+        startDate,
+        endDate,
+      });
+
+      // Fetch detailed statistics for the domain
+      const stats = domain ? await getLogStats(domain) : [];
+
+      // Format response with complete domain data
+      const domainData = domain
+        ? {
+            domain,
+            totalLogs: logs.length,
+            logsRetrieved: limit,
+            stats: stats.length > 0 ? stats[0] : null,
+            logs: logs.map((log) => ({
+              timestamp: log.timestamp,
+              trace_id: log.trace_id,
+              method: log.method,
+              host: log.host,
+              path: log.path,
+              ip: log.ip,
+              user_agent: log.user_agent,
+              referer: log.referer,
+              status: log.status,
+              cache: log.cache,
+              duration_ms: log.duration_ms,
+            })),
+          }
+        : { logs };
+
+      return domainData;
+    } catch (err) {
+      console.error("Log retrieval error:", err);
+      return reply.code(500).send({ error: "Failed to retrieve logs" });
+    }
+  });
+
+  app.get("/api/v1/logs/stats", async (request, reply) => {
+    try {
+      const domain = request.query.domain || null;
+      const stats = await getLogStats(domain);
+
+      // Format stats response
+      const formattedStats = stats.map((stat) => ({
+        host: stat.host,
+        totalRequests: stat.total,
+        avgDuration: parseFloat(stat.avg_duration.toFixed(2)),
+        maxDuration: parseFloat(stat.max_duration.toFixed(2)),
+        statusCodes: {
+          success: stat.success_2xx,
+          redirect: stat.redirect_3xx,
+          clientError: stat.client_error_4xx,
+          serverError: stat.server_error_5xx,
+        },
+        successRate: (
+          ((stat.success_2xx / stat.total) * 100).toFixed(2)
+        ).concat("%"),
+      }));
+
+      return domain
+        ? { domain, stats: formattedStats[0] || null }
+        : { stats: formattedStats };
+    } catch (err) {
+      console.error("Stats retrieval error:", err);
+      return reply.code(500).send({ error: "Failed to retrieve stats" });
+    }
+  });
+
+  // Debug endpoint: List all unique domains in ClickHouse
+  app.get("/api/v1/logs/domains", async (request, reply) => {
+    try {
+      const { executeQuery } = await import("../../utils/clickhouseClient.js");
+      const result = await executeQuery(
+        "SELECT DISTINCT host FROM netgoat.request_logs ORDER BY host"
+      );
+      return { domains: result.data?.map((r) => r.host) || [] };
+    } catch (err) {
+      console.error("Domains retrieval error:", err);
+      return reply.code(500).send({ error: "Failed to retrieve domains" });
+    }
+  });
+
+  // Debug endpoint: Total log count
+  app.get("/api/v1/logs/count", async (request, reply) => {
+    try {
+      const { executeQuery } = await import("../../utils/clickhouseClient.js");
+      const result = await executeQuery(
+        "SELECT COUNT() as total FROM netgoat.request_logs"
+      );
+      return { total: result.data?.[0]?.total || 0 };
+    } catch (err) {
+      console.error("Count retrieval error:", err);
+      return reply.code(500).send({ error: "Failed to retrieve count" });
+    }
   });
 }

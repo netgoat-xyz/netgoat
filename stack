@@ -1,4 +1,0 @@
-cd ./reactbased
-bun dev &     
-echo "Starting Stack..."
-./startstack

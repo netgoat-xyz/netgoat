@@ -1,0 +1,4 @@
+{
+  "backend": "http://localhost:3001",
+  "central": "https://central.netgoat.xyz"
+}

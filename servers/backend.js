@@ -5,6 +5,8 @@ import fastifyStatic from "@fastify/static";
 import fastifyMultipart from "@fastify/multipart";
 import { join } from "path";
 import logger from "../utils/logger.js";
+import { initializeClickHouse } from "../utils/clickhouseClient.js";
+
 const app = Fastify();
 
 app.register(require('@fastify/cors'), { 
@@ -31,6 +33,12 @@ app.register(fastifyStatic, {
 app.get("/api/health", async (request, reply) => {
   return { status: "ok", uptime: process.uptime() };
 })
+
+// Initialize ClickHouse on startup (non-blocking)
+initializeClickHouse().catch((err) => {
+  logger.warn("ClickHouse initialization deferred:", err.message);
+});
+
 // Register main backend routes
 registerRoutes(app);
 // Register proxy routes
