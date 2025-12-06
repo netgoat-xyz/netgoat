@@ -150,36 +150,39 @@ export async function initializeClickHouse() {
  */
 export async function queryLogs(filters = {}) {
   try {
-    // Check if ClickHouse is available
-    if (!(await isClickHouseAvailable())) {
-      logger.warn("ClickHouse unavailable, returning empty logs");
-      return [];
-    }
+    if (!(await isClickHouseAvailable())) return [];
 
-    const { limit = 100, domain = null, startDate = null, endDate = null } =
-      filters;
+    const {
+      limit = 100,
+      domain = null,
+      startDate = null,
+      endDate = null,
+      range = null,
+    } = filters;
 
-    let sql = `SELECT timestamp, method, host, path, ip, status, cache, duration_ms, user_agent, referer, trace_id FROM ${CLICKHOUSE_DB}.request_logs WHERE 1=1`;
+    let sql = `SELECT timestamp, method, host, path, ip, status, cache, duration_ms, user_agent, referer, trace_id 
+               FROM ${CLICKHOUSE_DB}.request_logs WHERE 1=1`;
 
-    if (domain) {
-      sql += ` AND host = '${domain.replace(/'/g, "''")}'`;
-    }
+    if (domain) sql += ` AND host = '${domain.replace(/'/g, "''")}'`;
 
-    if (startDate) {
-      sql += ` AND timestamp >= '${startDate}'`;
-    }
+    const ranges = {
+      "90d": "INTERVAL 90 DAY",
+      "30d": "INTERVAL 30 DAY",
+      "24h": "INTERVAL 24 HOUR",
+      "1h": "INTERVAL 1 HOUR",
+    };
 
-    if (endDate) {
-      sql += ` AND timestamp <= '${endDate}'`;
-    }
+    const interval = ranges[range] || null;
+    if (interval) sql += ` AND timestamp >= now() - ${interval}`;
+
+    if (startDate) sql += ` AND timestamp >= '${startDate}'`;
+    if (endDate) sql += ` AND timestamp <= '${endDate}'`;
 
     sql += ` ORDER BY timestamp DESC LIMIT ${Math.min(limit, 10000)}`;
 
     const result = await executeQuery(sql);
-    // ClickHouse returns { data: [...] }
     return result.data || [];
-  } catch (err) {
-    logger.warn("Failed to query logs:", err.message);
+  } catch {
     return [];
   }
 }
@@ -187,13 +190,23 @@ export async function queryLogs(filters = {}) {
 /**
  * Get log statistics
  */
-export async function getLogStats(domain = null) {
+export async function getLogStats(domain = null, range = null) {
   try {
     // Check if ClickHouse is available
     if (!(await isClickHouseAvailable())) {
       logger.warn("ClickHouse unavailable, returning empty stats");
       return [];
     }
+
+    const ranges = {
+      "90d": "INTERVAL 90 DAY",
+      "30d": "INTERVAL 30 DAY",
+      "7d": "INTERVAL 7 DAY",
+      "24h": "INTERVAL 24 HOUR",
+      "1h": "INTERVAL 1 HOUR",
+    };
+
+    const interval = ranges[range] || null;
 
     let sql = `
       SELECT 
@@ -209,9 +222,8 @@ export async function getLogStats(domain = null) {
       WHERE 1=1
     `;
 
-    if (domain) {
-      sql += ` AND host = '${domain.replace(/'/g, "''")}'`;
-    }
+    if (interval) sql += ` AND timestamp >= now() - ${interval}`;
+    if (domain) sql += ` AND host = '${domain.replace(/'/g, "''")}'`;
 
     sql += ` GROUP BY host ORDER BY total DESC`;
 
