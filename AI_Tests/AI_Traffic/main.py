@@ -176,4 +176,4 @@ if __name__ == '__main__':
     load_model_and_scaler()
     print("\n--- Starting Flask Server ---")
     # Run server on localhost:5000 (default Flask port)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
