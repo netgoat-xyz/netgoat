@@ -5,6 +5,51 @@ import Bun from "bun";
 import { S3Client } from "bun";
 import { queryLogs, getLogStats } from "../../utils/clickhouseClient.js";
 
+// --- Rate Limiting Setup ---
+const RATE_LIMIT_WINDOW_MS = 60000; // 60 seconds
+const RATE_LIMIT_MAX_REQUESTS = 50; // Max requests per IP per window
+const requestTracker = new Map(); // Map<string (ip), { count: number, expiry: number }>
+
+/**
+ * Performs an in-memory rate limit check for a given IP address.
+ * Uses X-Forwarded-For header for proxy-awareness.
+ * @param {object} headers Request headers
+ * @returns {{limited: boolean, resetTime?: number, limit?: number}}
+ */
+function checkRateLimit(headers) {
+    // Note: The actual IP should ideally be retrieved from the request context (e.g., ctx.ip).
+    // Using X-Forwarded-For as a proxy-aware fallback, or '127.0.0.1' otherwise.
+    const ip = headers['x-forwarded-for']?.split(',')[0].trim() || '127.0.0.1';
+    const now = Date.now();
+    
+    const record = requestTracker.get(ip);
+    
+    if (record && record.expiry > now) {
+        // Window is still open
+        if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+            // Exceeded limit
+            const resetTime = Math.ceil((record.expiry - now) / 1000);
+            return {
+                limited: true,
+                resetTime: resetTime,
+                limit: RATE_LIMIT_MAX_REQUESTS
+            };
+        }
+        // Increment and continue
+        record.count++;
+        requestTracker.set(ip, record);
+    } else {
+        // First request or window expired, reset
+        requestTracker.set(ip, {
+            count: 1,
+            expiry: now + RATE_LIMIT_WINDOW_MS
+        });
+    }
+    
+    return { limited: false };
+}
+// --- End Rate Limiting Setup ---
+
 const WAFRules = new S3Client({
   accessKeyId: process.env.MINIO_ACCESS,
   secretAccessKey: process.env.MINIO_SECRET,
@@ -31,6 +76,17 @@ export function registerRoutes(app) {
   });
 
   app.post("/api/auth/register", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     const { username, password, email } = request.body;
     if (!username || !password) {
       return reply.code(400).send({ error: "Username and password required" });
@@ -53,6 +109,17 @@ export function registerRoutes(app) {
   });
 
   app.post("/api/auth/login", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     const { username, email, password } = request.body;
     if ((!username && !email) || !password) {
       return reply
@@ -90,6 +157,17 @@ export function registerRoutes(app) {
   });
 
   app.post("/api/profile/update", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -171,6 +249,8 @@ export function registerRoutes(app) {
   });
 
   app.get("/avatars/:filename", async (request, reply) => {
+    // Note: Skipping rate limit check here as this is treated like a static asset endpoint, 
+    // which should ideally be rate limited at the infrastructure/proxy level.
     const { filename } = request.params;
 
     try {
@@ -190,6 +270,17 @@ export function registerRoutes(app) {
   });
 
   app.post("/api/profile/avatar", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const authHeader = request.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -256,6 +347,17 @@ export function registerRoutes(app) {
 
   if (process.env.NODE_ENV !== "production") {
     app.get("/cd", async (request, reply) => {
+      // --- Rate Limiting Check ---
+      const limitCheck = checkRateLimit(request.headers);
+      if (limitCheck.limited) {
+          reply.header('Retry-After', limitCheck.resetTime);
+          return reply.status(429).send({ 
+              success: false, 
+              error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+          });
+      }
+      // --- End Rate Limiting Check ---
+      
       try {
         const user = await User.findOne({ username: request.query?.username });
         if (!user) return reply.code(404).send({ error: "No user found" });
@@ -304,6 +406,8 @@ export function registerRoutes(app) {
   }
 
   app.get("/monitor.js", async (request, reply) => {
+    // Note: Skipping rate limit check here as this is served on every monitored page load 
+    // and should be handled by infrastructure caching/limiting.
     reply.type("application/javascript");
     return `
       (() => {
@@ -340,6 +444,17 @@ export function registerRoutes(app) {
   });
 
   app.get("/api/:id/:action?", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     const { id, action } = request.params;
     if (!id) return reply.code(400).send({ error: "ID is required" });
 
@@ -385,6 +500,17 @@ export function registerRoutes(app) {
 
   // ClickHouse log retrieval endpoints
 app.get("/api/v1/logs", async (request, reply) => {
+  // --- Rate Limiting Check ---
+  const limitCheck = checkRateLimit(request.headers);
+  if (limitCheck.limited) {
+      reply.header('Retry-After', limitCheck.resetTime);
+      return reply.status(429).send({ 
+          success: false, 
+          error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+      });
+  }
+  // --- End Rate Limiting Check ---
+  
   try {
     const range = request.query.range || "24h"
     const domain = request.query.domain || null
@@ -424,6 +550,17 @@ app.get("/api/v1/logs", async (request, reply) => {
 })
 
   app.get("/api/v1/logs/stats", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const domain = request.query.domain || null;
       const stats = await getLogStats(domain);
@@ -456,6 +593,17 @@ app.get("/api/v1/logs", async (request, reply) => {
 
   // Debug endpoint: List all unique domains in ClickHouse
   app.get("/api/v1/logs/domains", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const { executeQuery } = await import("../../utils/clickhouseClient.js");
       const result = await executeQuery(
@@ -470,6 +618,17 @@ app.get("/api/v1/logs", async (request, reply) => {
 
   // Debug endpoint: Total log count
   app.get("/api/v1/logs/count", async (request, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(request.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const { executeQuery } = await import("../../utils/clickhouseClient.js");
       const result = await executeQuery(

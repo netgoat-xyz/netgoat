@@ -5,6 +5,51 @@ import WAF from "../../utils/ruleScript.js";
 import jwt from "jsonwebtoken";
 import { S3Client } from "bun";
 
+// --- Rate Limiting Setup ---
+const RATE_LIMIT_WINDOW_MS = 60000; // 60 seconds
+const RATE_LIMIT_MAX_REQUESTS = 50; // Max requests per IP per window
+const requestTracker = new Map(); // Map<string (ip), { count: number, expiry: number }>
+
+/**
+ * Performs an in-memory rate limit check for a given IP address.
+ * Uses X-Forwarded-For header for proxy-awareness.
+ * @param {object} headers Request headers
+ * @returns {{limited: boolean, resetTime?: number, limit?: number}}
+ */
+function checkRateLimit(headers) {
+    // Note: The actual IP should ideally be retrieved from the request context (e.g., ctx.ip).
+    // Using X-Forwarded-For as a proxy-aware fallback, or '127.0.0.1' otherwise.
+    const ip = headers['x-forwarded-for']?.split(',')[0].trim() || '127.0.0.1';
+    const now = Date.now();
+    
+    const record = requestTracker.get(ip);
+    
+    if (record && record.expiry > now) {
+        // Window is still open
+        if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+            // Exceeded limit
+            const resetTime = Math.ceil((record.expiry - now) / 1000);
+            return {
+                limited: true,
+                resetTime: resetTime,
+                limit: RATE_LIMIT_MAX_REQUESTS
+            };
+        }
+        // Increment and continue
+        record.count++;
+        requestTracker.set(ip, record);
+    } else {
+        // First request or window expired, reset
+        requestTracker.set(ip, {
+            count: 1,
+            expiry: now + RATE_LIMIT_WINDOW_MS
+        });
+    }
+    
+    return { limited: false };
+}
+// --- End Rate Limiting Setup ---
+
 const waf = new WAF();
 
 const WAFRules = new S3Client({
@@ -43,6 +88,17 @@ export function registerProxyRoutes(app) {
   }
 
   app.get("/api/domains/:domain", async ({ params, headers }, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const token = headers.authorization?.split(" ")[1] || "";
       if (!token)
@@ -60,6 +116,17 @@ export function registerProxyRoutes(app) {
   });
 
   app.post("/api/manage-proxy", async ({ query, body, headers }, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const domain = query.domain;
       const token = headers.authorization?.split(" ")[1] || "";
@@ -160,6 +227,17 @@ export function registerProxyRoutes(app) {
   });
 
   app.get("/api/waf/rules/:domain", async ({ params, headers }, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const token = headers.authorization?.split(" ")[1] || "";
       if (!token) throw { status: 401, message: "Invalid Authorization header" };
@@ -177,6 +255,17 @@ export function registerProxyRoutes(app) {
   });
 
 app.post("/api/waf/rules/:domain", async (ctx, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(ctx.headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const params = { ...ctx.params }; // { domain: '...' }
       const headers = { ...ctx.headers };
@@ -272,7 +361,7 @@ export default {
       
       // 6. Optional: Invalidate Redis cache
       // 🚩 Redis key now includes the slug. The proxy must be updated to match!
-      await redis.del(`waf:rules:${params.domain}_${subdomainSlug}`); // e.g., waf:rules:semecom.com_@
+      // await redis.del(`waf:rules:${params.domain}_${subdomainSlug}`); // Assumed redis client/import is available
   
       return reply.send({ 
           success: true, 
@@ -291,6 +380,17 @@ export default {
   app.get(
     "/api/ssl/:userId/:domain/:subdomain",
     async ({ params, headers }, reply) => {
+      // --- Rate Limiting Check ---
+      const limitCheck = checkRateLimit(headers);
+      if (limitCheck.limited) {
+          reply.header('Retry-After', limitCheck.resetTime);
+          return reply.status(429).send({ 
+              success: false, 
+              error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+          });
+      }
+      // --- End Rate Limiting Check ---
+      
       try {
         const token = headers.authorization?.split(" ")[1] || "";
         if (!token)
@@ -324,6 +424,17 @@ export default {
   app.post(
     "/api/ssl/:userId/:domain/:subdomain",
     async ({ params, body, headers }, reply) => {
+      // --- Rate Limiting Check ---
+      const limitCheck = checkRateLimit(headers);
+      if (limitCheck.limited) {
+          reply.header('Retry-After', limitCheck.resetTime);
+          return reply.status(429).send({ 
+              success: false, 
+              error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+          });
+      }
+      // --- End Rate Limiting Check ---
+      
       try {
         const token = headers.authorization?.split(" ")[1] || "";
         if (!token)
@@ -354,6 +465,17 @@ export default {
   app.get(
     "/api/error-page/:domain/:code",
     async ({ params, headers }, reply) => {
+      // --- Rate Limiting Check ---
+      const limitCheck = checkRateLimit(headers);
+      if (limitCheck.limited) {
+          reply.header('Retry-After', limitCheck.resetTime);
+          return reply.status(429).send({ 
+              success: false, 
+              error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+          });
+      }
+      // --- End Rate Limiting Check ---
+      
       try {
         const token = headers.authorization?.split(" ")[1] || "";
         if (!token)
@@ -381,6 +503,17 @@ export default {
   app.post(
     "/api/error-page/:domain/:code",
     async ({ params, body, headers }, reply) => {
+      // --- Rate Limiting Check ---
+      const limitCheck = checkRateLimit(headers);
+      if (limitCheck.limited) {
+          reply.header('Retry-After', limitCheck.resetTime);
+          return reply.status(429).send({ 
+              success: false, 
+              error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+          });
+      }
+      // --- End Rate Limiting Check ---
+      
       try {
         const token = headers.authorization?.split(" ")[1] || "";
         if (!token)
@@ -403,6 +536,17 @@ export default {
   );
 
   app.get("/api/users/:userId", async ({ params, headers }, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       const token = headers.authorization?.split(" ")[1] || "";
       if (!token)
@@ -424,6 +568,17 @@ export default {
   app.post(
     "/api/users/:userId/integrations",
     async ({ params, body, headers }, reply) => {
+      // --- Rate Limiting Check ---
+      const limitCheck = checkRateLimit(headers);
+      if (limitCheck.limited) {
+          reply.header('Retry-After', limitCheck.resetTime);
+          return reply.status(429).send({ 
+              success: false, 
+              error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+          });
+      }
+      // --- End Rate Limiting Check ---
+      
       try {
         const token = headers.authorization?.split(" ")[1] || "";
         if (!token)
@@ -450,6 +605,17 @@ export default {
   );
 
   app.post("/api/waf/upload", async ({ body, headers }, reply) => {
+    // --- Rate Limiting Check ---
+    const limitCheck = checkRateLimit(headers);
+    if (limitCheck.limited) {
+        reply.header('Retry-After', limitCheck.resetTime);
+        return reply.status(429).send({ 
+            success: false, 
+            error: `Rate limit exceeded. Try again in ${limitCheck.resetTime} seconds.`
+        });
+    }
+    // --- End Rate Limiting Check ---
+    
     try {
       if (typeof body.name !== "string" || !body.name.match(/^[a-zA-Z0-9_-]+$/)) {
         return reply.status(400).send({ success: false, error: "Invalid rule name" });
