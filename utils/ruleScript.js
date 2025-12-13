@@ -135,7 +135,7 @@ export default class WAF {
       } else {
           // Log sanitation for rule name and error details.
           const errorMessage = err.message || (err.stack ? err.stack.split('\n')[0] : 'Unknown error');
-          console.error(`[WAF Execution] Runtime error in ${sanitizedRuleName}:`, this._sanitizeLogInput(errorMessage));
+          console.error("[WAF Execution] Runtime error in %s:", sanitizedRuleName, this._sanitizeLogInput(errorMessage));
       }
       
       // SSE Decision: Fail open on rule execution error (i.e., allow the request).
