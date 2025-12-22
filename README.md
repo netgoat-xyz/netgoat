@@ -5,6 +5,7 @@
 ## 💖 Special Thanks
 
 A huge thank you to **Cozy Critters Society** and **Snow** for being our first donors! Their support means the world to us. Check out their nonprofit here: [Cozy Critters Society](https://opencollective.com/cozy-critters-society).
+A huge thank you to **furstxd** for contributing with the project with a Pull Request!
 
 > _“The team at Cozy Critters Society is happy to support the development of NetGoat in hopes that we can help them succeed in making their self-hostable Cloudflare alternative.”_
 
