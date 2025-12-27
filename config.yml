@@ -1,1 +1,10 @@
 debug_logs: true
+honeypot: true
+auth:
+  enabled: true
+  session_secret: "change-this-to-a-random-string"
+ssl:
+  enabled: false
+  cert_file: "cert.pem"
+  key_file: "key.pem"
+  port: ":8443"
