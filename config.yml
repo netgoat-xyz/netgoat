@@ -22,10 +22,11 @@ error_pages:
     # "/admin": "public/admin-error.html"
     # "/shop": "public/shop-error.html"
 
-# Optional: AI-based anomaly detection via Hugging Face
+# Optional: AI-based anomaly detection (local Keras model + scaler)
 anomaly:
   enabled: false
   threshold: 0.7
-  model: "netgoat-ai/GoatAI"
-  # huggingface_token: "${HUGGINGFACE_TOKEN}"
+  model_path: "ai/goatai.keras"
+  scaler_path: "ai/scaler.pkl"
+  python_script: "ai/model_server.py"
   feature_header: "X-GoatAI-Features"

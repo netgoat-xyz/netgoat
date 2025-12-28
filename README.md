@@ -1,6 +1,6 @@
 # netgoat
 
-Reverse proxy with WAF, honeypot, ZeroTrust login, and AI-based anomaly detection.
+Reverse proxy with WAF, honeypot, ZeroTrust login, and local AI-based anomaly detection using Keras + sklearn.
 
 ## New Features
 
@@ -8,7 +8,10 @@ Reverse proxy with WAF, honeypot, ZeroTrust login, and AI-based anomaly detectio
   - Default error page via `custom_error_page`.
   - Per-domain pages via `error_pages.domain`.
   - Per-path pages (longest prefix) via `error_pages.path`.
-- AI anomaly detection (Hugging Face): block requests when the model flags anomalous CSV features.
+- Dynamic error pages with:
+  - Bot detection (suspicious user-agents flagged for challenges).
+  - Challenge system: text/click/puzzle CAPTCHAs based on suspicion level.
+- Local AI anomaly detection: Keras model + sklearn scaler (no remote API calls).
 
 ## Configure
 
@@ -28,17 +31,22 @@ error_pages:
     # "/admin": "public/admin-error.html"
     # "/shop": "public/shop-error.html"
 
-# Anomaly detection via Hugging Face (optional)
+# Local anomaly detection with Keras + sklearn scaler
 anomaly:
-  enabled: true
+  enabled: false
   threshold: 0.7
-  model: "netgoat-ai/GoatAI"
-  # token may also be provided via env HUGGINGFACE_TOKEN or HUGGINGFACEHUB_API_TOKEN
-  # huggingface_token: "${HUGGINGFACE_TOKEN}"
+  model_path: "ai/goatai.keras"
+  scaler_path: "ai/scaler.pkl"
+  python_script: "ai/model_server.py"
   feature_header: "X-GoatAI-Features"
 ```
 
-Provide a Hugging Face API token either in `config.yml` as `anomaly.huggingface_token` or via environment variables `HUGGINGFACE_TOKEN` or `HUGGINGFACEHUB_API_TOKEN`.
+## Requirements
+
+- Python 3 with TensorFlow and scikit-learn:
+  ```bash
+  pip install tensorflow scikit-learn
+  ```
 
 ## Run
 
@@ -62,8 +70,17 @@ go build ./...
   4. Packet Length Mean
   5. Flow IAT Mean
   6. Fwd Flag Count
-- The string is sent to Hugging Face Inference API for model `netgoat-ai/GoatAI`.
-- If the model returns a score >= `anomaly.threshold` for an anomalous label (or label explicitly includes "anom"/"malicious"/"attack"), the request is blocked with HTTP 403. If `custom_error_page` is set, that HTML is served instead of a plain error.
+- The string is passed to a local Python subprocess (`ai/model_server.py`) which uses the Keras model and sklearn scaler.
+- If the model returns a score >= `anomaly.threshold` for an anomalous label, the request is blocked with HTTP 403. If `custom_error_page` is set, that HTML is served instead of a plain error.
+
+## Challenge System
+
+Dynamic error pages detect suspicious user-agents and issue challenges:
+- **Text CAPTCHA**: For slightly suspicious requests.
+- **Click CAPTCHA**: For more suspicious requests.
+- **Puzzle CAPTCHA**: For highly suspicious requests.
+
+Challenges are issued at `/__netgoat/verify` and verified server-side.
 
 ## Quick test
 
@@ -73,9 +90,11 @@ With the server running and anomaly enabled, send a request with features:
 curl -H "X-GoatAI-Features: 10,5,2,123.4,56.7,1" http://localhost:8080/some/path
 ```
 
-If the model classifies the vector as anomalous over the threshold, you will get a 403 with the custom error page (if configured).
+If the model classifies the vector as anomalous over the threshold, you will get a 403 with the custom error page (if configured) and possibly a challenge.
 
 ## Notes
 
 - If no features header/param is present, the AI step is skipped and normal WAF rules apply.
 - The default custom error page lives at `public/error.html`; you can override per domain/path.
+- The Python model server runs as a subprocess and is automatically cleaned up on shutdown.
+

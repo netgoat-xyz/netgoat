@@ -46,19 +46,27 @@ func main() {
 
 	pages := buildErrorPageStore(cfg)
 
-	var detector *anomaly.Detector
+	var detector *anomaly.LocalDetector
 	featureHeader := "X-GoatAI-Features"
 	if cfg.Anomaly.FeatureHeader != "" {
 		featureHeader = cfg.Anomaly.FeatureHeader
 	}
 	if cfg.Anomaly.Enabled {
-		detector = anomaly.NewDetector(anomaly.Settings{
-			Enabled:   cfg.Anomaly.Enabled,
-			Threshold: ifZero(cfg.Anomaly.Threshold, 0.7),
-			Model:     ifEmpty(cfg.Anomaly.Model, "netgoat-ai/GoatAI"),
-			Token:     cfg.Anomaly.HuggingFaceToken,
+		var err error
+		detector, err = anomaly.NewLocalDetector(anomaly.LocalSettings{
+			Enabled:      cfg.Anomaly.Enabled,
+			Threshold:    ifZero(cfg.Anomaly.Threshold, 0.7),
+			ModelPath:    ifEmpty(cfg.Anomaly.ModelPath, "ai/goatai.keras"),
+			ScalerPath:   ifEmpty(cfg.Anomaly.ScalerPath, "ai/scaler.pkl"),
+			PythonScript: ifEmpty(cfg.Anomaly.PythonScript, "ai/model_server.py"),
 		})
-		log.Info().Bool("enabled", true).Str("model", ifEmpty(cfg.Anomaly.Model, "netgoat-ai/GoatAI")).Float64("threshold", ifZero(cfg.Anomaly.Threshold, 0.7)).Msg("Anomaly detection configured")
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to initialize local anomaly detector")
+			detector = nil
+		} else {
+			defer detector.Close()
+			log.Info().Bool("enabled", true).Str("model", ifEmpty(cfg.Anomaly.ModelPath, "ai/goatai.keras")).Float64("threshold", ifZero(cfg.Anomaly.Threshold, 0.7)).Msg("Anomaly detection configured")
+		}
 	}
 
 	// Initialize challenge store for dynamic error pages
@@ -114,15 +122,15 @@ func main() {
 				csv = r.URL.Query().Get("goatai")
 			}
 			if csv != "" {
-				ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 				label, score, derr := detector.PredictCSV(ctx, csv)
 				cancel()
 				if derr != nil {
-					log.Warn().Err(derr).Msg("Anomaly detection error")
+					log.Warn().Err(derr).Msg("Local anomaly detection error")
 				} else {
-					log.Info().Str("label", label).Float64("score", score).Msg("Anomaly prediction")
+					log.Info().Str("label", label).Float64("score", score).Msg("Local anomaly prediction")
 					if detector.IsAnomalous(label, score) {
-						log.Warn().Str("label", label).Float64("score", score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by AI anomaly detector")
+						log.Warn().Str("label", label).Float64("score", score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by local anomaly detector")
 						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
 						return
 					}
