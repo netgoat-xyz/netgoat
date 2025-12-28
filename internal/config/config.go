@@ -22,15 +22,14 @@ type Config struct {
 	// Path to a static HTML file to serve for errors (e.g., 403/404/500)
 	CustomErrorPage string `yaml:"custom_error_page"`
 
-	// AI-based anomaly detection (Hugging Face Inference API)
+	// AI-based anomaly detection (local Keras model + sklearn scaler)
 	Anomaly struct {
-		Enabled   bool    `yaml:"enabled"`
-		Threshold float64 `yaml:"threshold"`
-		Model     string  `yaml:"model"`
-		// Optional: If empty, will read from env HUGGINGFACE_TOKEN or HUGGINGFACEHUB_API_TOKEN
-		HuggingFaceToken string `yaml:"huggingface_token"`
-		// Optional header name to read CSV features from (defaults to X-GoatAI-Features)
-		FeatureHeader string `yaml:"feature_header"`
+		Enabled       bool    `yaml:"enabled"`
+		Threshold     float64 `yaml:"threshold"`
+		ModelPath     string  `yaml:"model_path"`     // Path to goatai.keras
+		ScalerPath    string  `yaml:"scaler_path"`    // Path to scaler.pkl
+		PythonScript  string  `yaml:"python_script"`  // Path to model_server.py
+		FeatureHeader string  `yaml:"feature_header"` // Header name to read CSV from
 	} `yaml:"anomaly"`
 
 	// Optional per-domain and per-path error pages. Values are file paths.
