@@ -2,6 +2,9 @@
 
 # NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
+> [!IMPORTANT]
+> If you don't see any new commits here, its because we're working on a go version of Netgoat in the RewriteGo branch!
+
 ## 💖 Special Thanks
 
 A huge thank you to **Cozy Critters Society** and **Snow** for being our first donors! Their support means the world to us. Check out their nonprofit here: [Cozy Critters Society](https://opencollective.com/cozy-critters-society).
