@@ -8,3 +8,24 @@ ssl:
   cert_file: "cert.pem"
   key_file: "key.pem"
   port: ":8443"
+
+# Optional: custom error page served for 403/404/500
+custom_error_page: "public/error.html"
+
+# Optional: fine-grained error pages per domain or path
+# Path rules use longest-prefix match and override domain and default.
+error_pages:
+  domain:
+    # "app.example.com": "public/app-error.html"
+    # "admin.example.com": "public/admin-error.html"
+  path:
+    # "/admin": "public/admin-error.html"
+    # "/shop": "public/shop-error.html"
+
+# Optional: AI-based anomaly detection via Hugging Face
+anomaly:
+  enabled: false
+  threshold: 0.7
+  model: "netgoat-ai/GoatAI"
+  # huggingface_token: "${HUGGINGFACE_TOKEN}"
+  feature_header: "X-GoatAI-Features"
