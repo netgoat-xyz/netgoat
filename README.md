@@ -1,100 +1,106 @@
-# netgoat
+<img width="5658" height="1600" alt="image" src="https://github.com/user-attachments/assets/d30fb971-4b39-490c-ac08-0d688e8f9ada" />
 
-Reverse proxy with WAF, honeypot, ZeroTrust login, and local AI-based anomaly detection using Keras + sklearn.
+# NetGoat - Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
-## New Features
+> [!IMPORTANT]
+> Hi! The project is not working (easily selfhostable) yet, its under heavy development
 
-- Custom error pages:
-  - Default error page via `custom_error_page`.
-  - Per-domain pages via `error_pages.domain`.
-  - Per-path pages (longest prefix) via `error_pages.path`.
-- Dynamic error pages with:
-  - Bot detection (suspicious user-agents flagged for challenges).
-  - Challenge system: text/click/puzzle CAPTCHAs based on suspicion level.
-- Local AI anomaly detection: Keras model + sklearn scaler (no remote API calls).
+## 💖 Special Thanks
 
-## Configure
+A huge thank you to **Cozy Critters Society** and **Snow** for being our first donors! Their support means the world to us. Check out their nonprofit here: [Cozy Critters Society](https://opencollective.com/cozy-critters-society).
 
-Edit `config.yml`:
+> _“The team at Cozy Critters Society is happy to support the development of NetGoat in hopes that we can help them succeed in making their self-hostable Cloudflare alternative.”_
 
-```yaml
-# Serve this HTML for error responses (optional default)
-custom_error_page: "public/error.html"
+---
 
-# Optional: fine-grained error pages per domain or path
-# Path rules use longest-prefix match and override domain and default.
-error_pages:
-  domain:
-    # "app.example.com": "public/app-error.html"
-    # "admin.example.com": "public/admin-error.html"
-  path:
-    # "/admin": "public/admin-error.html"
-    # "/shop": "public/shop-error.html"
+**NetGoat** is a **blazing-fast, self-hostable reverse proxy and traffic manager** designed for developers, homelabbers, and teams who want **Cloudflare-like features** without the cost.
 
-# Local anomaly detection with Keras + sklearn scaler
-anomaly:
-  enabled: false
-  threshold: 0.7
-  model_path: "ai/goatai.keras"
-  scaler_path: "ai/scaler.pkl"
-  python_script: "ai/model_server.py"
-  feature_header: "X-GoatAI-Features"
-```
+Key Features:
 
-## Requirements
+- **Zero Trust Networking** – secure your services without hassle.
+- **DDoS Protection** – keep your traffic safe from attacks.
+- **SSL Termination** – handle certificates automatically.
+- **Rate Limiting** – control traffic and prevent abuse.
+- **WebSocket Support** – real-time apps? No problem.
 
-- Python 3 with TensorFlow and scikit-learn:
-  ```bash
-  pip install tensorflow scikit-learn
-  ```
+Built with **modern tools** for maximum performance and developer experience:
 
-## Run
+- **Bun** for super-fast runtime.
+- **Next.js** for robust front-end.
+- **Fastify** for high-performance backend.
+- **TailwindCSS** for sleek, responsive UI.
 
-```bash
-# Build
-go build ./...
+**NetGoat** gives you full control over your traffic, security, and performance—**all self-hosted**.
 
-# Run (HTTP on :8080 by default)
-./netgoat
-```
+[![GoLang](https://img.shields.io/badge/Go-00ADD8?logo=Go&logoColor=white&style=for-the-badge)](https://github.com/netgoat-xyz/netgoat)
+[![CSS](https://img.shields.io/badge/CSS-639?logo=css&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![HTML](https://img.shields.io/badge/HTML-%23E34F26.svg?logo=html5&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?logo=Cloudflare&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Next.js](https://img.shields.io/badge/Next.js-black?logo=next.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-000?logo=shadcnui&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-%2338B2AC.svg?logo=tailwind-css&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![SQLite](https://img.shields.io/badge/SQLite-%2307405e.svg?logo=sqlite&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?logo=mongodb&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
+[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
+[![TensorFlow](https://img.shields.io/badge/TensorFlow-ff8f00?logo=tensorflow&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
 
-## How anomaly detection works
+![Stats](https://hackatime-badge.hackclub.com/U082B71HP8B/NetGoat)
 
-- If `anomaly.enabled` is true, the proxy looks for a CSV of features in the request:
-  - Header `X-GoatAI-Features` (override with `feature_header`), or
-  - Query param `goatai`.
-- The CSV must contain, in order:
-  1. Flow Duration
-  2. Total Fwd Packets
-  3. Total Backward Packets
-  4. Packet Length Mean
-  5. Flow IAT Mean
-  6. Fwd Flag Count
-- The string is passed to a local Python subprocess (`ai/model_server.py`) which uses the Keras model and sklearn scaler.
-- If the model returns a score >= `anomaly.threshold` for an anomalous label, the request is blocked with HTTP 403. If `custom_error_page` is set, that HTML is served instead of a plain error.
+> Built for [HackClub Summer of Making](https://summer.hackclub.com)
 
-## Challenge System
 
-Dynamic error pages detect suspicious user-agents and issue challenges:
-- **Text CAPTCHA**: For slightly suspicious requests.
-- **Click CAPTCHA**: For more suspicious requests.
-- **Puzzle CAPTCHA**: For highly suspicious requests.
+> Join our discord for support, annoucements, updates & bugs!! [Click Me To Join!](https://discord.com/invite/3aJ7MdJsZV) ![Discord](https://img.shields.io/discord/1350110102337749062)
 
-Challenges are issued at `/__netgoat/verify` and verified server-side.
+NetGoat is an advanced reverse proxy engine designed to act as an **additional layer** on top of Cloudflare — enabling **premium-grade features**, **zero-cost scaling**, and **maximum control** for power users and homelabbers.
 
-## Quick test
+---
 
-With the server running and anomaly enabled, send a request with features:
+## Screenshots
 
-```bash
-curl -H "X-GoatAI-Features: 10,5,2,123.4,56.7,1" http://localhost:8080/some/path
-```
+Say cheese!
+<img width="1639" height="1114" alt="image" src="https://github.com/user-attachments/assets/10590637-07b6-48c5-b083-1c13c69b9a67" />
+<img width="1636" height="1131" alt="image" src="https://github.com/user-attachments/assets/36381a53-b201-4961-ab39-3f583033d75a" />
+<img width="1649" height="1109" alt="image" src="https://github.com/user-attachments/assets/e5890bf2-769a-4487-8442-6a0ab0e17d3d" />
+<img width="1630" height="1120" alt="image" src="https://github.com/user-attachments/assets/a294d0c0-019e-4cac-904e-6f5a10b33b6a" />
 
-If the model classifies the vector as anomalous over the threshold, you will get a 403 with the custom error page (if configured) and possibly a challenge.
+## Features
 
-## Notes
+- **Anti-DDoS & WAF** — Filters like a hawk. Blocks malicious requests, bots, and common exploits.
+- **Rate Limiting & Request Queuing** — Your API won’t get nuked.
+- **Auto SSL & TLS Termination** — Free SSL with auto-renew.
+- **Load Balancing & Failover** — Multinode routing with zero-downtime.
+- **Real-Time Metrics Dashboard** — Monitor traffic, bandwidth, errors, and hits.
+- **Dynamic Rules Engine** — Write custom rules in JS/TS to handle routing, caching, filtering, etc.
+- **WebSocket & HTTP/2 Ready** — Handles modern protocols like a beast.
+- **Per-Domain Configs** — Define behavior per site with regex/wildcard support.
+- **Plugin System** — Extend NetGoat with custom plugins or middlewares.
+- **Cloudflare Zero Trust Support** — Acts as a trusted upstream in Zero Trust setups.
+- **Smart Caching Layer** — Custom cache policies per route, endpoint, or asset.
 
-- If no features header/param is present, the AI step is skipped and normal WAF rules apply.
-- The default custom error page lives at `public/error.html`; you can override per domain/path.
-- The Python model server runs as a subprocess and is automatically cleaned up on shutdown.
+## Seamless intergration
 
+- **DNS Searching** — Automatically scans your domains to automatically create a suitable Proxy record
+- **Cloudflare** — Manage cloudflare tunnels and more with our UI
+- **Bandwidth Limits** — Limit or throttle specific domains or proxy's
+
+## Quick Start
+
+We recommend [datalix](https://datalix.eu/a/netgoat) for cheap and highly avaliable vps'ses
+
+https://docs.netgoat.xyz (not published yet)
+
+## Open Source Projects That Helped me Build
+
+- [Bun](https://bun.sh) - [Github](https://github.com/oven-sh/bun) - MIT License
+
+- [ShadCN](https://ui.shadcn.com) - [Github](https://github.com/shadcn-ui/ui) - MIT License
+
+- [NextJS](https://nextjs.org/) - [Github](https://github.com/vercel/next.js/) - MIT License
+
+- [Fastify](https://fastify.dev) - [Github](https://github.com/fastify/fastify) - MIT License
+
+- [TailwindCSS](https://tailwindcss.com) - [Github](https://github.com/tailwindlabs/tailwindcss) - MIT License
+
+## Star History
+
+<a href="https://www.star-history.com/#cloudable-dev/netgoat&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=cloudable-dev/netgoat&type=Date" />
+ </picture>
+</a>
