@@ -27,11 +27,16 @@ fi
 # Step 2: Check config
 echo ""
 echo "⚙️  Step 2: Checking configuration..."
-if grep -q "debug_overlay: true" config.yml; then
-    echo "✅ Debug overlay is enabled"
+if [ -f "config.yml" ]; then
+    if grep -q "debug_overlay: true" config.yml; then
+        echo "✅ Debug overlay is enabled"
+    else
+        echo "⚠️  Debug overlay is not enabled in config.yml"
+        echo "   Add 'debug_overlay: true' to enable it"
+    fi
 else
-    echo "⚠️  Debug overlay is not enabled in config.yml"
-    echo "   Add 'debug_overlay: true' to enable it"
+    echo "⚠️  No config.yml found in the current directory"
+    echo "   Create a config.yml and add 'debug_overlay: true' to enable the debug overlay"
 fi
 
 # Step 3: Add test route to database
