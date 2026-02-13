@@ -44,18 +44,15 @@ class ModelServer:
             # Scale the input
             scaled = self.scaler.transform([parts])[0]
             
-            # Predict
             pred = self.model.predict(np.array([scaled]), verbose=0)
             
-            # Return label and confidence
-            # Assuming binary classification: [not_anomaly_score, anomaly_score]
             anomaly_score = float(pred[0][1]) if len(pred[0]) > 1 else float(pred[0][0])
             label = "anomaly" if anomaly_score > 0.5 else "benign"
             
             return {
                 "label": label,
                 "score": anomaly_score,
-                "confidence": max(float(pred[0]))*100  # confidence as percentage
+                "confidence": max(float(pred[0]))*100
             }
         except Exception as e:
             raise ValueError(f"Prediction error: {e}")
@@ -71,7 +68,6 @@ def main():
     
     server = ModelServer(model_path, scaler_path)
     
-    # Read from stdin, process CSV lines
     for line in sys.stdin:
         line = line.strip()
         if not line:

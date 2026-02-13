@@ -7,9 +7,10 @@ import (
 )
 
 type Config struct {
-	DebugLogs bool `yaml:"debug_logs"`
-	Honeypot  bool `yaml:"honeypot"`
-	Auth      struct {
+	DebugLogs    bool `yaml:"debug_logs"`
+	DebugOverlay bool `yaml:"debug_overlay"`
+	Honeypot     bool `yaml:"honeypot"`
+	Auth         struct {
 		Enabled       bool   `yaml:"enabled"`
 		SessionSecret string `yaml:"session_secret"`
 	} `yaml:"auth"`
@@ -38,6 +39,18 @@ type Config struct {
 		Domain map[string]string `yaml:"domain"`
 		Path   map[string]string `yaml:"path"`
 	} `yaml:"error_pages"`
+
+	Cache struct {
+		Enabled      bool `yaml:"enabled"`
+		TTLSeconds   int  `yaml:"ttl_seconds"`
+		MaxEntries   int  `yaml:"max_entries"`
+		MaxBodyBytes int  `yaml:"max_body_bytes"`
+	} `yaml:"cache"`
+
+	API struct {
+		URL string `yaml:"url"`
+		Key string `yaml:"key"`
+	} `yaml:"api"`
 }
 
 func Load(path string) (*Config, error) {

@@ -1,4 +1,5 @@
 debug_logs: true
+debug_overlay: true  # Show live AI analysis overlay on pages
 honeypot: true
 auth:
   enabled: true
@@ -22,6 +23,24 @@ error_pages:
     # "/admin": "public/admin-error.html"
     # "/shop": "public/shop-error.html"
 
+# Response cache
+cache:
+  enabled: false
+  ttl_seconds: 60
+  max_entries: 1024
+  max_body_bytes: 1048576
+
+# External API connection for configuration streaming
+# The agent will automatically fall back to cached local configuration
+# if the API is unreachable or MongoDB is down
+api:
+  url: "http://localhost:8787"
+  key: "FuckYouImAAPIKey"
+  # Connection settings
+  poll_interval: 5              # Seconds between snapshot polls
+  connection_timeout: 10        # Seconds to wait for API responses
+  max_retry_interval: 120       # Maximum seconds between reconnection attempts
+
 # Optional: AI-based anomaly detection (local Keras model + scaler)
 anomaly:
   enabled: false
@@ -30,3 +49,11 @@ anomaly:
   scaler_path: "ai/scaler.pkl"
   python_script: "ai/model_server.py"
   feature_header: "X-GoatAI-Features"
+
+# Fault Tolerance:
+# - Configuration snapshots are automatically persisted to ./database/config-snapshot.json
+# - On startup, the agent loads the last known good configuration from disk
+# - If the External API or MongoDB is unavailable, the agent continues serving
+#   users with the cached configuration
+# - Connection attempts are retried with exponential backoff
+# - All route, WAF, and user configurations remain functional during outages

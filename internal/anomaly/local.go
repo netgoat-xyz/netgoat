@@ -14,16 +14,14 @@ import (
 	"time"
 )
 
-// LocalSettings for local model inference.
 type LocalSettings struct {
 	Enabled      bool
 	Threshold    float64
-	ModelPath    string // Path to goatai.keras
-	ScalerPath   string // Path to scaler.pkl
-	PythonScript string // Path to model_server.py
+	ModelPath    string 
+	ScalerPath   string 
+	PythonScript string 
 }
 
-// LocalDetector uses local Keras model + sklearn scaler via Python subprocess.
 type LocalDetector struct {
 	settings LocalSettings
 	cmd      *exec.Cmd
@@ -32,13 +30,11 @@ type LocalDetector struct {
 	mu       sync.Mutex
 }
 
-// NewLocalDetector starts the Python model server subprocess.
 func NewLocalDetector(s LocalSettings) (*LocalDetector, error) {
 	if !s.Enabled {
 		return nil, errors.New("local detector disabled")
 	}
 
-	// Verify files exist
 	if _, err := os.Stat(s.ModelPath); err != nil {
 		return nil, fmt.Errorf("model file not found: %w", err)
 	}
@@ -78,9 +74,6 @@ func NewLocalDetector(s LocalSettings) (*LocalDetector, error) {
 	return d, nil
 }
 
-// PredictCSV sends the CSV feature vector to the local model and returns (label, score, error).
-// CSV must be in order: Flow Duration, Total Fwd Packets, Total Backward Packets,
-// Packet Length Mean, Flow IAT Mean, Fwd Flag Count
 func (d *LocalDetector) PredictCSV(ctx context.Context, csv string) (label string, score float64, err error) {
 	if !d.settings.Enabled {
 		return "", 0, errors.New("local detector disabled")
@@ -89,7 +82,6 @@ func (d *LocalDetector) PredictCSV(ctx context.Context, csv string) (label strin
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// Set a timeout for the prediction
 	done := make(chan error, 1)
 	var result struct {
 		Label      string  `json:"label"`
@@ -136,12 +128,10 @@ func (d *LocalDetector) PredictCSV(ctx context.Context, csv string) (label strin
 	}
 }
 
-// IsAnomalous decides whether to block based on (label, score) and threshold.
 func (d *LocalDetector) IsAnomalous(label string, score float64) bool {
 	if score >= d.settings.Threshold {
 		return true
 	}
-	// Fallback: treat clearly anomalous labels as suspicious
 	lab := strings.ToLower(label)
 	if strings.Contains(lab, "anom") || strings.Contains(lab, "malicious") || strings.Contains(lab, "attack") {
 		return score >= d.settings.Threshold*0.8
@@ -149,7 +139,6 @@ func (d *LocalDetector) IsAnomalous(label string, score float64) bool {
 	return false
 }
 
-// Close terminates the Python subprocess.
 func (d *LocalDetector) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
