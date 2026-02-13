@@ -1,9 +1,9 @@
 <img width="5658" height="1600" alt="image" src="https://github.com/user-attachments/assets/d30fb971-4b39-490c-ac08-0d688e8f9ada" />
 
-# NetGoat — Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
+# NetGoat - Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
 > [!IMPORTANT]
-> If you don't see any new commits here, its because we're working on a go version of Netgoat in the RewriteGo branch!
+> Hi! The project is not working (easily selfhostable) yet, its under heavy development
 
 ## 💖 Special Thanks
 
@@ -12,12 +12,6 @@ A huge thank you to **Cozy Critters Society** and **Snow** for being our first d
 > _“The team at Cozy Critters Society is happy to support the development of NetGoat in hopes that we can help them succeed in making their self-hostable Cloudflare alternative.”_
 
 ---
-
-## TLDR: Work In Progess
-
-Hii! Its ducky the project is Work In Progress and will be publicly working beta at December
-
-[![Bun](https://img.shields.io/badge/Bun-000?logo=bun&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
 
 **NetGoat** is a **blazing-fast, self-hostable reverse proxy and traffic manager** designed for developers, homelabbers, and teams who want **Cloudflare-like features** without the cost.
 
@@ -38,7 +32,8 @@ Built with **modern tools** for maximum performance and developer experience:
 
 **NetGoat** gives you full control over your traffic, security, and performance—**all self-hosted**.
 
-[![CSS](https://img.shields.io/badge/CSS-639?logo=css&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![HTML](https://img.shields.io/badge/HTML-%23E34F26.svg?logo=html5&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=000)](https://github.com/netgoat-xyz/netgoat) [![Git](https://img.shields.io/badge/Git-F05032?logo=git&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![Bash](https://img.shields.io/badge/Bash-4EAA25?logo=gnubash&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?logo=Cloudflare&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Next.js](https://img.shields.io/badge/Next.js-black?logo=next.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-000?logo=shadcnui&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-%2338B2AC.svg?logo=tailwind-css&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![SQLite](https://img.shields.io/badge/SQLite-%2307405e.svg?logo=sqlite&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?logo=mongodb&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
+[![GoLang](https://img.shields.io/badge/Go-00ADD8?logo=Go&logoColor=white&style=for-the-badge)](https://github.com/netgoat-xyz/netgoat)
+[![CSS](https://img.shields.io/badge/CSS-639?logo=css&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![HTML](https://img.shields.io/badge/HTML-%23E34F26.svg?logo=html5&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?logo=Cloudflare&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Next.js](https://img.shields.io/badge/Next.js-black?logo=next.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-000?logo=shadcnui&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-%2338B2AC.svg?logo=tailwind-css&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![SQLite](https://img.shields.io/badge/SQLite-%2307405e.svg?logo=sqlite&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?logo=mongodb&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
 [![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-ff8f00?logo=tensorflow&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
@@ -46,6 +41,7 @@ Built with **modern tools** for maximum performance and developer experience:
 ![Stats](https://hackatime-badge.hackclub.com/U082B71HP8B/NetGoat)
 
 > Built for [HackClub Summer of Making](https://summer.hackclub.com)
+
 
 > Join our discord for support, annoucements, updates & bugs!! [Click Me To Join!](https://discord.com/invite/3aJ7MdJsZV) ![Discord](https://img.shields.io/discord/1350110102337749062)
 
