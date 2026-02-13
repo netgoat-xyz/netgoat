@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetGoat AI Debug Test Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .subtitle {
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .feature-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .feature-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .feature-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .feature-desc {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        
+        .instructions {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 30px;
+            border-radius: 12px;
+            margin-top: 40px;
+        }
+        
+        .instructions h2 {
+            margin-bottom: 15px;
+            font-size: 24px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        
+        .highlight {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        .test-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .test-btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+        }
+        
+        .test-btn.safe {
+            background: linear-gradient(135deg, #00b894, #00cec9);
+        }
+        
+        .test-btn.warning {
+            background: linear-gradient(135deg, #fdcb6e, #e17055);
+        }
+        
+        .test-btn.danger {
+            background: linear-gradient(135deg, #d63031, #ff7675);
+        }
+        
+        .test-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐐 NetGoat AI</h1>
+        <p class="subtitle">Live AI Debug Overlay Test Page</p>
+        
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <div class="feature-title">AI Analysis</div>
+                <div class="feature-desc">Real-time ML threat detection</div>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <div class="feature-title">WAF Protection</div>
+                <div class="feature-desc">Web Application Firewall</div>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <div class="feature-title">Live Metrics</div>
+                <div class="feature-desc">Request analysis details</div>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">Fast Response</div>
+                <div class="feature-desc">Sub-millisecond decisions</div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h2>👀 How to View the Debug Overlay</h2>
+            <ol>
+                <li>Look for the <span class="highlight">🐐 NetGoat AI</span> button in the <strong>bottom-right corner</strong></li>
+                <li>Click the button to <strong>expand</strong> the analysis panel</li>
+                <li>View the AI risk score, WAF analysis, and request details</li>
+                <li>The status indicator pulses: 🟢 Safe, 🟠 Warning, 🔴 Blocked</li>
+                <li>Click again to <strong>collapse</strong> the panel</li>
+            </ol>
+        </div>
+        
+        <div class="test-buttons">
+            <button class="test-btn safe" onclick="testRequest('safe')">
+                ✅ Test Safe Request
+            </button>
+            <button class="test-btn warning" onclick="testRequest('warning')">
+                ⚠️ Test Warning Request
+            </button>
+            <button class="test-btn danger" onclick="testRequest('danger')">
+                ⛔ Test Blocked Request
+            </button>
+        </div>
+        
+        <div id="status" class="status"></div>
+    </div>
+    
+    <script>
+        function testRequest(type) {
+            const status = document.getElementById('status');
+            status.classList.add('show');
+            
+            let features, message;
+            
+            switch(type) {
+                case 'safe':
+                    features = '0.1,0.2,0.05,0.3,10,200,5,0';
+                    message = '🟢 Sending safe request... Check the overlay!';
+                    break;
+                case 'warning':
+                    features = '0.6,0.7,0.65,0.8,50,500,25,0';
+                    message = '🟠 Sending elevated risk request... Check the overlay!';
+                    break;
+                case 'danger':
+                    features = '0.9,0.95,0.88,0.92,100,999,50,1';
+                    message = '🔴 Sending high-risk request... This may be blocked!';
+                    break;
+            }
+            
+            status.textContent = message;
+            
+            fetch(window.location.href, {
+                method: 'GET',
+                headers: {
+                    'X-GoatAI-Features': features
+                }
+            }).then(response => {
+                setTimeout(() => {
+                    status.textContent = `✅ Request completed! Check the overlay in the bottom-right corner.`;
+                }, 500);
+            }).catch(error => {
+                status.textContent = `❌ Error: ${error.message}`;
+            });
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                status.classList.remove('show');
+            }, 5000);
+        }
+        
+        // Auto-open overlay when page loads (if it exists)
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                const toggle = document.getElementById('netgoat-debug-toggle');
+                if (toggle) {
+                    console.log('🐐 NetGoat AI Debug Overlay detected!');
+                    // Auto-open the panel for demo
+                    toggle.click();
+                }
+            }, 1000);
+        });
+        
+        // Log page load
+        console.log('🐐 NetGoat AI Test Page loaded');
+        console.log('📊 This page is being analyzed by NetGoat AI');
+        console.log('👀 Look for the goat button in the bottom-right corner!');
+    </script>
+</body>
+</html>
