@@ -3,7 +3,7 @@
 # NetGoat - Self-Hostable Cloudflare Alternative (Reverse Proxy Engine)
 
 > [!IMPORTANT]
-> Hi! The project is not working (easily selfhostable) yet, its under heavy development
+> NetGoat is currently in Active Alpha. We are refining the core proxy engine and self-hosting scripts for a stable public release. Follow our progress on [Discord.](https://discord.com/invite/3aJ7MdJsZV)
 
 ## 💖 Special Thanks
 
@@ -32,15 +32,11 @@ Built with **modern tools** for maximum performance and developer experience:
 
 **NetGoat** gives you full control over your traffic, security, and performance—**all self-hosted**.
 
-[![GoLang](https://img.shields.io/badge/Go-00ADD8?logo=Go&logoColor=white&style=for-the-badge)](https://github.com/netgoat-xyz/netgoat)
-[![CSS](https://img.shields.io/badge/CSS-639?logo=css&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![HTML](https://img.shields.io/badge/HTML-%23E34F26.svg?logo=html5&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?logo=Cloudflare&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![Next.js](https://img.shields.io/badge/Next.js-black?logo=next.js&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-000?logo=shadcnui&logoColor=fff)](https://github.com/netgoat-xyz/netgoat) [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-%2338B2AC.svg?logo=tailwind-css&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![SQLite](https://img.shields.io/badge/SQLite-%2307405e.svg?logo=sqlite&logoColor=white)](https://github.com/netgoat-xyz/netgoat) [![MongoDB](https://img.shields.io/badge/MongoDB-%234ea94b.svg?logo=mongodb&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
-[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](https://github.com/netgoat-xyz/netgoat)
-[![TensorFlow](https://img.shields.io/badge/TensorFlow-ff8f00?logo=tensorflow&logoColor=white)](https://github.com/netgoat-xyz/netgoat)
-
-![Stats](https://hackatime-badge.hackclub.com/U082B71HP8B/NetGoat)
-
-> Built for [HackClub Summer of Making](https://summer.hackclub.com)
+### 🛠 The Stack
+- **Engine:** [Go](https://go.dev/) (High-concurrency proxying)
+- **Runtime:** [Bun](https://bun.sh/) (Fast scripting & automation)
+- **Control Plane:** [Next.js 15](https://nextjs.org/) & [Shadcn/ui](https://ui.shadcn.com/)
+- **Storage:** [SQLite](https://sqlite.org/) (Local-first) & [MongoDB](https://www.mongodb.com/) 
 
 
 > Join our discord for support, annoucements, updates & bugs!! [Click Me To Join!](https://discord.com/invite/3aJ7MdJsZV) ![Discord](https://img.shields.io/discord/1350110102337749062)
@@ -50,12 +46,9 @@ NetGoat is an advanced reverse proxy engine designed to act as an **additional l
 ---
 
 ## Screenshots
-
-Say cheese!
-<img width="1639" height="1114" alt="image" src="https://github.com/user-attachments/assets/10590637-07b6-48c5-b083-1c13c69b9a67" />
-<img width="1636" height="1131" alt="image" src="https://github.com/user-attachments/assets/36381a53-b201-4961-ab39-3f583033d75a" />
-<img width="1649" height="1109" alt="image" src="https://github.com/user-attachments/assets/e5890bf2-769a-4487-8442-6a0ab0e17d3d" />
-<img width="1630" height="1120" alt="image" src="https://github.com/user-attachments/assets/a294d0c0-019e-4cac-904e-6f5a10b33b6a" />
+| Dashboard | Domain Home |
+| :---: | :---: |
+| <img src="https://cdn.hackclub.com/019cf11c-0d2d-7358-9037-9f91d43454b4/Screenshot%202026-03-15%20at%2017-16-53%20Me%20Team%20Dashboard.png" width="1670" height="1060" /> | <img src="https://cdn.hackclub.com/019cf11b-ec86-78e7-bca9-a662abbce384/Screenshot%202026-03-15%20at%2017-17-08%20NetGoat.png" width="100%"  height="100%" /> |
 
 ## Features
 
@@ -76,6 +69,12 @@ Say cheese!
 - **DNS Searching** — Automatically scans your domains to automatically create a suitable Proxy record
 - **Cloudflare** — Manage cloudflare tunnels and more with our UI
 - **Bandwidth Limits** — Limit or throttle specific domains or proxy's
+
+## 🏢 For Enterprise & Sponsors
+NetGoat is building the future of open-source edge networking. We are looking for infrastructure partners (Bare Metal, VPS providers, Security firms) to help us battle-test the engine.
+
+- **Strategic Partnerships:** Reach out via [Discord](https://discord.com/invite/3aJ7MdJsZV) or [Gmail](mailto:duckeydev@gmail.com)
+- **Financial Support:** [GitHub Sponsors](#) | [Open Collective](...)
 
 ## Quick Start
 

@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,6 +33,15 @@ import (
 
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+
+	// Load environment variables from local .env if present (helps local dev/run)
+	loadEnvFromFile(".env")
+	// Log whether DiamondKey was loaded (don't print the key itself)
+	if k := os.Getenv("DiamondKey"); k != "" {
+		log.Info().Int("diamond_key_len", len(k)).Msg("DiamondKey loaded from environment")
+	} else {
+		log.Warn().Msg("DiamondKey not set in environment")
+	}
 
 	cfg, err := config.Load("config.yml")
 	if err != nil {
@@ -505,6 +514,48 @@ func getClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+// loadEnvFromFile loads simple KEY=VALUE pairs from a .env file and sets
+// them in the process environment when not already present. This avoids
+// adding an external dependency for local development.
+func loadEnvFromFile(path string) {
+	// Try given path first, then the executable directory, then ../PinkDiamond/.env
+	candidates := []string{path}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), ".env"))
+	}
+	candidates = append(candidates, filepath.Join("PinkDiamond", ".env"))
+
+	var data []byte
+	var err error
+	for _, p := range candidates {
+		log.Debug().Str("env_path", p).Msg("Trying .env candidate")
+		data, err = os.ReadFile(p)
+		if err == nil {
+			log.Info().Str("env_path", p).Msg("Loaded .env file")
+			break
+		}
+	}
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
+}
+
 // connectToAPIStream connects to the external API WebSocket for config streaming.
 func connectToAPIStream(mgr *streaming.Manager, apiURL, apiKey string) {
 	log.Info().Str("url", apiURL).Msg("Starting config stream connection to external API")
@@ -515,7 +566,7 @@ func connectToAPIStream(mgr *streaming.Manager, apiURL, apiKey string) {
 	for {
 		log.Debug().Int("consecutive_failures", consecutiveFailures).Dur("retry_interval", retryInterval).Msg("Attempting API connection")
 
-		err := connectWebSocket(mgr, apiURL, apiKey)
+		err := pollDomains(mgr, apiURL, apiKey)
 
 		if err != nil {
 			consecutiveFailures++
@@ -538,54 +589,27 @@ func connectToAPIStream(mgr *streaming.Manager, apiURL, apiKey string) {
 	}
 }
 
-func connectWebSocket(mgr *streaming.Manager, apiURL, apiKey string) error {
-	wsURL := strings.Replace(apiURL, "http://", "ws://", 1)
-	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
-	if !strings.HasSuffix(wsURL, "/stream") {
-		wsURL = strings.TrimSuffix(wsURL, "/") + "/stream"
-	}
-
-	log.Info().Str("url", wsURL).Msg("Attempting to connect to WebSocket stream")
-
-	host := strings.TrimPrefix(wsURL, "ws://")
-	host = strings.TrimPrefix(host, "wss://")
-	if idx := strings.Index(host, "/"); idx > 0 {
-		host = host[:idx]
-	}
-
-	log.Debug().Str("host", host).Msg("Testing TCP connection to host")
-	conn, err := net.Dial("tcp", host)
-	if err != nil {
-		log.Error().Err(err).Str("host", host).Msg("TCP connection failed, falling back to HTTP polling")
-		return pollAPIStream(mgr, apiURL, apiKey)
-	}
-	defer conn.Close()
-	log.Debug().Str("host", host).Msg("TCP connection successful")
-
-	return pollAPIStream(mgr, apiURL, apiKey)
-}
-
-// pollAPIStream uses HTTP polling as a WebSocket fallback
-func pollAPIStream(mgr *streaming.Manager, apiURL, apiKey string) error {
-	snapshotURL := strings.TrimSuffix(apiURL, "/") + "/snapshot"
+// pollDomains polls the WhiteDiamond /domains endpoint and converts it
+// into a streaming.ConfigSnapshot for the agent.
+func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
+	domainsURL := strings.TrimSuffix(apiURL, "/") + "/domains"
 	lastVersion := int64(-1)
-	log.Info().Str("url", snapshotURL).Msg("Starting API polling connection")
+	log.Info().Str("url", domainsURL).Msg("Starting domains polling connection")
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	// Track consecutive failures for circuit breaker pattern
 	consecutiveFailures := 0
-	maxConsecutiveFailures := 12 // 1 minute of failures before backing off more
+	maxConsecutiveFailures := 12
 
 	for range ticker.C {
-		log.Debug().Str("url", snapshotURL).Msg("Polling snapshot...")
+		log.Debug().Str("url", domainsURL).Msg("Polling domains...")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, snapshotURL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, domainsURL, nil)
 		if err != nil {
 			cancel()
-			log.Warn().Err(err).Msg("Failed to build snapshot request")
+			log.Warn().Err(err).Msg("Failed to build domains request")
 			consecutiveFailures++
 			mgr.SetConnectionStatus(false, err)
 			continue
@@ -595,18 +619,26 @@ func pollAPIStream(mgr *streaming.Manager, apiURL, apiKey string) error {
 			req.Header.Set("X-API-Key", apiKey)
 			req.Header.Set("Authorization", "Bearer "+apiKey)
 		}
+		if ztk := os.Getenv("DiamondKey"); ztk != "" {
+			req.Header.Set("X-Diamond-Key", ztk)
+			// also set legacy header for compatibility
+			req.Header.Set("X-Zero-Trust-Key", ztk)
+		}
+		// Also support legacy env var if present
+		if legacy := os.Getenv("ZERO_TRUST_KEY"); legacy != "" {
+			req.Header.Set("X-Zero-Trust-Key", legacy)
+		}
 
+		log.Debug().Interface("headers", req.Header).Msg("Sending domains request headers")
 		resp, err := http.DefaultClient.Do(req)
 		cancel()
-
 		if err != nil {
 			consecutiveFailures++
 			mgr.SetConnectionStatus(false, err)
-
 			if consecutiveFailures >= maxConsecutiveFailures {
-				log.Warn().Err(err).Str("url", snapshotURL).Int("failures", consecutiveFailures).Msg("Multiple polling failures detected - continuing with cached config")
+				log.Warn().Err(err).Str("url", domainsURL).Int("failures", consecutiveFailures).Msg("Multiple polling failures detected - continuing with cached config")
 			} else {
-				log.Debug().Err(err).Str("url", snapshotURL).Int("failures", consecutiveFailures).Msg("Polling failed")
+				log.Debug().Err(err).Str("url", domainsURL).Int("failures", consecutiveFailures).Msg("Polling failed")
 			}
 			continue
 		}
@@ -616,11 +648,10 @@ func pollAPIStream(mgr *streaming.Manager, apiURL, apiKey string) error {
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			resp.Body.Close()
 			consecutiveFailures++
-			authErr := errors.New("unauthorized: check API key")
+			authErr := errors.New("unauthorized: check API key / zero trust key")
 			mgr.SetConnectionStatus(false, authErr)
-
 			if consecutiveFailures == 1 || consecutiveFailures%10 == 0 {
-				log.Warn().Int("status", resp.StatusCode).Int("failures", consecutiveFailures).Msg("Snapshot request unauthorized; check API key")
+				log.Warn().Int("status", resp.StatusCode).Int("failures", consecutiveFailures).Msg("Domains request unauthorized; check keys")
 			}
 			continue
 		}
@@ -628,31 +659,98 @@ func pollAPIStream(mgr *streaming.Manager, apiURL, apiKey string) error {
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
 			consecutiveFailures++
-			statusErr := fmt.Errorf("unexpected status: %d", resp.StatusCode)
+			statusErr := fmt.Errorf("unexpected status from domains: %d", resp.StatusCode)
 			mgr.SetConnectionStatus(false, statusErr)
-			log.Debug().Int("status", resp.StatusCode).Msg("Non-200 status code")
+			log.Debug().Int("status", resp.StatusCode).Msg("Non-200 status code from domains endpoint")
 			continue
 		}
 
-		var snapshot struct {
-			Version          int64                            `json:"version"`
-			Routes           map[string]streaming.RouteData   `json:"routes"`
-			WAFRules         map[string]streaming.WAFRuleData `json:"waf_rules"`
-			Users            []streaming.UserData             `json:"users"`
-			UserDomains      []streaming.UserDomainData       `json:"user_domains"`
-			ZeroTrustEnabled bool                             `json:"zero_trust_enabled"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&snapshot); err != nil {
-			resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
 			consecutiveFailures++
 			mgr.SetConnectionStatus(false, err)
-			log.Warn().Err(err).Msg("Failed to decode snapshot JSON")
+			log.Warn().Err(err).Msg("Failed to read domains body")
 			continue
 		}
-		resp.Body.Close()
 
-		// Successfully got a snapshot
+		var alt struct {
+			Domains []struct {
+				ID             string `json:"id"`
+				Domain         string `json:"domain"`
+				TargetURL      string `json:"target_url"`
+				CertificatePEM string `json:"certificate_pem"`
+				PrivateKeyPEM  string `json:"private_key_pem"`
+				TeamID         string `json:"team_id"`
+				Active         any    `json:"active"`
+				Subdomains     []struct {
+					ID         string `json:"id"`
+					Subdomain  string `json:"subdomain"`
+					FullDomain string `json:"full_domain"`
+					TargetURL  string `json:"target_url"`
+					Active     any    `json:"active"`
+				} `json:"subdomains"`
+			} `json:"domains"`
+			WAFRules []struct {
+				ID            string `json:"id"`
+				Name          string `json:"name"`
+				Expression    string `json:"expression"`
+				Action        string `json:"action"`
+				Priority      int    `json:"priority"`
+				ProxyConfigID string `json:"proxy_config_id"`
+			} `json:"waf_rules"`
+			ZeroTrustEnabled bool `json:"zero_trust_enabled"`
+		}
+
+		if err := json.Unmarshal(body, &alt); err != nil {
+			consecutiveFailures++
+			mgr.SetConnectionStatus(false, err)
+			log.Warn().Err(err).Msg("Failed to decode /domains response")
+			continue
+		}
+
+		snapshot := streaming.ConfigSnapshot{
+			Version:          time.Now().Unix(),
+			Timestamp:        time.Now(),
+			Routes:           make(map[string]streaming.RouteData),
+			WAFRules:         make(map[string]streaming.WAFRuleData),
+			Users:            []streaming.UserData{},
+			UserDomains:      []streaming.UserDomainData{},
+			ZeroTrustEnabled: alt.ZeroTrustEnabled,
+		}
+
+		for _, d := range alt.Domains {
+			if d.Domain != "" {
+				snapshot.Routes[d.Domain] = streaming.RouteData{
+					Type:           "domain",
+					Target:         d.TargetURL,
+					CertificatePEM: d.CertificatePEM,
+					PrivateKeyPEM:  d.PrivateKeyPEM,
+				}
+			}
+			for _, s := range d.Subdomains {
+				if s.FullDomain != "" {
+					snapshot.Routes[s.FullDomain] = streaming.RouteData{
+						Type:   "domain",
+						Target: s.TargetURL,
+					}
+				}
+			}
+		}
+
+		for _, w := range alt.WAFRules {
+			name := w.Name
+			if name == "" {
+				name = w.ID
+			}
+			snapshot.WAFRules[name] = streaming.WAFRuleData{
+				Name:       name,
+				Expression: w.Expression,
+				Action:     ifEmpty(w.Action, "BLOCK"),
+				Priority:   w.Priority,
+			}
+		}
+
 		mgr.SetConnectionStatus(true, nil)
 
 		if consecutiveFailures > 0 {
@@ -673,7 +771,7 @@ func pollAPIStream(mgr *streaming.Manager, apiURL, apiKey string) error {
 				if err := mgr.HandleMessage(msg); err != nil {
 					log.Error().Err(err).Msg("Failed to handle message")
 				} else {
-					log.Info().Int64("version", snapshot.Version).Int("routes", len(snapshot.Routes)).Msg("Applied new config from API")
+					log.Info().Int64("version", snapshot.Version).Int("routes", len(snapshot.Routes)).Msg("Applied new config from /domains")
 				}
 			}
 		} else {
@@ -681,29 +779,6 @@ func pollAPIStream(mgr *streaming.Manager, apiURL, apiKey string) error {
 		}
 	}
 
-	return nil
-}
-
-// streamFromAPI establishes a connection to the API streaming endpoint and handles NDJSON updates.
-func streamFromAPI(mgr *streaming.Manager, apiURL string) error {
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("non-200 response from API")
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	for decoder.More() {
-		var msg streaming.Message
-		if err := decoder.Decode(&msg); err != nil {
-			return err
-		}
-		mgr.HandleMessage(&msg)
-	}
 	return nil
 }
 
