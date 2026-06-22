@@ -1,2 +1,63 @@
+# Binaries
+*.exe
+*.exec
+*.dll
+*.so
+*.dylib
+*.bin
+
+# Logs
+*.log
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.keras
+*.pkl
+*.h5
+
+# Archives
+*.zip
+*.tar.gz
+*.tar
+*.rar
+
+# Node
+node_modules/
+package-lock.json
+yarn.lock
+
+# AI model files
+ai/*.keras
+ai/*.pkl
+ai/*.h5
+
+# Config snapshots
 database/config-snapshot.json
 database/proxy.db
+
+# Compiled binaries
+agent
+main
