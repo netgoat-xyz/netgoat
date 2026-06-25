@@ -148,7 +148,7 @@ func seedDefaults(db *sql.DB) error {
 			{"Block Admin", `Path startsWith "/admin"`, 10},
 			
 			// OWASP A03:2021 - Injection (SQLi)
-			{"Block SQL Injection (Path)", `Path matches "(?i)(union|select|insert|delete|update|drop|--|;).*$"`, 20},
+			{"Block SQL Injection (Path)", `Path matches ".*(?i)(union\\s+select|waitfor\\s+delay|1=1|--|;).*$"`, 20},
 			{"Block SQL Injection (Query)", `RawQuery matches "(?i)(union\\s+select|waitfor\\s+delay|1=1|--|;)"`, 20},
 			
 			// OWASP A03:2021 - Injection (XSS)
@@ -157,6 +157,8 @@ func seedDefaults(db *sql.DB) error {
 			
 			// OWASP A01:2021 - Broken Access Control (Path Traversal)
 			{"Block Path Traversal", `Path matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
+			{"Block Path Traversal (Path)", `Path matches ".*(?i)(%2e%2e%2f|%2e%2e\\%5c).*$"`, 20},
+			{"Block Path Traversal (Query)", `RawQuery matches ".*(?i)(%2e%2e%2f|%2e%2e%5c).*$"`, 20},
 			
 			// OWASP A10:2021 - Server-Side Request Forgery (SSRF)
 			{"Block SSRF Metadata & Localhost", `RawQuery matches "(?i)(169\\.254\\.169\\.254|127\\.0\\.0\\.1|localhost)"`, 20},
