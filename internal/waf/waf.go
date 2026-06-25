@@ -4,17 +4,21 @@ import (
 	"database/sql"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/expr-lang/expr"
 	"github.com/rs/zerolog/log"
 )
 
+// WAFContext defines the variables exposed to the rule engine.
 type WAFContext struct {
-	IP      string
-	Method  string
-	Path    string
-	Headers map[string][]string
+	IP       string
+	Method   string
+	Path     string
+	Query    map[string][]string
+	RawQuery string
+	Headers  map[string][]string
 }
 
 func Check(db *sql.DB, r *http.Request, debugLogs bool) (bool, string) {
@@ -30,11 +34,20 @@ func Check(db *sql.DB, r *http.Request, debugLogs bool) (bool, string) {
 		ip = r.RemoteAddr
 	}
 
+	// SECURITY FIX: URL-decode the query string before feeding it to the WAF engine
+	// This prevents attackers from bypassing regex rules using %20 or +
+	decodedQuery, err := url.QueryUnescape(r.URL.RawQuery)
+	if err != nil {
+		decodedQuery = r.URL.RawQuery // Fallback to raw if decoding fails
+	}
+
 	env := WAFContext{
-		IP:      ip,
-		Method:  r.Method,
-		Path:    r.URL.Path,
-		Headers: r.Header,
+		IP:       ip,
+		Method:   r.Method,
+		Path:     r.URL.Path,
+		Query:    r.URL.Query(),
+		RawQuery: decodedQuery, // Now feeding the clean, decoded string
+		Headers:  r.Header,
 	}
 
 	for rows.Next() {
