@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -195,6 +196,7 @@ func (w *Worker) checkHTTP(rawURL string) bool {
 		return false
 	}
 	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode < 500
 }
