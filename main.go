@@ -10,8 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,11 +19,13 @@ import (
 	"github.com/rs/zerolog/log"
 	"netgoat.xyz/agent/internal/anomaly"
 	"netgoat.xyz/agent/internal/auth"
+	"netgoat.xyz/agent/internal/balancer"
 	"netgoat.xyz/agent/internal/cache"
 	"netgoat.xyz/agent/internal/challenge"
 	"netgoat.xyz/agent/internal/config"
 	"netgoat.xyz/agent/internal/database"
 	"netgoat.xyz/agent/internal/debugoverlay"
+	"netgoat.xyz/agent/internal/health"
 	"netgoat.xyz/agent/internal/honeypot"
 	"netgoat.xyz/agent/internal/streaming"
 	"netgoat.xyz/agent/internal/waf"
@@ -68,6 +68,17 @@ func main() {
 	initialSnap := streamMgr.GetSnapshot()
 	applySnapshotToDB(db, initialSnap)
 
+	healthInterval := time.Duration(ifZeroInt(cfg.Health.IntervalSeconds, 10)) * time.Second
+	healthTimeout := time.Duration(ifZeroInt(cfg.Health.TimeoutSeconds, 3)) * time.Second
+	healthPath := ifEmpty(cfg.Health.Path, "/")
+	healthWorker := health.NewWorker(healthInterval, healthTimeout, healthPath)
+	syncHealthTargets(db, healthWorker)
+	healthWorker.Start(context.Background())
+	log.Info().Dur("interval", healthInterval).Dur("timeout", healthTimeout).Str("path", healthPath).Msg("Upstream health checks enabled")
+
+	lb := balancer.New(healthWorker)
+	proxyHandler := balancer.NewProxyHandler(lb)
+
 	apiURL := os.Getenv("API_STREAM_URL")
 	if apiURL == "" && cfg.API.URL != "" {
 		apiURL = cfg.API.URL
@@ -84,7 +95,7 @@ func main() {
 	}
 
 	// Subscribe to config updates and apply them
-	go applyConfigUpdates(db, streamMgr)
+	go applyConfigUpdates(db, streamMgr, healthWorker)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -239,28 +250,27 @@ func main() {
 		log.Debug().Str("host", host).Str("method", r.Method).Str("path", r.URL.Path).Msg("Processing request")
 
 		// Try domain-based routing first, then path-based
-		targetStr, err := database.GetTarget(db, host, r.URL.Path)
+		routeMatch, err := database.GetRouteTargets(db, host, r.URL.Path)
 		if err != nil {
 			log.Warn().Err(err).Str("host", host).Str("path", r.URL.Path).Msg("No route found for domain or path")
 			writeError(w, pages, challengeStore, r, http.StatusNotFound, "No route found")
 			return
 		}
-		if targetStr == "" {
-			log.Warn().Str("host", host).Str("path", r.URL.Path).Msg("Route lookup returned empty target")
+		if len(routeMatch.Targets) == 0 {
+			log.Warn().Str("host", host).Str("path", r.URL.Path).Msg("Route lookup returned no targets")
 			writeError(w, pages, challengeStore, r, http.StatusNotFound, "No route found")
 			return
 		}
 
-		log.Info().Str("host", host).Str("path", r.URL.Path).Str("target", targetStr).Str("method", r.Method).Msg("Route resolved")
-
-		analysisInfo.TargetURL = targetStr
-
-		targetURL, err := url.Parse(targetStr)
-		if err != nil {
-			log.Error().Err(err).Str("target", targetStr).Str("host", host).Msg("Invalid target URL in DB")
-			writeError(w, pages, challengeStore, r, http.StatusInternalServerError, "Internal Server Error")
-			return
+		targetURLs := make([]string, 0, len(routeMatch.Targets))
+		for _, t := range routeMatch.Targets {
+			targetURLs = append(targetURLs, t.URL)
 		}
+		primaryTarget := targetURLs[0]
+
+		log.Info().Str("host", host).Str("path", r.URL.Path).Str("target", primaryTarget).Int("targets", len(targetURLs)).Str("method", r.Method).Msg("Route resolved")
+
+		analysisInfo.TargetURL = primaryTarget
 
 		if r.Header.Get("Upgrade") == "websocket" {
 			log.Info().Str("client", r.RemoteAddr).Str("host", host).Msg("WebSocket upgrade detected")
@@ -292,15 +302,7 @@ func main() {
 			}
 		}
 
-		proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-		originalDirector := proxy.Director
-		proxy.Director = func(req *http.Request) {
-			originalDirector(req)
-			req.Host = targetURL.Host
-		}
-
-		proxy.ModifyResponse = func(res *http.Response) error {
+		if err := proxyHandler.Serve(w, r, routeMatch.RouteKey, targetURLs, func(res *http.Response) error {
 			// Inject debug overlay for HTML responses if enabled
 			if cfg.DebugOverlay && res.Header.Get("Content-Type") != "" && strings.Contains(res.Header.Get("Content-Type"), "text/html") {
 				body, err := io.ReadAll(res.Body)
@@ -309,17 +311,12 @@ func main() {
 				}
 				res.Body.Close()
 
-				// Inject the overlay
 				modifiedBody := debugoverlay.InjectOverlay(body, analysisInfo)
-
-				// Update content length
 				res.ContentLength = int64(len(modifiedBody))
 				res.Header.Set("Content-Length", fmt.Sprintf("%d", len(modifiedBody)))
-
 				res.Body = io.NopCloser(bytes.NewReader(modifiedBody))
 			}
 
-			// Handle caching
 			if !isCacheable || cacheStore == nil {
 				return nil
 			}
@@ -327,7 +324,6 @@ func main() {
 				return nil
 			}
 
-			// For cacheable responses, read and cache
 			if !cfg.DebugOverlay || !strings.Contains(res.Header.Get("Content-Type"), "text/html") {
 				body, err := io.ReadAll(res.Body)
 				if err != nil {
@@ -340,9 +336,10 @@ func main() {
 			}
 
 			return nil
+		}); err != nil {
+			log.Error().Err(err).Str("host", host).Str("path", r.URL.Path).Msg("Failed to proxy request to upstream")
+			writeError(w, pages, challengeStore, r, http.StatusBadGateway, "Bad Gateway")
 		}
-
-		proxy.ServeHTTP(w, r)
 	})
 
 	if cfg.SSL.Enabled {
@@ -676,19 +673,21 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 
 		var alt struct {
 			Domains []struct {
-				ID             string `json:"id"`
-				Domain         string `json:"domain"`
-				TargetURL      string `json:"target_url"`
-				CertificatePEM string `json:"certificate_pem"`
-				PrivateKeyPEM  string `json:"private_key_pem"`
-				TeamID         string `json:"team_id"`
-				Active         any    `json:"active"`
+				ID             string   `json:"id"`
+				Domain         string   `json:"domain"`
+				TargetURL      string   `json:"target_url"`
+				TargetURLs     []string `json:"target_urls"`
+				CertificatePEM string   `json:"certificate_pem"`
+				PrivateKeyPEM  string   `json:"private_key_pem"`
+				TeamID         string   `json:"team_id"`
+				Active         any      `json:"active"`
 				Subdomains     []struct {
-					ID         string `json:"id"`
-					Subdomain  string `json:"subdomain"`
-					FullDomain string `json:"full_domain"`
-					TargetURL  string `json:"target_url"`
-					Active     any    `json:"active"`
+					ID         string   `json:"id"`
+					Subdomain  string   `json:"subdomain"`
+					FullDomain string   `json:"full_domain"`
+					TargetURL  string   `json:"target_url"`
+					TargetURLs []string `json:"target_urls"`
+					Active     any      `json:"active"`
 				} `json:"subdomains"`
 			} `json:"domains"`
 			WAFRules []struct {
@@ -724,6 +723,7 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 				snapshot.Routes[d.Domain] = streaming.RouteData{
 					Type:           "domain",
 					Target:         d.TargetURL,
+					Targets:        routeTargetsFromAPI(d.TargetURL, d.TargetURLs),
 					CertificatePEM: d.CertificatePEM,
 					PrivateKeyPEM:  d.PrivateKeyPEM,
 				}
@@ -731,8 +731,9 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 			for _, s := range d.Subdomains {
 				if s.FullDomain != "" {
 					snapshot.Routes[s.FullDomain] = streaming.RouteData{
-						Type:   "domain",
-						Target: s.TargetURL,
+						Type:    "domain",
+						Target:  s.TargetURL,
+						Targets: routeTargetsFromAPI(s.TargetURL, s.TargetURLs),
 					}
 				}
 			}
@@ -782,8 +783,24 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 	return nil
 }
 
+func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget {
+	if len(urls) > 0 {
+		targets := make([]streaming.RouteTarget, 0, len(urls))
+		for _, u := range urls {
+			if u != "" {
+				targets = append(targets, streaming.RouteTarget{URL: u, HealthCheck: "http"})
+			}
+		}
+		return targets
+	}
+	if primary != "" {
+		return []streaming.RouteTarget{{URL: primary, HealthCheck: "http"}}
+	}
+	return nil
+}
+
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -793,7 +810,21 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager) {
 			continue
 		}
 		applySnapshotToDB(db, snap)
+		syncHealthTargets(db, healthWorker)
 	}
+}
+
+func syncHealthTargets(db *sql.DB, worker *health.Worker) {
+	targets, err := database.ListAllRouteTargets(db)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to list route targets for health checks")
+		return
+	}
+	healthTargets := make([]health.Target, len(targets))
+	for i, t := range targets {
+		healthTargets[i] = health.Target{URL: t.URL, HealthCheck: t.HealthCheck}
+	}
+	worker.Sync(healthTargets)
 }
 
 // applySnapshotToDB applies a config snapshot to the database
@@ -804,7 +835,12 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 	routesApplied := 0
 	routesFailed := 0
 	for routeKey, route := range snap.Routes {
-		log.Debug().Str("route_key", routeKey).Str("target", route.Target).Str("type", route.Type).Msg("Updating route")
+		targets := route.AllTargets()
+		primaryTarget := ""
+		if len(targets) > 0 {
+			primaryTarget = targets[0].URL
+		}
+		log.Debug().Str("route_key", routeKey).Str("target", primaryTarget).Int("targets", len(targets)).Str("type", route.Type).Msg("Updating route")
 
 		routeType := strings.ToLower(strings.TrimSpace(route.Type))
 		if routeType == "" {
@@ -829,14 +865,36 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 		_, err := db.Exec(
 			`INSERT INTO routes (route_type, domain, path_prefix, target_url, certificate_pem, private_key_pem, active) VALUES (?, ?, ?, ?, ?, ?, 1)
 				 ON CONFLICT(route_type, domain, path_prefix) DO UPDATE SET target_url=excluded.target_url, certificate_pem=excluded.certificate_pem, private_key_pem=excluded.private_key_pem, updated_at=CURRENT_TIMESTAMP`,
-			routeType, domainVal, pathVal, route.Target, route.CertificatePEM, route.PrivateKeyPEM)
+			routeType, domainVal, pathVal, primaryTarget, route.CertificatePEM, route.PrivateKeyPEM)
 		if err != nil {
-			log.Error().Err(err).Str("route", routeKey).Str("target", route.Target).Str("type", routeType).Msg("Failed to update route")
+			log.Error().Err(err).Str("route", routeKey).Str("target", primaryTarget).Str("type", routeType).Msg("Failed to update route")
 			routesFailed++
-		} else {
-			log.Info().Str("route", routeKey).Str("target", route.Target).Str("type", routeType).Msg("Route updated")
-			routesApplied++
+			continue
 		}
+
+		var routeID int
+		err = db.QueryRow(`
+			SELECT id FROM routes
+			WHERE route_type = ? AND COALESCE(domain, '') = COALESCE(?, '') AND COALESCE(path_prefix, '') = COALESCE(?, '')`,
+			routeType, domainVal, pathVal).Scan(&routeID)
+		if err != nil {
+			log.Error().Err(err).Str("route", routeKey).Msg("Failed to resolve route ID after upsert")
+			routesFailed++
+			continue
+		}
+
+		dbTargets := make([]database.RouteTarget, 0, len(targets))
+		for _, t := range targets {
+			dbTargets = append(dbTargets, database.RouteTarget{URL: t.URL, HealthCheck: t.HealthCheck})
+		}
+		if err := database.SetRouteTargets(db, routeID, dbTargets); err != nil {
+			log.Error().Err(err).Str("route", routeKey).Msg("Failed to update route targets")
+			routesFailed++
+			continue
+		}
+
+		log.Info().Str("route", routeKey).Str("target", primaryTarget).Int("targets", len(dbTargets)).Str("type", routeType).Msg("Route updated")
+		routesApplied++
 	}
 
 	// Apply WAF rules

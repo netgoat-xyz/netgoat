@@ -51,6 +51,13 @@ type Config struct {
 		URL string `yaml:"url"`
 		Key string `yaml:"key"`
 	} `yaml:"api"`
+
+	Health struct {
+		Enabled         bool   `yaml:"enabled"`
+		IntervalSeconds int    `yaml:"interval_seconds"`
+		TimeoutSeconds  int    `yaml:"timeout_seconds"`
+		Path            string `yaml:"path"`
+	} `yaml:"health"`
 }
 
 func Load(path string) (*Config, error) {

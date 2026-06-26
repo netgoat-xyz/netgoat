@@ -57,3 +57,16 @@ anomaly:
 #   users with the cached configuration
 # - Connection attempts are retried with exponential backoff
 # - All route, WAF, and user configurations remain functional during outages
+
+routes:
+  localhost:
+    type: "domain"
+    targets:
+      - url: "http://127.0.0.1:8001"
+        health_check: "http"
+      - url: "http://127.0.0.1:8002"
+        health_check: "http"
+health:
+  interval_seconds: 2
+  timeout_seconds: 1
+  path: "/"

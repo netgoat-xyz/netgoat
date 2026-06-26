@@ -21,11 +21,28 @@ type ConfigSnapshot struct {
 	ZeroTrustEnabled bool                   `json:"zero_trust_enabled"`
 }
 
+type RouteTarget struct {
+	URL         string `json:"url"`
+	HealthCheck string `json:"health_check,omitempty"` // "http" or "tcp"
+}
+
 type RouteData struct {
-	Type           string `json:"type"`
-	Target         string `json:"target"`
-	CertificatePEM string `json:"certificate_pem,omitempty"`
-	PrivateKeyPEM  string `json:"private_key_pem,omitempty"`
+	Type           string        `json:"type"`
+	Target         string        `json:"target"` // legacy single target; use Targets when possible
+	Targets        []RouteTarget `json:"targets,omitempty"`
+	CertificatePEM string        `json:"certificate_pem,omitempty"`
+	PrivateKeyPEM  string        `json:"private_key_pem,omitempty"`
+}
+
+// AllTargets returns configured upstreams, falling back to the legacy Target field.
+func (r RouteData) AllTargets() []RouteTarget {
+	if len(r.Targets) > 0 {
+		return r.Targets
+	}
+	if r.Target != "" {
+		return []RouteTarget{{URL: r.Target, HealthCheck: "http"}}
+	}
+	return nil
 }
 
 type WAFRuleData struct {
@@ -176,7 +193,15 @@ func (m *Manager) Close() {
 func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 	routes := make(map[string]RouteData, len(s.Routes))
 	for k, v := range s.Routes {
-		routes[k] = v
+		targets := make([]RouteTarget, len(v.Targets))
+		copy(targets, v.Targets)
+		routes[k] = RouteData{
+			Type:           v.Type,
+			Target:         v.Target,
+			Targets:        targets,
+			CertificatePEM: v.CertificatePEM,
+			PrivateKeyPEM:  v.PrivateKeyPEM,
+		}
 	}
 	rules := make(map[string]WAFRuleData, len(s.WAFRules))
 	for k, v := range s.WAFRules {
