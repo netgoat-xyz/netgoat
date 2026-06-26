@@ -138,28 +138,15 @@ func seedDefaults(db *sql.DB) error {
 
 	err = db.QueryRow("SELECT COUNT(*) FROM waf_rules").Scan(&count)
 	if err == nil && count == 0 {
-		// --- ENHANCED OWASP TOP 10 WAF RULES ---
 		rules := []struct {
 			Name       string
 			Expression string
 			Priority   int
 		}{
-			// General Admin Block
 			{"Block Admin", `Path startsWith "/admin"`, 10},
-			
-			// OWASP A03:2021 - Injection (SQLi)
-			{"Block SQL Injection (Path)", `Path matches "(?i)(union|select|insert|delete|update|drop|--|;).*$"`, 20},
-			{"Block SQL Injection (Query)", `RawQuery matches "(?i)(union\\s+select|waitfor\\s+delay|1=1|--|;)"`, 20},
-			
-			// OWASP A03:2021 - Injection (XSS)
-			{"Block XSS (Path)", `Path matches "(?i)(<script>|javascript:|onerror=)"`, 20},
-			{"Block XSS (Query)", `RawQuery matches "(?i)(<script>|javascript:|onerror=)"`, 20},
-			
-			// OWASP A01:2021 - Broken Access Control (Path Traversal)
-			{"Block Path Traversal", `Path matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
-			
-			// OWASP A10:2021 - Server-Side Request Forgery (SSRF)
-			{"Block SSRF Metadata & Localhost", `RawQuery matches "(?i)(169\\.254\\.169\\.254|127\\.0\\.0\\.1|localhost)"`, 20},
+			{"Block SQL Injection", `Path matches "(?i)(union|select|insert|delete|update|drop).*"`, 20},
+			{"Block XSS", `Path matches "(?i)<script>"`, 20},
+			{"Block Path Traversal", `Path matches "\\.\\./"`, 20},
 		}
 
 		for _, rule := range rules {
@@ -168,7 +155,7 @@ func seedDefaults(db *sql.DB) error {
 			if err != nil {
 				log.Error().Err(err).Str("rule", rule.Name).Msg("Failed to insert WAF rule")
 			} else {
-				log.Info().Str("rule", rule.Name).Msg("Inserted WAF rule")
+				log.Info().Str("rule", rule.Name).Msg("Inserted default WAF rule")
 			}
 		}
 	}
