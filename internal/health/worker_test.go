@@ -1,8 +1,11 @@
 package health
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -50,5 +53,41 @@ func TestNewWorker_NormalizesInvalidTiming(t *testing.T) {
 	}
 	if worker.path != "/" {
 		t.Fatalf("path = %q, want %q", worker.path, "/")
+	}
+}
+
+func TestCheckHTTP_ReusesConnections(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("health-check-response-body"))
+	}))
+	defer server.Close()
+
+	var dials atomic.Int32
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			dials.Add(1)
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		},
+	}
+
+	worker := NewWorker(time.Second, time.Second, "/")
+	worker.client = &http.Client{
+		Timeout:   worker.timeout,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	target := Target{URL: server.URL, HealthCheck: "http"}
+	for i := 0; i < 5; i++ {
+		if !worker.probe(target) {
+			t.Fatalf("probe %d: expected healthy upstream", i)
+		}
+	}
+
+	if got := dials.Load(); got != 1 {
+		t.Fatalf("dial count = %d, want 1 (connection should be reused)", got)
 	}
 }
