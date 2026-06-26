@@ -117,3 +117,49 @@ func TestProxyHandler_NoFailoverForPost(t *testing.T) {
 		t.Fatalf("POST should not failover; status = %d, want %d", rec.Code, http.StatusInternalServerError)
 	}
 }
+
+type flushRecorder struct {
+	httptest.ResponseRecorder
+	flushes int
+}
+
+func (f *flushRecorder) Flush() {
+	f.flushes++
+}
+
+func TestStreamWriter_Flusher(t *testing.T) {
+	t.Run("delegates flush to underlying writer", func(t *testing.T) {
+		rec := &flushRecorder{}
+		sw := &streamWriter{w: rec, header: make(http.Header)}
+		sw.WriteHeader(http.StatusOK)
+
+		if _, ok := any(sw).(http.Flusher); !ok {
+			t.Fatal("streamWriter should implement http.Flusher")
+		}
+		sw.Flush()
+		if rec.flushes != 1 {
+			t.Fatalf("Flush() calls = %d, want 1", rec.flushes)
+		}
+	})
+
+	t.Run("does not flush while buffering retryable 5xx", func(t *testing.T) {
+		rec := &flushRecorder{}
+		sw := &streamWriter{w: rec, header: make(http.Header)}
+		sw.WriteHeader(http.StatusInternalServerError)
+		sw.Flush()
+		if rec.flushes != 0 {
+			t.Fatalf("Flush() during retry buffering = %d, want 0", rec.flushes)
+		}
+	})
+
+	t.Run("unwraps to underlying writer", func(t *testing.T) {
+		rec := &flushRecorder{}
+		sw := &streamWriter{w: rec, header: make(http.Header)}
+		if err := http.NewResponseController(sw).Flush(); err != nil {
+			t.Fatalf("ResponseController.Flush() error = %v", err)
+		}
+		if rec.flushes != 1 {
+			t.Fatalf("Flush() via Unwrap = %d, want 1", rec.flushes)
+		}
+	})
+}
