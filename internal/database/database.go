@@ -120,7 +120,19 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
+	if err := migrateRouteNulls(db); err != nil {
+		return err
+	}
+
 	return migrateRouteTargets(db)
+}
+
+func migrateRouteNulls(db *sql.DB) error {
+	if _, err := db.Exec(`UPDATE routes SET domain = '' WHERE domain IS NULL`); err != nil {
+		return err
+	}
+	_, err := db.Exec(`UPDATE routes SET path_prefix = '' WHERE path_prefix IS NULL`)
+	return err
 }
 
 func migrateRouteTargets(db *sql.DB) error {
@@ -177,7 +189,9 @@ func seedDefaults(db *sql.DB) error {
 			
 			// OWASP A01:2021 - Broken Access Control (Path Traversal)
 			{"Block Path Traversal", `Path matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
+			{"Block Path Traversal (Path Encoded)", `Path matches ".*(?i)(%2e%2e%2f|%2e%2e%5c).*$"`, 20},
 			{"Block Path Traversal (Query)", `RawQuery matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
+			{"Block Path Traversal (Query Encoded)", `RawQuery matches ".*(?i)(%2e%2e%2f|%2e%2e%5c).*$"`, 20},
 			
 			// OWASP A10:2021 - Server-Side Request Forgery (SSRF)
 			{"Block SSRF Metadata & Localhost", `RawQuery matches "(?i)(169\\.254\\.169\\.254|127\\.0\\.0\\.1|localhost)"`, 20},

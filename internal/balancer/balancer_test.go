@@ -1,13 +1,119 @@
 package balancer
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"netgoat.xyz/agent/internal/health"
 )
 
 func TestBalancer_RoundRobinAndFailover(t *testing.T) {
-	// 1. Setup a mock health tracker where node 1 is healthy and node 2 is dead
-	targets := []string{"http://node-1:8080", "http://node-2:8080"}
-	
-	// 2. Instantiate your balancer and inject the health state
-	// Verify b.Pick() only returns "http://node-1:8080"
+	healthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthyServer.Close()
+
+	unhealthyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer unhealthyServer.Close()
+
+	targets := []string{healthyServer.URL, unhealthyServer.URL}
+	worker := health.NewWorker(time.Second, time.Second, "/")
+	worker.Sync([]health.Target{
+		{URL: healthyServer.URL, HealthCheck: "http"},
+		{URL: unhealthyServer.URL, HealthCheck: "http"},
+	})
+	worker.ProbeAllOnce()
+
+	b := New(worker)
+	routeKey := "test-route"
+
+	picked, err := b.Pick(routeKey, targets)
+	if err != nil {
+		t.Fatalf("Pick() error = %v", err)
+	}
+	if picked != healthyServer.URL {
+		t.Fatalf("Pick() = %q, want only healthy target %q", picked, healthyServer.URL)
+	}
+
+	// Round-robin across two healthy targets.
+	worker.Sync([]health.Target{
+		{URL: healthyServer.URL, HealthCheck: "http"},
+		{URL: "http://node-2:8080", HealthCheck: "http"},
+	})
+	rrTargets := []string{healthyServer.URL, "http://node-2:8080"}
+
+	first, err := b.Pick(routeKey, rrTargets)
+	if err != nil {
+		t.Fatalf("Pick() error = %v", err)
+	}
+	second, err := b.Pick(routeKey, rrTargets)
+	if err != nil {
+		t.Fatalf("Pick() error = %v", err)
+	}
+	if first == second {
+		t.Fatalf("round-robin returned same target twice: %q", first)
+	}
+}
+
+func TestProxyHandler_FailoverOn5xx(t *testing.T) {
+	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer failServer.Close()
+
+	okServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer okServer.Close()
+
+	worker := health.NewWorker(time.Second, time.Second, "/")
+	worker.Sync([]health.Target{
+		{URL: failServer.URL, HealthCheck: "http"},
+		{URL: okServer.URL, HealthCheck: "http"},
+	})
+
+	handler := NewProxyHandler(New(worker))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+
+	targets := []string{failServer.URL, okServer.URL}
+	if err := handler.Serve(rec, req, "route", targets, nil); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); body != "ok" {
+		t.Fatalf("body = %q, want %q", body, "ok")
+	}
+}
+
+func TestProxyHandler_NoFailoverForPost(t *testing.T) {
+	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer failServer.Close()
+
+	okServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer okServer.Close()
+
+	worker := health.NewWorker(time.Second, time.Second, "/")
+	handler := NewProxyHandler(New(worker))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/", nil)
+
+	targets := []string{failServer.URL, okServer.URL}
+	if err := handler.Serve(rec, req, "route", targets, nil); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("POST should not failover; status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
 }
