@@ -53,11 +53,20 @@ type Config struct {
 	} `yaml:"api"`
 
 	Health struct {
-		Enabled         bool   `yaml:"enabled"`
+		Enabled         *bool  `yaml:"enabled"`
 		IntervalSeconds int    `yaml:"interval_seconds"`
 		TimeoutSeconds  int    `yaml:"timeout_seconds"`
 		Path            string `yaml:"path"`
 	} `yaml:"health"`
+}
+
+// HealthChecksEnabled reports whether upstream health probes should run.
+// Probes default to enabled when the config field is omitted.
+func (c *Config) HealthChecksEnabled() bool {
+	if c == nil || c.Health.Enabled == nil {
+		return true
+	}
+	return *c.Health.Enabled
 }
 
 func Load(path string) (*Config, error) {

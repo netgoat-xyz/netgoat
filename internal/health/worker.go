@@ -32,6 +32,12 @@ type Worker struct {
 
 // NewWorker creates a health checker with the given probe interval, timeout, and HTTP path.
 func NewWorker(interval, timeout time.Duration, path string) *Worker {
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
 	if path == "" {
 		path = "/"
 	}
@@ -109,6 +115,11 @@ func (w *Worker) HealthyTargets(urls []string) []string {
 		}
 	}
 	return out
+}
+
+// ProbeAllOnce runs a single probe cycle synchronously.
+func (w *Worker) ProbeAllOnce() {
+	w.probeAll()
 }
 
 // Start runs the background probe loop until ctx is cancelled.

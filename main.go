@@ -72,9 +72,14 @@ func main() {
 	healthTimeout := time.Duration(ifZeroInt(cfg.Health.TimeoutSeconds, 3)) * time.Second
 	healthPath := ifEmpty(cfg.Health.Path, "/")
 	healthWorker := health.NewWorker(healthInterval, healthTimeout, healthPath)
-	syncHealthTargets(db, healthWorker)
-	healthWorker.Start(context.Background())
-	log.Info().Dur("interval", healthInterval).Dur("timeout", healthTimeout).Str("path", healthPath).Msg("Upstream health checks enabled")
+	healthChecksEnabled := cfg.HealthChecksEnabled()
+	if healthChecksEnabled {
+		syncHealthTargets(db, healthWorker)
+		healthWorker.Start(context.Background())
+		log.Info().Dur("interval", healthInterval).Dur("timeout", healthTimeout).Str("path", healthPath).Msg("Upstream health checks enabled")
+	} else {
+		log.Info().Msg("Upstream health checks disabled")
+	}
 
 	lb := balancer.New(healthWorker)
 	proxyHandler := balancer.NewProxyHandler(lb)
@@ -95,7 +100,7 @@ func main() {
 	}
 
 	// Subscribe to config updates and apply them
-	go applyConfigUpdates(db, streamMgr, healthWorker)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -784,23 +789,23 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 }
 
 func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget {
-	if len(urls) > 0 {
-		targets := make([]streaming.RouteTarget, 0, len(urls))
-		for _, u := range urls {
-			if u != "" {
-				targets = append(targets, streaming.RouteTarget{URL: u, HealthCheck: "http"})
-			}
-		}
-		return targets
-	}
+	targets := make([]streaming.RouteTarget, 0, len(urls)+1)
 	if primary != "" {
-		return []streaming.RouteTarget{{URL: primary, HealthCheck: "http"}}
+		targets = append(targets, streaming.RouteTarget{URL: primary, HealthCheck: "http"})
 	}
-	return nil
+	for _, u := range urls {
+		if u != "" && u != primary {
+			targets = append(targets, streaming.RouteTarget{URL: u, HealthCheck: "http"})
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -810,7 +815,9 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 			continue
 		}
 		applySnapshotToDB(db, snap)
-		syncHealthTargets(db, healthWorker)
+		if healthChecksEnabled {
+			syncHealthTargets(db, healthWorker)
+		}
 	}
 }
 
@@ -847,15 +854,15 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 			routeType = "domain"
 		}
 
-		var domainVal interface{}
-		var pathVal interface{}
+		var domainVal string
+		var pathVal string
 		switch routeType {
 		case "path":
-			domainVal = nil
+			domainVal = ""
 			pathVal = routeKey
 		case "domain":
 			domainVal = routeKey
-			pathVal = nil
+			pathVal = ""
 		default:
 			log.Warn().Str("route_key", routeKey).Str("type", route.Type).Msg("Unknown route type; skipping")
 			routesFailed++

@@ -72,12 +72,14 @@ func NewProxyHandler(b *Balancer) *ProxyHandler {
 	}
 }
 
-// Serve routes the request to a healthy upstream, failing over on transport or 5xx errors.
+// Serve routes the request to a healthy upstream, failing over on transport or 5xx errors
+// for idempotent methods only.
 func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey string, targets []string, modify func(*http.Response) error) error {
 	if len(targets) == 0 {
 		return ErrNoHealthyTargets
 	}
 
+	retryOnFailure := isFailoverSafeMethod(r.Method)
 	tried := make(map[string]struct{}, len(targets))
 	var lastErr error
 
@@ -101,10 +103,16 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 		proxy, parsed, err := p.proxyFor(targetURL)
 		if err != nil {
 			lastErr = err
+			if !retryOnFailure {
+				return lastErr
+			}
 			continue
 		}
 
-		buf := &bufferedResponse{header: make(http.Header), status: http.StatusOK}
+		clone := *proxy
+		proxy = &clone
+
+		out := &streamWriter{w: w, header: make(http.Header)}
 		var attemptErr error
 		proxy.Director = func(req *http.Request) {
 			req.URL.Scheme = parsed.Scheme
@@ -116,18 +124,24 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 			attemptErr = proxyErr
 		}
 
-		proxy.ServeHTTP(buf, r)
+		proxy.ServeHTTP(out, r)
 
 		if attemptErr != nil {
 			lastErr = attemptErr
+			if !retryOnFailure {
+				return lastErr
+			}
 			continue
 		}
-		if buf.status >= http.StatusInternalServerError {
-			lastErr = fmt.Errorf("upstream returned %d", buf.status)
+		if out.retry {
+			lastErr = fmt.Errorf("upstream returned %d", out.status)
+			if !retryOnFailure {
+				out.flushRetryTo(w)
+				return nil
+			}
 			continue
 		}
 
-		buf.flushTo(w)
 		return nil
 	}
 
@@ -135,6 +149,15 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 		return lastErr
 	}
 	return ErrNoHealthyTargets
+}
+
+func isFailoverSafeMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *ProxyHandler) proxyFor(targetURL string) (*httputil.ReverseProxy, *url.URL, error) {
@@ -157,40 +180,55 @@ func (p *ProxyHandler) proxyFor(targetURL string) (*httputil.ReverseProxy, *url.
 	return proxy, parsed, nil
 }
 
-type bufferedResponse struct {
-	header http.Header
-	status int
-	body   bytes.Buffer
-	wrote  bool
+type streamWriter struct {
+	w        http.ResponseWriter
+	header   http.Header
+	status   int
+	wroteHdr bool
+	retry    bool
+	buf      bytes.Buffer
 }
 
-func (b *bufferedResponse) Header() http.Header {
-	return b.header
+func (s *streamWriter) Header() http.Header {
+	return s.header
 }
 
-func (b *bufferedResponse) WriteHeader(statusCode int) {
-	if b.wrote {
+func (s *streamWriter) WriteHeader(statusCode int) {
+	if s.wroteHdr {
 		return
 	}
-	b.wrote = true
-	b.status = statusCode
-}
-
-func (b *bufferedResponse) Write(p []byte) (int, error) {
-	if !b.wrote {
-		b.WriteHeader(http.StatusOK)
+	s.wroteHdr = true
+	s.status = statusCode
+	if statusCode >= http.StatusInternalServerError {
+		s.retry = true
+		return
 	}
-	return b.body.Write(p)
+	for k, vals := range s.header {
+		for _, v := range vals {
+			s.w.Header().Add(k, v)
+		}
+	}
+	s.w.WriteHeader(statusCode)
 }
 
-func (b *bufferedResponse) flushTo(w http.ResponseWriter) {
-	for k, vals := range b.header {
+func (s *streamWriter) Write(p []byte) (int, error) {
+	if !s.wroteHdr {
+		s.WriteHeader(http.StatusOK)
+	}
+	if s.retry {
+		return s.buf.Write(p)
+	}
+	return s.w.Write(p)
+}
+
+func (s *streamWriter) flushRetryTo(w http.ResponseWriter) {
+	for k, vals := range s.header {
 		for _, v := range vals {
 			w.Header().Add(k, v)
 		}
 	}
-	w.WriteHeader(b.status)
-	_, _ = w.Write(b.body.Bytes())
+	w.WriteHeader(s.status)
+	_, _ = w.Write(s.buf.Bytes())
 }
 
 // ReadResponseBody reads and replaces a response body, returning the bytes read.
