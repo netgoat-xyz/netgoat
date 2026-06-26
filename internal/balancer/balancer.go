@@ -221,6 +221,22 @@ func (s *streamWriter) Write(p []byte) (int, error) {
 	return s.w.Write(p)
 }
 
+// Flush implements http.Flusher so ReverseProxy can stream SSE/chunked responses.
+func (s *streamWriter) Flush() {
+	if s.retry {
+		return
+	}
+	if flusher, ok := s.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Unwrap exposes the underlying ResponseWriter for http.ResponseController
+// (Hijacker, additional flush paths, etc.).
+func (s *streamWriter) Unwrap() http.ResponseWriter {
+	return s.w
+}
+
 func (s *streamWriter) flushRetryTo(w http.ResponseWriter) {
 	for k, vals := range s.header {
 		for _, v := range vals {
