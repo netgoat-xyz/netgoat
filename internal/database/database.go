@@ -103,11 +103,31 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS route_targets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		route_id INTEGER NOT NULL,
+		target_url TEXT NOT NULL,
+		health_check TEXT NOT NULL DEFAULT 'http',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE,
+		UNIQUE(route_id, target_url)
+	);`)
+	if err != nil {
+		return err
+	}
+
 	if err := seedDefaults(db); err != nil {
 		return err
 	}
 
-	return nil
+	return migrateRouteTargets(db)
+}
+
+func migrateRouteTargets(db *sql.DB) error {
+	_, err := db.Exec(`
+		INSERT OR IGNORE INTO route_targets (route_id, target_url, health_check, sort_order)
+		SELECT id, target_url, 'http', 0 FROM routes WHERE target_url != ''`)
+	return err
 }
 
 func seedDefaults(db *sql.DB) error {
@@ -176,66 +196,216 @@ func seedDefaults(db *sql.DB) error {
 	return nil
 }
 
-// GetTargetByDomain returns the target URL and certificate for a domain
-func GetTargetByDomain(db *sql.DB, domain string) (string, string, string, error) {
+// RouteTarget is a single upstream for a route.
+type RouteTarget struct {
+	URL         string
+	HealthCheck string
+}
+
+// RouteMatch is the resolved route with all upstream targets.
+type RouteMatch struct {
+	RouteKey       string
+	Targets        []RouteTarget
+	CertificatePEM string
+	PrivateKeyPEM  string
+}
+
+
+func loadRouteTargets(db *sql.DB, routeID int) ([]RouteTarget, error) {
+	rows, err := db.Query(`
+		SELECT target_url, health_check FROM route_targets
+		WHERE route_id = ?
+		ORDER BY sort_order ASC, id ASC`, routeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var targets []RouteTarget
+	for rows.Next() {
+		var url, check string
+		if err := rows.Scan(&url, &check); err != nil {
+			return nil, err
+		}
+		if check == "" {
+			check = "http"
+		}
+		targets = append(targets, RouteTarget{URL: url, HealthCheck: check})
+	}
+	return targets, rows.Err()
+}
+
+func findRouteByDomain(db *sql.DB, domain string) (int, string, string, string, error) {
+	var routeID int
 	var targetURL, certPem, keyPem string
 	err := db.QueryRow(`
-		SELECT target_url, COALESCE(certificate_pem, ''), COALESCE(private_key_pem, '') FROM routes 
+		SELECT id, target_url, COALESCE(certificate_pem, ''), COALESCE(private_key_pem, '')
+		FROM routes
 		WHERE route_type = 'domain' AND domain = ? AND active = 1
-		LIMIT 1`, domain).Scan(&targetURL, &certPem, &keyPem)
-
-	if err != nil {
-		if err != sql.ErrNoRows {
-			log.Error().Err(err).Str("domain", domain).Msg("Error querying target by domain")
-		}
-		return "", "", "", err
-	}
-	log.Debug().Str("domain", domain).Str("target_url", targetURL).Msg("Found domain route")
-	return targetURL, certPem, keyPem, nil
+		LIMIT 1`, domain).Scan(&routeID, &targetURL, &certPem, &keyPem)
+	return routeID, targetURL, certPem, keyPem, err
 }
 
-// GetTargetByPath returns the target URL for a path (path-based routing)
-func GetTargetByPath(db *sql.DB, path string) (string, error) {
+func findRouteByPath(db *sql.DB, path string) (int, string, error) {
+	var routeID int
 	var targetURL string
 	err := db.QueryRow(`
-		SELECT target_url FROM routes 
+		SELECT id, target_url FROM routes
 		WHERE route_type = 'path' AND ? LIKE path_prefix || '%' AND active = 1
-		ORDER BY LENGTH(path_prefix) DESC 
-		LIMIT 1`, path).Scan(&targetURL)
-
-	if err != nil {
-		if err != sql.ErrNoRows {
-			log.Error().Err(err).Str("path", path).Msg("Error querying target by path")
-		}
-		return "", err
-	}
-	log.Debug().Str("path", path).Str("target_url", targetURL).Msg("Found path route")
-	return targetURL, nil
+		ORDER BY LENGTH(path_prefix) DESC
+		LIMIT 1`, path).Scan(&routeID, &targetURL)
+	return routeID, targetURL, err
 }
 
-// GetTarget tries domain-based first, then falls back to path-based
-func GetTarget(db *sql.DB, domain, path string) (string, error) {
-	// Try domain-based routing first
+// GetRouteTargets resolves a route and returns all configured upstream targets.
+func GetRouteTargets(db *sql.DB, domain, path string) (*RouteMatch, error) {
 	if domain != "" {
-		domain := strings.Split(domain, ":")[0] // Remove port
-		targetURL, _, _, err := GetTargetByDomain(db, domain)
-		if err == nil && targetURL != "" {
-			log.Debug().Str("domain", domain).Msg("Using domain-based route")
-			return targetURL, nil
+		domain = strings.Split(domain, ":")[0]
+		routeID, fallbackURL, certPem, keyPem, err := findRouteByDomain(db, domain)
+		if err == nil {
+			targets, err := loadRouteTargets(db, routeID)
+			if err != nil {
+				return nil, err
+			}
+			if len(targets) == 0 && fallbackURL != "" {
+				targets = []RouteTarget{{URL: fallbackURL, HealthCheck: "http"}}
+			}
+			if len(targets) > 0 {
+				return &RouteMatch{
+					RouteKey:       "domain:" + domain,
+					Targets:        targets,
+					CertificatePEM: certPem,
+					PrivateKeyPEM:  keyPem,
+				}, nil
+			}
+		} else if err != sql.ErrNoRows {
+			log.Error().Err(err).Str("domain", domain).Msg("Error querying route by domain")
 		}
 	}
 
-	// Fall back to path-based routing
 	if path != "" {
-		targetURL, err := GetTargetByPath(db, path)
-		if err == nil && targetURL != "" {
-			log.Debug().Str("path", path).Msg("Using path-based route")
-			return targetURL, nil
+		routeID, fallbackURL, err := findRouteByPath(db, path)
+		if err == nil {
+			targets, err := loadRouteTargets(db, routeID)
+			if err != nil {
+				return nil, err
+			}
+			if len(targets) == 0 && fallbackURL != "" {
+				targets = []RouteTarget{{URL: fallbackURL, HealthCheck: "http"}}
+			}
+			if len(targets) > 0 {
+				return &RouteMatch{
+					RouteKey: "path:" + path,
+					Targets:  targets,
+				}, nil
+			}
+		} else if err != sql.ErrNoRows {
+			log.Error().Err(err).Str("path", path).Msg("Error querying route by path")
 		}
 	}
 
 	log.Warn().Str("domain", domain).Str("path", path).Msg("No route found for domain or path")
-	return "", sql.ErrNoRows
+	return nil, sql.ErrNoRows
+}
+
+// SetRouteTargets replaces upstream targets for a route.
+func SetRouteTargets(db *sql.DB, routeID int, targets []RouteTarget) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM route_targets WHERE route_id = ?`, routeID); err != nil {
+		return err
+	}
+
+	for i, t := range targets {
+		if t.URL == "" {
+			continue
+		}
+		check := strings.ToLower(strings.TrimSpace(t.HealthCheck))
+		if check == "" {
+			check = "http"
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO route_targets (route_id, target_url, health_check, sort_order) VALUES (?, ?, ?, ?)`,
+			routeID, t.URL, check, i); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// ListAllRouteTargets returns every active upstream for health monitoring.
+func ListAllRouteTargets(db *sql.DB) ([]RouteTarget, error) {
+	rows, err := db.Query(`
+		SELECT rt.target_url, rt.health_check
+		FROM route_targets rt
+		INNER JOIN routes r ON r.id = rt.route_id
+		WHERE r.active = 1
+		ORDER BY rt.id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	seen := make(map[string]struct{})
+	var targets []RouteTarget
+	for rows.Next() {
+		var url, check string
+		if err := rows.Scan(&url, &check); err != nil {
+			return nil, err
+		}
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		seen[url] = struct{}{}
+		if check == "" {
+			check = "http"
+		}
+		targets = append(targets, RouteTarget{URL: url, HealthCheck: check})
+	}
+	return targets, rows.Err()
+}
+
+// GetTargetByDomain returns the primary target URL and certificate for a domain.
+func GetTargetByDomain(db *sql.DB, domain string) (string, string, string, error) {
+	match, err := GetRouteTargets(db, domain, "")
+	if err != nil {
+		return "", "", "", err
+	}
+	if len(match.Targets) == 0 {
+		return "", "", "", sql.ErrNoRows
+	}
+	log.Debug().Str("domain", domain).Str("target_url", match.Targets[0].URL).Msg("Found domain route")
+	return match.Targets[0].URL, match.CertificatePEM, match.PrivateKeyPEM, nil
+}
+
+// GetTargetByPath returns the primary target URL for a path-based route.
+func GetTargetByPath(db *sql.DB, path string) (string, error) {
+	match, err := GetRouteTargets(db, "", path)
+	if err != nil {
+		return "", err
+	}
+	if len(match.Targets) == 0 {
+		return "", sql.ErrNoRows
+	}
+	log.Debug().Str("path", path).Str("target_url", match.Targets[0].URL).Msg("Found path route")
+	return match.Targets[0].URL, nil
+}
+
+// GetTarget returns the primary upstream URL for backward compatibility.
+func GetTarget(db *sql.DB, domain, path string) (string, error) {
+	match, err := GetRouteTargets(db, domain, path)
+	if err != nil {
+		return "", err
+	}
+	if len(match.Targets) == 0 {
+		return "", sql.ErrNoRows
+	}
+	return match.Targets[0].URL, nil
 }
 
 // GetUserID returns the user ID for a given username
