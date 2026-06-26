@@ -157,8 +157,7 @@ func seedDefaults(db *sql.DB) error {
 			
 			// OWASP A01:2021 - Broken Access Control (Path Traversal)
 			{"Block Path Traversal", `Path matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
-			{"Block Path Traversal (Path)", `Path matches ".*(?i)(%2e%2e%2f|%2e%2e\\%5c).*$"`, 20},
-			{"Block Path Traversal (Query)", `RawQuery matches ".*(?i)(%2e%2e%2f|%2e%2e%5c).*$"`, 20},
+			{"Block Path Traversal (Query)", `RawQuery matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
 			
 			// OWASP A10:2021 - Server-Side Request Forgery (SSRF)
 			{"Block SSRF Metadata & Localhost", `RawQuery matches "(?i)(169\\.254\\.169\\.254|127\\.0\\.0\\.1|localhost)"`, 20},
