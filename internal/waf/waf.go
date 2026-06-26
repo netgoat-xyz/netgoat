@@ -34,11 +34,11 @@ func Check(db *sql.DB, r *http.Request, debugLogs bool) (bool, string) {
 		ip = r.RemoteAddr
 	}
 
-	/// SECURITY FIX: URL-decode the query string before feeding it to the WAF engine
+	// SECURITY FIX: URL-decode the query string before feeding it to the WAF engine
+	// This prevents attackers from bypassing regex rules using %20 or +
 	decodedQuery, err := url.QueryUnescape(r.URL.RawQuery)
 	if err != nil {
-		log.Warn().Err(err).Msg("Blocked request due to malformed URL encoding")
-		return true, "Block Malformed Encoding"
+		decodedQuery = r.URL.RawQuery // Fallback to raw if decoding fails
 	}
 
 	env := WAFContext{

@@ -14,8 +14,6 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("Failed to open in-memory db: %v", err)
 	}
-	db.SetMaxOpenConns(1)
-	
 
 	// Create the WAF rules table schema
 	_, err = db.Exec(`CREATE TABLE waf_rules (
