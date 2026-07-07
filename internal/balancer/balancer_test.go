@@ -77,7 +77,7 @@ func TestProxyHandler_FailoverOn5xx(t *testing.T) {
 		{URL: okServer.URL, HealthCheck: "http"},
 	})
 
-	handler := NewProxyHandler(New(worker))
+	handler := NewProxyHandler(New(worker), nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 
@@ -105,7 +105,7 @@ func TestProxyHandler_NoFailoverForPost(t *testing.T) {
 	defer okServer.Close()
 
 	worker := health.NewWorker(time.Second, time.Second, "/")
-	handler := NewProxyHandler(New(worker))
+	handler := NewProxyHandler(New(worker), nil)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/", nil)
 

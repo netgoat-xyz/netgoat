@@ -1,6 +1,6 @@
 module netgoat.xyz/agent
 
-go 1.25
+go 1.24.0
 
 require (
 	github.com/expr-lang/expr v1.17.7
