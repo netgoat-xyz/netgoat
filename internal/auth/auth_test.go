@@ -18,6 +18,12 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 
+	// SQLite in-memory databases are per-connection. These tests use a shared *sql.DB
+	// across goroutines, so force a single connection to ensure all goroutines see
+	// the same in-memory state.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
 	// Create users table
 	_, err = db.Exec(`CREATE TABLE users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

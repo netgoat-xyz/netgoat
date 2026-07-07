@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -81,8 +83,11 @@ func main() {
 		log.Info().Msg("Upstream health checks disabled")
 	}
 
+	// Shared reverse-proxy transport (timeouts + keepalives)
+	proxyTransport := newStableProxyTransport()
+
 	lb := balancer.New(healthWorker)
-	proxyHandler := balancer.NewProxyHandler(lb)
+	proxyHandler := balancer.NewProxyHandler(lb, proxyTransport)
 
 	apiURL := os.Getenv("API_STREAM_URL")
 	if apiURL == "" && cfg.API.URL != "" {
@@ -309,16 +314,20 @@ func main() {
 
 		if err := proxyHandler.Serve(w, r, routeMatch.RouteKey, targetURLs, func(res *http.Response) error {
 			// Inject debug overlay for HTML responses if enabled
-			if cfg.DebugOverlay && res.Header.Get("Content-Type") != "" && strings.Contains(res.Header.Get("Content-Type"), "text/html") {
+			if cfg.DebugOverlay && shouldInjectOverlay(res) {
+				// Only inject for reasonably-sized identity-encoded HTML. This avoids
+				// buffering huge/streamed responses and avoids corrupting compressed bodies.
 				body, err := io.ReadAll(res.Body)
 				if err != nil {
 					return err
 				}
-				res.Body.Close()
+				_ = res.Body.Close()
 
 				modifiedBody := debugoverlay.InjectOverlay(body, analysisInfo)
+
 				res.ContentLength = int64(len(modifiedBody))
 				res.Header.Set("Content-Length", fmt.Sprintf("%d", len(modifiedBody)))
+				res.Header.Del("Transfer-Encoding")
 				res.Body = io.NopCloser(bytes.NewReader(modifiedBody))
 			}
 
@@ -342,23 +351,36 @@ func main() {
 
 			return nil
 		}); err != nil {
-			log.Error().Err(err).Str("host", host).Str("path", r.URL.Path).Msg("Failed to proxy request to upstream")
-			writeError(w, pages, challengeStore, r, http.StatusBadGateway, "Bad Gateway")
+			status := http.StatusBadGateway
+			if isTimeoutErr(err) {
+				status = http.StatusGatewayTimeout
+			}
+			log.Error().Err(err).Int("status", status).Str("host", host).Str("path", r.URL.Path).Msg("Failed to proxy request to upstream")
+			writeError(w, pages, challengeStore, r, status, http.StatusText(status))
 		}
 	})
+
+	server := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
+		Handler:           nil, // default mux
+	}
 
 	if cfg.SSL.Enabled {
 		port := cfg.SSL.Port
 		if port == "" {
 			port = ":8443"
 		}
-		if err := http.ListenAndServeTLS(port, cfg.SSL.CertFile, cfg.SSL.KeyFile, nil); err != nil {
+		server.Addr = port
+		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTPS)")
+		if err := server.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile); err != nil {
 			log.Fatal().Err(err).Msg("Server failed")
 		}
 	} else {
 		port := ":8080"
+		server.Addr = port
 		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTP)")
-		if err := http.ListenAndServe(port, nil); err != nil {
+		if err := server.ListenAndServe(); err != nil {
 			log.Fatal().Err(err).Msg("Server failed")
 		}
 	}
@@ -514,6 +536,57 @@ func getClientIP(r *http.Request) string {
 		return r.RemoteAddr[:idx]
 	}
 	return r.RemoteAddr
+}
+
+func newStableProxyTransport() *http.Transport {
+	// Conservative defaults: prevent hung upstreams, keep connections warm.
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          200,
+		MaxIdleConnsPerHost:   50,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+}
+
+func isTimeoutErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var nerr net.Error
+	return errors.As(err, &nerr) && nerr.Timeout()
+}
+
+func shouldInjectOverlay(res *http.Response) bool {
+	if res == nil {
+		return false
+	}
+	ct := res.Header.Get("Content-Type")
+	if ct == "" || !strings.Contains(strings.ToLower(ct), "text/html") {
+		return false
+	}
+	// Avoid corrupting compressed bodies.
+	if enc := strings.ToLower(strings.TrimSpace(res.Header.Get("Content-Encoding"))); enc != "" && enc != "identity" {
+		return false
+	}
+	// Avoid buffering large/streamed responses.
+	const maxInjectBytes = 256 * 1024
+	if res.ContentLength < 0 || res.ContentLength > maxInjectBytes {
+		return false
+	}
+	return true
 }
 
 // loadEnvFromFile loads simple KEY=VALUE pairs from a .env file and sets

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 
 	"netgoat.xyz/agent/internal/health"
@@ -62,13 +64,15 @@ type ProxyHandler struct {
 	Balancer     *Balancer
 	ProxyCache   map[string]*httputil.ReverseProxy
 	ProxyCacheMu sync.RWMutex
+	Transport    http.RoundTripper
 }
 
 // NewProxyHandler creates a proxy handler with a per-target reverse proxy cache.
-func NewProxyHandler(b *Balancer) *ProxyHandler {
+func NewProxyHandler(b *Balancer, transport http.RoundTripper) *ProxyHandler {
 	return &ProxyHandler{
 		Balancer:   b,
 		ProxyCache: make(map[string]*httputil.ReverseProxy),
+		Transport:  transport,
 	}
 }
 
@@ -118,6 +122,19 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 			req.URL.Scheme = parsed.Scheme
 			req.URL.Host = parsed.Host
 			req.Host = parsed.Host
+
+			// Preserve original host/proto for upstream services.
+			if req.Header.Get("X-Forwarded-Host") == "" && r.Host != "" {
+				req.Header.Set("X-Forwarded-Host", r.Host)
+			}
+			if req.Header.Get("X-Forwarded-Proto") == "" {
+				if r.TLS != nil {
+					req.Header.Set("X-Forwarded-Proto", "https")
+				} else {
+					req.Header.Set("X-Forwarded-Proto", "http")
+				}
+			}
+			appendXForwardedFor(req.Header, clientIPFromRequest(r))
 		}
 		proxy.ModifyResponse = modify
 		proxy.ErrorHandler = func(_ http.ResponseWriter, _ *http.Request, proxyErr error) {
@@ -174,6 +191,9 @@ func (p *ProxyHandler) proxyFor(targetURL string) (*httputil.ReverseProxy, *url.
 	}
 
 	proxy = httputil.NewSingleHostReverseProxy(parsed)
+	if p.Transport != nil {
+		proxy.Transport = p.Transport
+	}
 	p.ProxyCacheMu.Lock()
 	p.ProxyCache[targetURL] = proxy
 	p.ProxyCacheMu.Unlock()
@@ -256,4 +276,34 @@ func ReadResponseBody(res *http.Response) ([]byte, error) {
 	res.Body.Close()
 	res.Body = io.NopCloser(bytes.NewReader(body))
 	return body, nil
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	// Prefer existing X-Forwarded-For chain if present.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// first IP is the client
+		if idx := strings.Index(xff, ","); idx > 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func appendXForwardedFor(h http.Header, clientIP string) {
+	if clientIP == "" {
+		return
+	}
+	if prior := h.Get("X-Forwarded-For"); prior != "" {
+		h.Set("X-Forwarded-For", prior+", "+clientIP)
+		return
+	}
+	h.Set("X-Forwarded-For", clientIP)
 }
