@@ -35,7 +35,7 @@ cache:
 # if the API is unreachable or MongoDB is down
 api:
   url: "http://localhost:8787"
-  key: "FuckYouImAAPIKey"
+  key: "change-this-api-key"
   # Connection settings
   poll_interval: 5              # Seconds between snapshot polls
   connection_timeout: 10        # Seconds to wait for API responses
@@ -49,6 +49,26 @@ anomaly:
   scaler_path: "ai/scaler.pkl"
   python_script: "ai/model_server.py"
   feature_header: "X-GoatAI-Features"
+
+# Optional: Koda-Waf ML-enhanced WAF attack classification.
+# Model files are downloaded only when this detector is enabled.
+koda_waf:
+  enabled: false
+  threshold: 0.7
+  model_path: "ai/smart_waf_model.pkl"
+  scaler_path: "ai/model_features.pkl"
+  python_script: "ai/koda_waf_server.py"
+  feature_header: "X-KodaWaf-Features"
+
+# Optional: Koda-2 next-generation anomaly detection.
+# Model files are downloaded only when this detector is enabled.
+koda_2:
+  enabled: false
+  threshold: 0.7
+  model_path: "ai/koda2.keras"
+  scaler_path: "ai/koda2_scaler.pkl"
+  python_script: "ai/koda2_server.py"
+  feature_header: "X-Koda2-Features"
 
 # Fault Tolerance:
 # - Configuration snapshots are automatically persisted to ./database/config-snapshot.json

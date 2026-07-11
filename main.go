@@ -29,6 +29,9 @@ import (
 	"netgoat.xyz/agent/internal/debugoverlay"
 	"netgoat.xyz/agent/internal/health"
 	"netgoat.xyz/agent/internal/honeypot"
+	"netgoat.xyz/agent/internal/koda2"
+	"netgoat.xyz/agent/internal/koda_waf"
+	"netgoat.xyz/agent/internal/modeldl"
 	"netgoat.xyz/agent/internal/streaming"
 	"netgoat.xyz/agent/internal/waf"
 )
@@ -140,6 +143,74 @@ func main() {
 		}
 	}
 
+	var kodaWafDetector *koda_waf.Detector
+	if cfg.KodaWaf.Enabled {
+		modelPath := ifEmpty(cfg.KodaWaf.ModelPath, "ai/smart_waf_model.pkl")
+		scalerPath := ifEmpty(cfg.KodaWaf.ScalerPath, "ai/model_features.pkl")
+		modeldl.EnsureDownloaded([]modeldl.ModelFile{
+			{
+				URL:      "https://huggingface.co/netgoat-ai/koda-waf/resolve/main/smart_waf_model.pkl",
+				DestPath: modelPath,
+				Label:    "koda-waf model",
+			},
+			{
+				URL:      "https://huggingface.co/netgoat-ai/koda-waf/resolve/main/model_features.pkl",
+				DestPath: scalerPath,
+				Label:    "koda-waf features",
+			},
+		})
+
+		var err error
+		kodaWafDetector, err = koda_waf.NewDetector(koda_waf.Settings{
+			Enabled:      cfg.KodaWaf.Enabled,
+			Threshold:    ifZero(cfg.KodaWaf.Threshold, 0.7),
+			ModelPath:    modelPath,
+			ScalerPath:   scalerPath,
+			PythonScript: ifEmpty(cfg.KodaWaf.PythonScript, "ai/koda_waf_server.py"),
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to initialize Koda-Waf detector")
+			kodaWafDetector = nil
+		} else {
+			defer kodaWafDetector.Close()
+			log.Info().Bool("enabled", true).Str("model", modelPath).Float64("threshold", ifZero(cfg.KodaWaf.Threshold, 0.7)).Msg("Koda-Waf detection configured")
+		}
+	}
+
+	var koda2Detector *koda2.Detector
+	if cfg.Koda2.Enabled {
+		modelPath := ifEmpty(cfg.Koda2.ModelPath, "ai/koda2.keras")
+		scalerPath := ifEmpty(cfg.Koda2.ScalerPath, "ai/koda2_scaler.pkl")
+		modeldl.EnsureDownloaded([]modeldl.ModelFile{
+			{
+				URL:      "https://huggingface.co/netgoat-ai/koda-2/resolve/main/model.keras",
+				DestPath: modelPath,
+				Label:    "koda-2 model",
+			},
+			{
+				URL:      "https://huggingface.co/netgoat-ai/koda-2/resolve/main/scaler.pkl",
+				DestPath: scalerPath,
+				Label:    "koda-2 scaler",
+			},
+		})
+
+		var err error
+		koda2Detector, err = koda2.NewDetector(koda2.Settings{
+			Enabled:      cfg.Koda2.Enabled,
+			Threshold:    ifZero(cfg.Koda2.Threshold, 0.7),
+			ModelPath:    modelPath,
+			ScalerPath:   scalerPath,
+			PythonScript: ifEmpty(cfg.Koda2.PythonScript, "ai/koda2_server.py"),
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to initialize Koda-2 detector")
+			koda2Detector = nil
+		} else {
+			defer koda2Detector.Close()
+			log.Info().Bool("enabled", true).Str("model", modelPath).Float64("threshold", ifZero(cfg.Koda2.Threshold, 0.7)).Msg("Koda-2 detection configured")
+		}
+	}
+
 	// Initialize challenge store for dynamic error pages
 	challengeStore := challenge.NewStore()
 	log.Info().Msg("Challenge system initialized")
@@ -173,15 +244,19 @@ func main() {
 
 		// Initialize debug analysis info
 		analysisInfo := &debugoverlay.AnalysisInfo{
-			RequestID:      fmt.Sprintf("%d", time.Now().UnixNano()),
-			Timestamp:      startTime,
-			ClientIP:       getClientIP(r),
-			Host:           r.Host,
-			Path:           r.URL.Path,
-			Method:         r.Method,
-			RequestAllowed: true,
-			AIEnabled:      detector != nil,
-			AIThreshold:    ifZero(cfg.Anomaly.Threshold, 0.7),
+			RequestID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+			Timestamp:        startTime,
+			ClientIP:         getClientIP(r),
+			Host:             r.Host,
+			Path:             r.URL.Path,
+			Method:           r.Method,
+			RequestAllowed:   true,
+			AIEnabled:        detector != nil,
+			AIThreshold:      ifZero(cfg.Anomaly.Threshold, 0.7),
+			KodaWafEnabled:   kodaWafDetector != nil,
+			KodaWafThreshold: ifZero(cfg.KodaWaf.Threshold, 0.7),
+			Koda2Enabled:     koda2Detector != nil,
+			Koda2Threshold:   ifZero(cfg.Koda2.Threshold, 0.7),
 		}
 
 		if cfg.Auth.Enabled {
@@ -205,6 +280,40 @@ func main() {
 			if honeypot.Check(w, r) {
 				log.Warn().Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Honeypot triggered")
 				return
+			}
+		}
+
+		if kodaWafDetector != nil {
+			kodaWafHeader := ifEmpty(cfg.KodaWaf.FeatureHeader, "X-KodaWaf-Features")
+			csv := r.Header.Get(kodaWafHeader)
+			if csv == "" {
+				csv = r.URL.Query().Get("kodawaf")
+			}
+			if csv != "" {
+				analysisInfo.KodaWafChecked = true
+				kwStart := time.Now()
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				pred, kerr := kodaWafDetector.Predict(ctx, csv)
+				cancel()
+				analysisInfo.KodaWafProcessingMs = time.Since(kwStart).Milliseconds()
+
+				if kerr != nil {
+					log.Warn().Err(kerr).Msg("Koda-Waf detection error")
+					analysisInfo.KodaWafError = kerr.Error()
+				} else {
+					analysisInfo.KodaWafLabel = pred.Label
+					analysisInfo.KodaWafScore = pred.Score
+					analysisInfo.KodaWafAttackType = pred.AttackType
+					log.Info().Str("label", pred.Label).Float64("score", pred.Score).Str("attack_type", pred.AttackType).Msg("Koda-Waf prediction")
+					if kodaWafDetector.IsBlocked(pred) {
+						analysisInfo.KodaWafBlocked = true
+						analysisInfo.RequestAllowed = false
+						analysisInfo.BlockReason = fmt.Sprintf("Koda-Waf blocked: %s (%.1f%%)", pred.Label, pred.Score*100)
+						log.Warn().Str("label", pred.Label).Float64("score", pred.Score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by Koda-Waf")
+						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
+						return
+					}
+				}
 			}
 		}
 
@@ -233,6 +342,39 @@ func main() {
 						analysisInfo.RequestAllowed = false
 						analysisInfo.BlockReason = fmt.Sprintf("AI detected high-risk: %s (%.1f%%)", label, score*100)
 						log.Warn().Str("label", label).Float64("score", score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by local anomaly detector")
+						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
+						return
+					}
+				}
+			}
+		}
+
+		if koda2Detector != nil {
+			koda2Header := ifEmpty(cfg.Koda2.FeatureHeader, "X-Koda2-Features")
+			csv := r.Header.Get(koda2Header)
+			if csv == "" {
+				csv = r.URL.Query().Get("koda2")
+			}
+			if csv != "" {
+				analysisInfo.Koda2Checked = true
+				k2Start := time.Now()
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				pred, kerr := koda2Detector.Predict(ctx, csv)
+				cancel()
+				analysisInfo.Koda2ProcessingMs = time.Since(k2Start).Milliseconds()
+
+				if kerr != nil {
+					log.Warn().Err(kerr).Msg("Koda-2 detection error")
+					analysisInfo.Koda2Error = kerr.Error()
+				} else {
+					analysisInfo.Koda2Label = pred.Label
+					analysisInfo.Koda2Score = pred.Score
+					log.Info().Str("label", pred.Label).Float64("score", pred.Score).Msg("Koda-2 prediction")
+					if koda2Detector.IsAnomalous(pred) {
+						analysisInfo.Koda2Blocked = true
+						analysisInfo.RequestAllowed = false
+						analysisInfo.BlockReason = fmt.Sprintf("Koda-2 detected anomaly: %s (%.1f%%)", pred.Label, pred.Score*100)
+						log.Warn().Str("label", pred.Label).Float64("score", pred.Score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by Koda-2")
 						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
 						return
 					}
@@ -1037,7 +1179,7 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 	}
 
 	// Apply Zero Trust Global Setting
-	_, err := db.Exec(`INSERT INTO zero_trust_settings (key, value) VALUES ('enabled', ?) 
+	_, err := db.Exec(`INSERT INTO zero_trust_settings (key, value) VALUES ('enabled', ?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
 		fmt.Sprintf("%v", snap.ZeroTrustEnabled))
 	if err != nil {
