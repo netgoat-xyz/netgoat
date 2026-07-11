@@ -11,12 +11,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// AuthResult contains authentication information
 type AuthResult struct {
 	Authenticated bool
 	Username      string
 	UserID        int
-	ZeroTrustReq  bool // Whether this user requires zero-trust challenge
+	ZeroTrustReq  bool
 	SessionToken  string
 }
 
@@ -27,7 +26,6 @@ func Check(r *http.Request, db *sql.DB) *AuthResult {
 	if authHeader == "" {
 		cookie, err := r.Cookie("auth_token")
 		if err == nil && cookie.Value != "" {
-			// Validate session from cookie
 			if validateSession(db, cookie.Value, result) {
 				result.Authenticated = true
 				return result
@@ -36,7 +34,6 @@ func Check(r *http.Request, db *sql.DB) *AuthResult {
 		return result
 	}
 
-	// Parse Basic auth
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || parts[0] != "Basic" {
 		return result
@@ -85,7 +82,6 @@ func authenticateUser(db *sql.DB, username, password string, result *AuthResult)
 }
 
 func validateSession(db *sql.DB, sessionToken string, result *AuthResult) bool {
-	// Simple session validation - can be enhanced with JWT
 	var username string
 	var userID int
 	var zeroTrustEnabled int
@@ -114,7 +110,7 @@ func createSession(db *sql.DB, username string) string {
 		"=", "")
 
 	db.Exec(`
-		INSERT INTO user_sessions (user_id, token, expires_at) 
+		INSERT INTO user_sessions (user_id, token, expires_at)
 		VALUES (?, ?, datetime('now', '+24 hours'))`,
 		userID, token)
 

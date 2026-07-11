@@ -34,7 +34,6 @@ func Check(db *sql.DB, r *http.Request, debugLogs bool) (bool, string) {
 		ip = r.RemoteAddr
 	}
 
-	/// SECURITY FIX: URL-decode the query string before feeding it to the WAF engine
 	decodedQuery, err := url.QueryUnescape(r.URL.RawQuery)
 	if err != nil {
 		log.Warn().Err(err).Msg("Blocked request due to malformed URL encoding")
@@ -46,7 +45,7 @@ func Check(db *sql.DB, r *http.Request, debugLogs bool) (bool, string) {
 		Method:   r.Method,
 		Path:     r.URL.Path,
 		Query:    r.URL.Query(),
-		RawQuery: decodedQuery, // Now feeding the clean, decoded string
+		RawQuery: decodedQuery,
 		Headers:  r.Header,
 	}
 

@@ -41,9 +41,7 @@ import (
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
-	// Load environment variables from local .env if present (helps local dev/run)
 	loadEnvFromFile(".env")
-	// Log whether DiamondKey was loaded (don't print the key itself)
 	if k := os.Getenv("DiamondKey"); k != "" {
 		log.Info().Int("diamond_key_len", len(k)).Msg("DiamondKey loaded from environment")
 	} else {
@@ -88,7 +86,6 @@ func main() {
 		log.Info().Msg("Upstream health checks disabled")
 	}
 
-	// Shared reverse-proxy transport (timeouts + keepalives)
 	proxyTransport := newStableProxyTransport()
 
 	lb := balancer.New(healthWorker)
@@ -109,12 +106,10 @@ func main() {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
 
-	// Subscribe to config updates and apply them
 	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled)
 
 	pages := buildErrorPageStore(cfg)
 
-	// Initialize response cache
 	var cacheStore *cache.Store
 	if cfg.Cache.Enabled {
 		ttl := time.Duration(ifZeroInt(cfg.Cache.TTLSeconds, 60)) * time.Second
@@ -241,11 +236,9 @@ func main() {
 		}
 	}
 
-	// Initialize challenge store for dynamic error pages
 	challengeStore := challenge.NewStore()
 	log.Info().Msg("Challenge system initialized")
 
-	// Challenge verification endpoint
 	http.HandleFunc("/__netgoat/verify", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -311,9 +304,7 @@ func main() {
 				}
 				return
 			}
-			// Check if user requires zero-trust challenge
 			if authResult.ZeroTrustReq {
-				// TODO: Implement zero-trust challenge
 				log.Debug().Str("user", authResult.Username).Msg("User requires zero-trust challenge")
 			}
 		}
@@ -466,14 +457,12 @@ func main() {
 			return
 		}
 
-		// Extract domain from Host header
 		host := r.Host
 		if idx := strings.LastIndex(host, ":"); idx > 0 {
-			host = host[:idx] // Remove port
+			host = host[:idx]
 		}
 		log.Debug().Str("host", host).Str("method", r.Method).Str("path", r.URL.Path).Msg("Processing request")
 
-		// Try domain-based routing first, then path-based
 		routeMatch, err := database.GetRouteTargets(db, host, r.URL.Path)
 		if err != nil {
 			log.Warn().Err(err).Str("host", host).Str("path", r.URL.Path).Msg("No route found for domain or path")
@@ -500,7 +489,6 @@ func main() {
 			log.Info().Str("client", r.RemoteAddr).Str("host", host).Msg("WebSocket upgrade detected")
 		}
 
-		// Cache lookup for safe methods
 		isCacheable := cacheStore != nil && r.Method == http.MethodGet && r.Header.Get("Upgrade") == ""
 		cacheKey := ""
 		if isCacheable {
@@ -517,7 +505,6 @@ func main() {
 				}
 				w.Header().Set("X-Cache", "HIT")
 
-				// Inject debug overlay into cached response if enabled
 				body := ent.Body()
 				if cfg.DebugOverlay && strings.Contains(ent.Header().Get("Content-Type"), "text/html") {
 					body = debugoverlay.InjectOverlay(body, analysisInfo)
@@ -530,10 +517,7 @@ func main() {
 		}
 
 		if err := proxyHandler.Serve(w, r, routeMatch.RouteKey, targetURLs, func(res *http.Response) error {
-			// Inject debug overlay for HTML responses if enabled
 			if cfg.DebugOverlay && shouldInjectOverlay(res) {
-				// Only inject for reasonably-sized identity-encoded HTML. This avoids
-				// buffering huge/streamed responses and avoids corrupting compressed bodies.
 				body, err := io.ReadAll(res.Body)
 				if err != nil {
 					return err
@@ -583,7 +567,7 @@ func main() {
 	server := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
-		Handler:           nil, // default mux
+		Handler:           nil,
 	}
 
 	if cfg.SSL.Enabled {
@@ -674,9 +658,7 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 	ip := getClientIP(r)
 	userAgent := r.UserAgent()
 
-	// Check if IP is already verified (passed a challenge recently)
 	if store.IsVerified(ip) {
-		// Serve static error page for verified users
 		if p := pages.pick(r); len(p) > 0 && isHTML(p) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(status)
@@ -687,7 +669,6 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 		return
 	}
 
-	// Calculate suspicion and create challenge
 	suspicion := challenge.CalculateSuspicion(userAgent, ip)
 	challengeType := challenge.DetermineChallengeType(suspicion)
 
@@ -698,7 +679,6 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 		ch = store.Create(ip, userAgent, suspicion, challengeType)
 	}
 
-	// Render dynamic error page with challenge
 	dynamicHTML := challenge.RenderDynamicErrorPage(ch, status, fallback)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
@@ -744,14 +724,12 @@ func resolveAPIKey(cfg *config.Config) string {
 }
 
 func getClientIP(r *http.Request) string {
-	// Try X-Forwarded-For first
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if idx := strings.Index(xff, ","); idx > 0 {
 			return strings.TrimSpace(xff[:idx])
 		}
 		return strings.TrimSpace(xff)
 	}
-	// Fall back to RemoteAddr
 	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > 0 {
 		return r.RemoteAddr[:idx]
 	}
@@ -778,7 +756,6 @@ func recordBlocked(rec *metrics.Recorder, reason string) {
 }
 
 func newStableProxyTransport() *http.Transport {
-	// Conservative defaults: prevent hung upstreams, keep connections warm.
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -816,11 +793,9 @@ func shouldInjectOverlay(res *http.Response) bool {
 	if ct == "" || !strings.Contains(strings.ToLower(ct), "text/html") {
 		return false
 	}
-	// Avoid corrupting compressed bodies.
 	if enc := strings.ToLower(strings.TrimSpace(res.Header.Get("Content-Encoding"))); enc != "" && enc != "identity" {
 		return false
 	}
-	// Avoid buffering large/streamed responses.
 	const maxInjectBytes = 256 * 1024
 	if res.ContentLength < 0 || res.ContentLength > maxInjectBytes {
 		return false
@@ -828,11 +803,7 @@ func shouldInjectOverlay(res *http.Response) bool {
 	return true
 }
 
-// loadEnvFromFile loads simple KEY=VALUE pairs from a .env file and sets
-// them in the process environment when not already present. This avoids
-// adding an external dependency for local development.
 func loadEnvFromFile(path string) {
-	// Try given path first, then the executable directory, then ../PinkDiamond/.env
 	candidates := []string{path}
 	if exe, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), ".env"))
@@ -935,10 +906,8 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 		}
 		if ztk := os.Getenv("DiamondKey"); ztk != "" {
 			req.Header.Set("X-Diamond-Key", ztk)
-			// also set legacy header for compatibility
 			req.Header.Set("X-Zero-Trust-Key", ztk)
 		}
-		// Also support legacy env var if present
 		if legacy := os.Getenv("ZERO_TRUST_KEY"); legacy != "" {
 			req.Header.Set("X-Zero-Trust-Key", legacy)
 		}
@@ -1146,11 +1115,9 @@ func syncHealthTargets(db *sql.DB, worker *health.Worker) {
 	worker.Sync(healthTargets)
 }
 
-// applySnapshotToDB applies a config snapshot to the database
 func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 	log.Info().Int("route_count", len(snap.Routes)).Int("waf_rule_count", len(snap.WAFRules)).Msg("Processing config snapshot")
 
-	// Apply routes - support both domain and path based
 	routesApplied := 0
 	routesFailed := 0
 	for routeKey, route := range snap.Routes {
@@ -1216,7 +1183,6 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 		routesApplied++
 	}
 
-	// Apply WAF rules
 	rulesApplied := 0
 	rulesFailed := 0
 	for _, rule := range snap.WAFRules {
@@ -1234,7 +1200,6 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 		}
 	}
 
-	// Apply Users
 	usersApplied := 0
 	usersFailed := 0
 	for _, user := range snap.Users {
@@ -1250,11 +1215,9 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 		}
 	}
 
-	// Apply User Domains
 	userDomainsApplied := 0
 	userDomainsFailed := 0
 	for _, ud := range snap.UserDomains {
-		// Get user ID
 		var userID int
 		err := db.QueryRow("SELECT id FROM users WHERE username = ?", ud.Username).Scan(&userID)
 		if err != nil {
@@ -1275,7 +1238,6 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 		}
 	}
 
-	// Apply Zero Trust Global Setting
 	_, err := db.Exec(`INSERT INTO zero_trust_settings (key, value) VALUES ('enabled', ?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
 		fmt.Sprintf("%v", snap.ZeroTrustEnabled))
