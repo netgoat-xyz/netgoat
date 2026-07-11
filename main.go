@@ -33,6 +33,7 @@ import (
 	"netgoat.xyz/agent/internal/koda_waf"
 	"netgoat.xyz/agent/internal/modeldl"
 	"netgoat.xyz/agent/internal/streaming"
+	"netgoat.xyz/agent/internal/traffic"
 	"netgoat.xyz/agent/internal/waf"
 )
 
@@ -118,6 +119,19 @@ func main() {
 		ttl := time.Duration(ifZeroInt(cfg.Cache.TTLSeconds, 60)) * time.Second
 		cacheStore = cache.NewStore(ttl, ifZeroInt(cfg.Cache.MaxEntries, 1024), ifZeroInt(cfg.Cache.MaxBodyBytes, 1<<20))
 		log.Info().Dur("ttl", ttl).Int("max_entries", ifZeroInt(cfg.Cache.MaxEntries, 1024)).Int("max_body_bytes", ifZeroInt(cfg.Cache.MaxBodyBytes, 1<<20)).Msg("Response cache enabled")
+	}
+
+	var rateLimiter *traffic.RateLimiter
+	if cfg.RateLimit.Enabled {
+		rateLimiter = traffic.NewRateLimiter(cfg.RateLimit.RequestsPerMinute, cfg.RateLimit.Burst)
+		log.Info().Int("requests_per_minute", ifZeroInt(cfg.RateLimit.RequestsPerMinute, 60)).Int("burst", ifZeroInt(cfg.RateLimit.Burst, cfg.RateLimit.RequestsPerMinute)).Str("key", ifEmpty(cfg.RateLimit.Key, "ip")).Msg("Rate limiting enabled")
+	}
+
+	var requestQueue *traffic.Queue
+	if cfg.RequestQueue.Enabled {
+		timeout := time.Duration(ifZeroInt(cfg.RequestQueue.TimeoutSeconds, 5)) * time.Second
+		requestQueue = traffic.NewQueue(cfg.RequestQueue.MaxConcurrent, cfg.RequestQueue.MaxQueued, timeout)
+		log.Info().Int("max_concurrent", ifZeroInt(cfg.RequestQueue.MaxConcurrent, 1)).Int("max_queued", cfg.RequestQueue.MaxQueued).Dur("timeout", timeout).Msg("Request queue enabled")
 	}
 
 	var detector *anomaly.LocalDetector
@@ -281,6 +295,30 @@ func main() {
 				log.Warn().Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Honeypot triggered")
 				return
 			}
+		}
+
+		if rateLimiter != nil && !rateLimiter.Allow(rateLimitKey(r, cfg.RateLimit.Key)) {
+			analysisInfo.RequestAllowed = false
+			analysisInfo.BlockReason = "rate limit exceeded"
+			log.Warn().Str("ip", getClientIP(r)).Str("host", r.Host).Str("path", r.URL.Path).Msg("Request rate limited")
+			writeError(w, pages, challengeStore, r, http.StatusTooManyRequests, "Too Many Requests")
+			return
+		}
+
+		if requestQueue != nil {
+			release, err := requestQueue.Acquire(r.Context())
+			if err != nil {
+				analysisInfo.RequestAllowed = false
+				analysisInfo.BlockReason = "request queue full"
+				status := http.StatusServiceUnavailable
+				if errors.Is(err, traffic.ErrQueueFull) {
+					status = http.StatusTooManyRequests
+				}
+				log.Warn().Err(err).Str("ip", getClientIP(r)).Str("host", r.Host).Str("path", r.URL.Path).Msg("Request rejected by queue")
+				writeError(w, pages, challengeStore, r, status, http.StatusText(status))
+				return
+			}
+			defer release()
 		}
 
 		if kodaWafDetector != nil {
@@ -678,6 +716,19 @@ func getClientIP(r *http.Request) string {
 		return r.RemoteAddr[:idx]
 	}
 	return r.RemoteAddr
+}
+
+func rateLimitKey(r *http.Request, keyMode string) string {
+	switch strings.ToLower(strings.TrimSpace(keyMode)) {
+	case "host":
+		return r.Host
+	case "route":
+		return r.Host + "|" + r.URL.Path
+	case "global":
+		return "global"
+	default:
+		return getClientIP(r)
+	}
 }
 
 func newStableProxyTransport() *http.Transport {

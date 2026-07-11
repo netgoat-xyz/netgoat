@@ -56,6 +56,16 @@ cache:
   ttl_seconds: 120
   max_entries: 2048
   max_body_bytes: 2097152
+rate_limit:
+  enabled: true
+  requests_per_minute: 300
+  burst: 80
+  key: "host"
+request_queue:
+  enabled: true
+  max_concurrent: 50
+  max_queued: 150
+  timeout_seconds: 3
 api:
   url: "https://api.example.com"
   key: "api_key_12345"
@@ -200,6 +210,32 @@ api:
 	}
 	if cfg.Cache.MaxBodyBytes != 2097152 {
 		t.Errorf("Cache.MaxBodyBytes = %d, want 2097152", cfg.Cache.MaxBodyBytes)
+	}
+
+	if !cfg.RateLimit.Enabled {
+		t.Error("RateLimit.Enabled should be true")
+	}
+	if cfg.RateLimit.RequestsPerMinute != 300 {
+		t.Errorf("RateLimit.RequestsPerMinute = %d, want 300", cfg.RateLimit.RequestsPerMinute)
+	}
+	if cfg.RateLimit.Burst != 80 {
+		t.Errorf("RateLimit.Burst = %d, want 80", cfg.RateLimit.Burst)
+	}
+	if cfg.RateLimit.Key != "host" {
+		t.Errorf("RateLimit.Key = %s, want host", cfg.RateLimit.Key)
+	}
+
+	if !cfg.RequestQueue.Enabled {
+		t.Error("RequestQueue.Enabled should be true")
+	}
+	if cfg.RequestQueue.MaxConcurrent != 50 {
+		t.Errorf("RequestQueue.MaxConcurrent = %d, want 50", cfg.RequestQueue.MaxConcurrent)
+	}
+	if cfg.RequestQueue.MaxQueued != 150 {
+		t.Errorf("RequestQueue.MaxQueued = %d, want 150", cfg.RequestQueue.MaxQueued)
+	}
+	if cfg.RequestQueue.TimeoutSeconds != 3 {
+		t.Errorf("RequestQueue.TimeoutSeconds = %d, want 3", cfg.RequestQueue.TimeoutSeconds)
 	}
 
 	// Test API config
