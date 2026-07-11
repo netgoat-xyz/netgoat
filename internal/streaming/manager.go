@@ -19,6 +19,7 @@ type ConfigSnapshot struct {
 	Users            []UserData             `json:"users"`
 	UserDomains      []UserDomainData       `json:"user_domains"`
 	ZeroTrustEnabled bool                   `json:"zero_trust_enabled"`
+	AgentConfig      AgentConfigData        `json:"agent_config"`
 }
 
 type RouteTarget struct {
@@ -67,6 +68,71 @@ type UserDomainData struct {
 	Domain    string `json:"domain"`
 	TargetURL string `json:"target_url"`
 	Active    bool   `json:"active"`
+}
+
+type AgentKeyMode string
+
+const (
+	AgentKeyIP     AgentKeyMode = "ip"
+	AgentKeyHost   AgentKeyMode = "host"
+	AgentKeyRoute  AgentKeyMode = "route"
+	AgentKeyGlobal AgentKeyMode = "global"
+)
+
+type AgentCacheConfig struct {
+	Enabled      bool `json:"enabled"`
+	TTLSeconds   int  `json:"ttl_seconds"`
+	MaxEntries   int  `json:"max_entries"`
+	MaxBodyBytes int  `json:"max_body_bytes"`
+}
+
+type AgentRateLimitConfig struct {
+	Enabled           bool         `json:"enabled"`
+	RequestsPerMinute int          `json:"requests_per_minute"`
+	Burst             int          `json:"burst"`
+	Key               AgentKeyMode `json:"key"`
+}
+
+type AgentRequestQueueConfig struct {
+	Enabled        bool `json:"enabled"`
+	MaxConcurrent  int  `json:"max_concurrent"`
+	MaxQueued      int  `json:"max_queued"`
+	TimeoutSeconds int  `json:"timeout_seconds"`
+}
+
+type AgentBandwidthConfig struct {
+	Enabled        bool         `json:"enabled"`
+	BytesPerSecond int          `json:"bytes_per_second"`
+	BurstBytes     int          `json:"burst_bytes"`
+	Key            AgentKeyMode `json:"key"`
+}
+
+type AgentMetricsConfig struct {
+	Enabled bool   `json:"enabled"`
+	Path    string `json:"path"`
+}
+
+type AgentModelConfig struct {
+	Enabled       bool    `json:"enabled"`
+	Threshold     float64 `json:"threshold"`
+	ModelPath     string  `json:"model_path"`
+	ScalerPath    string  `json:"scaler_path"`
+	PythonScript  string  `json:"python_script"`
+	FeatureHeader string  `json:"feature_header"`
+}
+
+type AgentConfigData struct {
+	Cache        AgentCacheConfig        `json:"cache"`
+	RateLimit    AgentRateLimitConfig    `json:"rate_limit"`
+	RequestQueue AgentRequestQueueConfig `json:"request_queue"`
+	Bandwidth    AgentBandwidthConfig    `json:"bandwidth"`
+	Metrics      AgentMetricsConfig      `json:"metrics"`
+	KodaWaf      AgentModelConfig        `json:"koda_waf"`
+	Koda2        AgentModelConfig        `json:"koda_2"`
+}
+
+func (c AgentConfigData) IsZero() bool {
+	return c == AgentConfigData{}
 }
 
 type Message struct {
@@ -220,6 +286,7 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 		Users:            users,
 		UserDomains:      userDomains,
 		ZeroTrustEnabled: s.ZeroTrustEnabled,
+		AgentConfig:      s.AgentConfig,
 	}
 }
 
