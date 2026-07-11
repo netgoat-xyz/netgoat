@@ -67,6 +67,20 @@ type Config struct {
 		MaxBodyBytes int  `yaml:"max_body_bytes"`
 	} `yaml:"cache"`
 
+	RateLimit struct {
+		Enabled           bool   `yaml:"enabled"`
+		RequestsPerMinute int    `yaml:"requests_per_minute"`
+		Burst             int    `yaml:"burst"`
+		Key               string `yaml:"key"`
+	} `yaml:"rate_limit"`
+
+	RequestQueue struct {
+		Enabled        bool `yaml:"enabled"`
+		MaxConcurrent  int  `yaml:"max_concurrent"`
+		MaxQueued      int  `yaml:"max_queued"`
+		TimeoutSeconds int  `yaml:"timeout_seconds"`
+	} `yaml:"request_queue"`
+
 	API struct {
 		URL string `yaml:"url"`
 		Key string `yaml:"key"`

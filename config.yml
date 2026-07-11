@@ -30,6 +30,20 @@ cache:
   max_entries: 1024
   max_body_bytes: 1048576
 
+# Per-client token-bucket rate limiting. Key can be ip, host, route, or global.
+rate_limit:
+  enabled: false
+  requests_per_minute: 120
+  burst: 60
+  key: "ip"
+
+# Bounded in-process request queue for backpressure during traffic spikes.
+request_queue:
+  enabled: false
+  max_concurrent: 256
+  max_queued: 512
+  timeout_seconds: 5
+
 # External API connection for configuration streaming
 # The agent will automatically fall back to cached local configuration
 # if the API is unreachable or MongoDB is down
