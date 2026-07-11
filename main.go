@@ -31,6 +31,7 @@ import (
 	"netgoat.xyz/agent/internal/honeypot"
 	"netgoat.xyz/agent/internal/koda2"
 	"netgoat.xyz/agent/internal/koda_waf"
+	"netgoat.xyz/agent/internal/metrics"
 	"netgoat.xyz/agent/internal/modeldl"
 	"netgoat.xyz/agent/internal/streaming"
 	"netgoat.xyz/agent/internal/traffic"
@@ -132,6 +133,15 @@ func main() {
 		timeout := time.Duration(ifZeroInt(cfg.RequestQueue.TimeoutSeconds, 5)) * time.Second
 		requestQueue = traffic.NewQueue(cfg.RequestQueue.MaxConcurrent, cfg.RequestQueue.MaxQueued, timeout)
 		log.Info().Int("max_concurrent", ifZeroInt(cfg.RequestQueue.MaxConcurrent, 1)).Int("max_queued", cfg.RequestQueue.MaxQueued).Dur("timeout", timeout).Msg("Request queue enabled")
+	}
+
+	var metricsRecorder *metrics.Recorder
+	if cfg.Metrics.Enabled {
+		metricsRecorder = metrics.NewRecorder()
+		metricsPath := ifEmpty(cfg.Metrics.Path, "/__netgoat/metrics")
+		http.HandleFunc(metricsPath, metricsRecorder.ServeJSON)
+		http.HandleFunc(metricsPath+".prom", metricsRecorder.ServePrometheus)
+		log.Info().Str("path", metricsPath).Str("prometheus_path", metricsPath+".prom").Msg("Metrics endpoint enabled")
 	}
 
 	var detector *anomaly.LocalDetector
@@ -255,8 +265,15 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
+		if metricsRecorder != nil {
+			metricsRecorder.RecordRequest()
+			metricWriter := metrics.WrapResponseWriter(w)
+			w = metricWriter
+			defer func() {
+				metricsRecorder.RecordResponse(metricWriter.Status(), metricWriter.BytesWritten(), time.Since(startTime))
+			}()
+		}
 
-		// Initialize debug analysis info
 		analysisInfo := &debugoverlay.AnalysisInfo{
 			RequestID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 			Timestamp:        startTime,
@@ -300,6 +317,7 @@ func main() {
 		if rateLimiter != nil && !rateLimiter.Allow(rateLimitKey(r, cfg.RateLimit.Key)) {
 			analysisInfo.RequestAllowed = false
 			analysisInfo.BlockReason = "rate limit exceeded"
+			recordBlocked(metricsRecorder, "rate-limit")
 			log.Warn().Str("ip", getClientIP(r)).Str("host", r.Host).Str("path", r.URL.Path).Msg("Request rate limited")
 			writeError(w, pages, challengeStore, r, http.StatusTooManyRequests, "Too Many Requests")
 			return
@@ -314,6 +332,7 @@ func main() {
 				if errors.Is(err, traffic.ErrQueueFull) {
 					status = http.StatusTooManyRequests
 				}
+				recordBlocked(metricsRecorder, "request-queue")
 				log.Warn().Err(err).Str("ip", getClientIP(r)).Str("host", r.Host).Str("path", r.URL.Path).Msg("Request rejected by queue")
 				writeError(w, pages, challengeStore, r, status, http.StatusText(status))
 				return
@@ -347,6 +366,7 @@ func main() {
 						analysisInfo.KodaWafBlocked = true
 						analysisInfo.RequestAllowed = false
 						analysisInfo.BlockReason = fmt.Sprintf("Koda-Waf blocked: %s (%.1f%%)", pred.Label, pred.Score*100)
+						recordBlocked(metricsRecorder, "koda-waf")
 						log.Warn().Str("label", pred.Label).Float64("score", pred.Score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by Koda-Waf")
 						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
 						return
@@ -379,6 +399,7 @@ func main() {
 						analysisInfo.AIBlocked = true
 						analysisInfo.RequestAllowed = false
 						analysisInfo.BlockReason = fmt.Sprintf("AI detected high-risk: %s (%.1f%%)", label, score*100)
+						recordBlocked(metricsRecorder, "goatai")
 						log.Warn().Str("label", label).Float64("score", score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by local anomaly detector")
 						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
 						return
@@ -412,6 +433,7 @@ func main() {
 						analysisInfo.Koda2Blocked = true
 						analysisInfo.RequestAllowed = false
 						analysisInfo.BlockReason = fmt.Sprintf("Koda-2 detected anomaly: %s (%.1f%%)", pred.Label, pred.Score*100)
+						recordBlocked(metricsRecorder, "koda-2")
 						log.Warn().Str("label", pred.Label).Float64("score", pred.Score).Str("ip", r.RemoteAddr).Str("path", r.URL.Path).Msg("Blocked by Koda-2")
 						writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
 						return
@@ -427,6 +449,7 @@ func main() {
 			analysisInfo.WAFRuleName = ruleName
 			analysisInfo.RequestAllowed = false
 			analysisInfo.BlockReason = fmt.Sprintf("WAF rule triggered: %s", ruleName)
+			recordBlocked(metricsRecorder, "waf:"+ruleName)
 			log.Warn().Str("rule", ruleName).Str("ip", r.RemoteAddr).Str("host", r.Host).Msg("Request blocked by WAF")
 			writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
 			return
@@ -473,6 +496,9 @@ func main() {
 			cacheKey = cache.CacheKey(r)
 			if ent := cacheStore.Get(cacheKey); ent != nil {
 				analysisInfo.CacheHit = true
+				if metricsRecorder != nil {
+					metricsRecorder.RecordCacheHit()
+				}
 				for k, vals := range ent.Header() {
 					for _, v := range vals {
 						w.Header().Add(k, v)
@@ -534,6 +560,9 @@ func main() {
 			status := http.StatusBadGateway
 			if isTimeoutErr(err) {
 				status = http.StatusGatewayTimeout
+			}
+			if metricsRecorder != nil {
+				metricsRecorder.RecordProxyError()
 			}
 			log.Error().Err(err).Int("status", status).Str("host", host).Str("path", r.URL.Path).Msg("Failed to proxy request to upstream")
 			writeError(w, pages, challengeStore, r, status, http.StatusText(status))
@@ -728,6 +757,12 @@ func rateLimitKey(r *http.Request, keyMode string) string {
 		return "global"
 	default:
 		return getClientIP(r)
+	}
+}
+
+func recordBlocked(rec *metrics.Recorder, reason string) {
+	if rec != nil {
+		rec.RecordBlocked(reason)
 	}
 }
 

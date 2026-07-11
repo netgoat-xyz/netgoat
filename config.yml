@@ -44,6 +44,11 @@ request_queue:
   max_queued: 512
   timeout_seconds: 5
 
+# Runtime traffic counters. Prometheus format is also exposed at <path>.prom.
+metrics:
+  enabled: true
+  path: "/__netgoat/metrics"
+
 # External API connection for configuration streaming
 # The agent will automatically fall back to cached local configuration
 # if the API is unreachable or MongoDB is down
