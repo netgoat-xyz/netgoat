@@ -81,6 +81,13 @@ type Config struct {
 		TimeoutSeconds int  `yaml:"timeout_seconds"`
 	} `yaml:"request_queue"`
 
+	Bandwidth struct {
+		Enabled        bool   `yaml:"enabled"`
+		BytesPerSecond int    `yaml:"bytes_per_second"`
+		BurstBytes     int    `yaml:"burst_bytes"`
+		Key            string `yaml:"key"`
+	} `yaml:"bandwidth"`
+
 	Metrics struct {
 		Enabled bool   `yaml:"enabled"`
 		Path    string `yaml:"path"`

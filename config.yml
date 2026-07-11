@@ -44,6 +44,13 @@ request_queue:
   max_queued: 512
   timeout_seconds: 5
 
+# Upload/download throttling. Key can be ip, host, route, or global.
+bandwidth:
+  enabled: false
+  bytes_per_second: 1048576
+  burst_bytes: 1048576
+  key: "ip"
+
 # Runtime traffic counters. Prometheus format is also exposed at <path>.prom.
 metrics:
   enabled: true

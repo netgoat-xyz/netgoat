@@ -66,6 +66,11 @@ request_queue:
   max_concurrent: 50
   max_queued: 150
   timeout_seconds: 3
+bandwidth:
+  enabled: true
+  bytes_per_second: 4096
+  burst_bytes: 8192
+  key: "route"
 metrics:
   enabled: true
   path: "/metrics"
@@ -239,6 +244,19 @@ api:
 	}
 	if cfg.RequestQueue.TimeoutSeconds != 3 {
 		t.Errorf("RequestQueue.TimeoutSeconds = %d, want 3", cfg.RequestQueue.TimeoutSeconds)
+	}
+
+	if !cfg.Bandwidth.Enabled {
+		t.Error("Bandwidth.Enabled should be true")
+	}
+	if cfg.Bandwidth.BytesPerSecond != 4096 {
+		t.Errorf("Bandwidth.BytesPerSecond = %d, want 4096", cfg.Bandwidth.BytesPerSecond)
+	}
+	if cfg.Bandwidth.BurstBytes != 8192 {
+		t.Errorf("Bandwidth.BurstBytes = %d, want 8192", cfg.Bandwidth.BurstBytes)
+	}
+	if cfg.Bandwidth.Key != "route" {
+		t.Errorf("Bandwidth.Key = %s, want route", cfg.Bandwidth.Key)
 	}
 
 	if !cfg.Metrics.Enabled {
