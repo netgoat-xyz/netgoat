@@ -81,6 +81,11 @@ type Config struct {
 		TimeoutSeconds int  `yaml:"timeout_seconds"`
 	} `yaml:"request_queue"`
 
+	Metrics struct {
+		Enabled bool   `yaml:"enabled"`
+		Path    string `yaml:"path"`
+	} `yaml:"metrics"`
+
 	API struct {
 		URL string `yaml:"url"`
 		Key string `yaml:"key"`

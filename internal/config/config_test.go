@@ -66,6 +66,9 @@ request_queue:
   max_concurrent: 50
   max_queued: 150
   timeout_seconds: 3
+metrics:
+  enabled: true
+  path: "/metrics"
 api:
   url: "https://api.example.com"
   key: "api_key_12345"
@@ -236,6 +239,13 @@ api:
 	}
 	if cfg.RequestQueue.TimeoutSeconds != 3 {
 		t.Errorf("RequestQueue.TimeoutSeconds = %d, want 3", cfg.RequestQueue.TimeoutSeconds)
+	}
+
+	if !cfg.Metrics.Enabled {
+		t.Error("Metrics.Enabled should be true")
+	}
+	if cfg.Metrics.Path != "/metrics" {
+		t.Errorf("Metrics.Path = %s, want /metrics", cfg.Metrics.Path)
 	}
 
 	// Test API config
