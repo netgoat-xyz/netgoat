@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// ChallengeType defines the type of challenge to present
 type ChallengeType string
 
 const (
@@ -18,23 +17,21 @@ const (
 	ChallengeSlider ChallengeType = "slider"
 )
 
-// Challenge represents an active challenge
 type Challenge struct {
 	ID        string
 	Type      ChallengeType
-	Answer    string // Expected answer
+	Answer    string
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	IP        string
 	UserAgent string
-	Suspicion int // 0-100 suspicion score
+	Suspicion int
 }
 
-// Store manages active challenges
 type Store struct {
 	mu         sync.RWMutex
 	challenges map[string]*Challenge
-	verified   map[string]time.Time // IP -> last verified time
+	verified   map[string]time.Time
 }
 
 func NewStore() *Store {
@@ -46,7 +43,6 @@ func NewStore() *Store {
 	return s
 }
 
-// cleanup removes expired challenges every minute
 func (s *Store) cleanup() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
@@ -58,7 +54,6 @@ func (s *Store) cleanup() {
 				delete(s.challenges, id)
 			}
 		}
-		// Clean verified entries older than 1 hour
 		for ip, t := range s.verified {
 			if now.Sub(t) > 1*time.Hour {
 				delete(s.verified, ip)
@@ -68,19 +63,16 @@ func (s *Store) cleanup() {
 	}
 }
 
-// GenerateID creates a unique challenge ID
 func GenerateID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)[:22]
 }
 
-// CalculateSuspicion scores the request based on user-agent and behavior
 func CalculateSuspicion(userAgent, ip string) int {
 	score := 0
 	ua := strings.ToLower(userAgent)
 
-	// Known bot signatures
 	bots := []string{"bot", "crawler", "spider", "scraper", "curl", "wget", "python", "go-http-client", "java"}
 	for _, b := range bots {
 		if strings.Contains(ua, b) {
@@ -89,7 +81,6 @@ func CalculateSuspicion(userAgent, ip string) int {
 		}
 	}
 
-	// Suspicious patterns
 	if userAgent == "" || len(userAgent) < 10 {
 		score += 25
 	}
@@ -100,14 +91,12 @@ func CalculateSuspicion(userAgent, ip string) int {
 		score += 10
 	}
 
-	// Cap at 100
 	if score > 100 {
 		score = 100
 	}
 	return score
 }
 
-// DetermineChallengeType picks challenge based on suspicion level
 func DetermineChallengeType(suspicion int) ChallengeType {
 	if suspicion < 30 {
 		return ChallengeNone
@@ -119,7 +108,6 @@ func DetermineChallengeType(suspicion int) ChallengeType {
 	return ChallengeSlider
 }
 
-// Create generates and stores a new challenge
 func (s *Store) Create(ip, userAgent string, suspicion int, challengeType ChallengeType) *Challenge {
 	ch := &Challenge{
 		ID:        GenerateID(),
@@ -131,7 +119,6 @@ func (s *Store) Create(ip, userAgent string, suspicion int, challengeType Challe
 		Suspicion: suspicion,
 	}
 
-	// Generate challenge-specific answer
 	switch challengeType {
 	case ChallengeText:
 		ch.Answer = generateTextAnswer()
@@ -148,7 +135,6 @@ func (s *Store) Create(ip, userAgent string, suspicion int, challengeType Challe
 	return ch
 }
 
-// Get retrieves a challenge by ID
 func (s *Store) Get(id string) (*Challenge, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -156,7 +142,6 @@ func (s *Store) Get(id string) (*Challenge, bool) {
 	return ch, ok
 }
 
-// Verify checks if the answer is correct and marks IP as verified
 func (s *Store) Verify(id, answer, ip string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,12 +151,10 @@ func (s *Store) Verify(id, answer, ip string) bool {
 		return false
 	}
 
-	// Check IP match
 	if ch.IP != ip {
 		return false
 	}
 
-	// Verify answer
 	correct := false
 	switch ch.Type {
 	case ChallengeText:
@@ -189,7 +172,6 @@ func (s *Store) Verify(id, answer, ip string) bool {
 	return false
 }
 
-// IsVerified checks if an IP recently passed a challenge
 func (s *Store) IsVerified(ip string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -200,7 +182,6 @@ func (s *Store) IsVerified(ip string) bool {
 	return time.Now().Sub(t) < 1*time.Hour
 }
 
-// Helper functions to generate challenge answers
 func generateTextAnswer() string {
 	words := []string{"sunrise", "mountain", "ocean", "forest", "desert", "river", "cloud", "thunder"}
 	b := make([]byte, 1)
@@ -209,11 +190,9 @@ func generateTextAnswer() string {
 }
 
 func generateClickAnswer() string {
-	// Returns a comma-separated list of correct box indices (0-8)
 	b := make([]byte, 3)
 	rand.Read(b)
 	indices := []int{int(b[0]) % 9, int(b[1]) % 9, int(b[2]) % 9}
-	// Make unique
 	seen := make(map[int]bool)
 	result := []string{}
 	for _, idx := range indices {
@@ -226,9 +205,8 @@ func generateClickAnswer() string {
 }
 
 func generateSliderAnswer() string {
-	// Returns expected slider position (0-100)
 	b := make([]byte, 1)
 	rand.Read(b)
-	pos := 20 + (int(b[0]) % 60) // Range 20-80
+	pos := 20 + (int(b[0]) % 60)
 	return string(rune('0' + pos/10))
 }

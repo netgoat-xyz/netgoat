@@ -17,9 +17,9 @@ import (
 type LocalSettings struct {
 	Enabled      bool
 	Threshold    float64
-	ModelPath    string 
-	ScalerPath   string 
-	PythonScript string 
+	ModelPath    string
+	ScalerPath   string
+	PythonScript string
 }
 
 type LocalDetector struct {
@@ -45,7 +45,6 @@ func NewLocalDetector(s LocalSettings) (*LocalDetector, error) {
 		return nil, fmt.Errorf("python script not found: %w", err)
 	}
 
-	// Start Python subprocess
 	cmd := exec.Command("python3", s.PythonScript, s.ModelPath, s.ScalerPath)
 
 	stdin, err := cmd.StdinPipe()
@@ -91,13 +90,11 @@ func (d *LocalDetector) PredictCSV(ctx context.Context, csv string) (label strin
 	}
 
 	go func() {
-		// Send CSV to Python subprocess
 		if _, err := fmt.Fprintln(d.stdin, strings.TrimSpace(csv)); err != nil {
 			done <- err
 			return
 		}
 
-		// Read response
 		line, err := d.stdout.ReadString('\n')
 		if err != nil {
 			done <- err

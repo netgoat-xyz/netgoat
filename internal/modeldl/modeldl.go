@@ -28,7 +28,6 @@ func EnsureDownloaded(files []ModelFile) {
 }
 
 func downloadIfMissing(f ModelFile) error {
-	// Check if file already exists
 	if st, err := os.Stat(f.DestPath); err == nil {
 		if st.IsDir() {
 			return fmt.Errorf("model destination is a directory: %s", f.DestPath)
@@ -37,7 +36,6 @@ func downloadIfMissing(f ModelFile) error {
 		return nil
 	}
 
-	// Ensure parent directory exists
 	dir := filepath.Dir(f.DestPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)

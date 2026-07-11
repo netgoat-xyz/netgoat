@@ -129,7 +129,6 @@ func (s *Store) removeElement(e *list.Element) {
 func cloneHeader(h http.Header) http.Header {
 	dst := make(http.Header, len(h))
 	for k, vals := range h {
-		// skip hop-by-hop headers
 		if isHopByHop(k) {
 			continue
 		}
