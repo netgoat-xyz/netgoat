@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"regexp"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -178,21 +179,21 @@ func seedDefaults(db *sql.DB) error {
 		}{
 			// General Admin Block
 			{"Block Admin", `Path startsWith "/admin"`, 10},
-			
+
 			// OWASP A03:2021 - Injection (SQLi)
 			{"Block SQL Injection (Path)", `Path matches ".*(?i)(union\\s+select|waitfor\\s+delay|1=1|--|;).*$"`, 20},
 			{"Block SQL Injection (Query)", `RawQuery matches "(?i)(union\\s+select|waitfor\\s+delay|1=1|--|;)"`, 20},
-			
+
 			// OWASP A03:2021 - Injection (XSS)
 			{"Block XSS (Path)", `Path matches "(?i)(<script>|javascript:|onerror=)"`, 20},
 			{"Block XSS (Query)", `RawQuery matches "(?i)(<script>|javascript:|onerror=)"`, 20},
-			
+
 			// OWASP A01:2021 - Broken Access Control (Path Traversal)
 			{"Block Path Traversal", `Path matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
 			{"Block Path Traversal (Path Encoded)", `Path matches ".*(?i)(%2e%2e%2f|%2e%2e%5c).*$"`, 20},
 			{"Block Path Traversal (Query)", `RawQuery matches "(?:\\.\\./|\\.\\.\\\\)"`, 20},
 			{"Block Path Traversal (Query Encoded)", `RawQuery matches ".*(?i)(%2e%2e%2f|%2e%2e%5c).*$"`, 20},
-			
+
 			// OWASP A10:2021 - Server-Side Request Forgery (SSRF)
 			{"Block SSRF Metadata & Localhost", `RawQuery matches "(?i)(169\\.254\\.169\\.254|127\\.0\\.0\\.1|localhost)"`, 20},
 		}
@@ -223,7 +224,6 @@ type RouteMatch struct {
 	CertificatePEM string
 	PrivateKeyPEM  string
 }
-
 
 func loadRouteTargets(db *sql.DB, routeID int) ([]RouteTarget, error) {
 	rows, err := db.Query(`
@@ -260,6 +260,87 @@ func findRouteByDomain(db *sql.DB, domain string) (int, string, string, string, 
 	return routeID, targetURL, certPem, keyPem, err
 }
 
+func findPatternRouteByDomain(db *sql.DB, domain string) (int, string, string, string, string, error) {
+	rows, err := db.Query(`
+		SELECT id, route_type, domain, target_url, COALESCE(certificate_pem, ''), COALESCE(private_key_pem, '')
+		FROM routes
+		WHERE active = 1 AND route_type IN ('domain', 'wildcard', 'regex')
+		ORDER BY LENGTH(domain) DESC, id ASC`)
+	if err != nil {
+		return 0, "", "", "", "", err
+	}
+	defer rows.Close()
+
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	for rows.Next() {
+		var routeID int
+		var routeType, pattern, targetURL, certPem, keyPem string
+		if err := rows.Scan(&routeID, &routeType, &pattern, &targetURL, &certPem, &keyPem); err != nil {
+			return 0, "", "", "", "", err
+		}
+		if pattern == "" || strings.EqualFold(pattern, domain) {
+			continue
+		}
+		if domainPatternMatches(routeType, pattern, domain) {
+			return routeID, targetURL, certPem, keyPem, pattern, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, "", "", "", "", err
+	}
+	return 0, "", "", "", "", sql.ErrNoRows
+}
+
+func domainPatternMatches(routeType, pattern, domain string) bool {
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	routeType = strings.ToLower(strings.TrimSpace(routeType))
+
+	switch {
+	case routeType == "regex":
+		return regexDomainMatch(pattern, domain)
+	case strings.HasPrefix(pattern, "regex:"):
+		return regexDomainMatch(strings.TrimPrefix(pattern, "regex:"), domain)
+	case strings.HasPrefix(pattern, "~"):
+		return regexDomainMatch(strings.TrimPrefix(pattern, "~"), domain)
+	case routeType == "wildcard" || strings.Contains(pattern, "*"):
+		return wildcardDomainMatch(pattern, domain)
+	default:
+		return false
+	}
+}
+
+func regexDomainMatch(pattern, domain string) bool {
+	re, err := regexp.Compile(pattern)
+	return err == nil && re.MatchString(domain)
+}
+
+func wildcardDomainMatch(pattern, domain string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == domain
+	}
+
+	if parts[0] != "" && !strings.HasPrefix(domain, parts[0]) {
+		return false
+	}
+	if last := parts[len(parts)-1]; last != "" && !strings.HasSuffix(domain, last) {
+		return false
+	}
+
+	pos := len(parts[0])
+	for _, part := range parts[1 : len(parts)-1] {
+		if part == "" {
+			continue
+		}
+		idx := strings.Index(domain[pos:], part)
+		if idx < 0 {
+			return false
+		}
+		pos += idx + len(part)
+	}
+	return true
+}
+
 func findRouteByPath(db *sql.DB, path string) (int, string, error) {
 	var routeID int
 	var targetURL string
@@ -294,6 +375,27 @@ func GetRouteTargets(db *sql.DB, domain, path string) (*RouteMatch, error) {
 			}
 		} else if err != sql.ErrNoRows {
 			log.Error().Err(err).Str("domain", domain).Msg("Error querying route by domain")
+		}
+
+		routeID, fallbackURL, certPem, keyPem, pattern, err := findPatternRouteByDomain(db, domain)
+		if err == nil {
+			targets, err := loadRouteTargets(db, routeID)
+			if err != nil {
+				return nil, err
+			}
+			if len(targets) == 0 && fallbackURL != "" {
+				targets = []RouteTarget{{URL: fallbackURL, HealthCheck: "http"}}
+			}
+			if len(targets) > 0 {
+				return &RouteMatch{
+					RouteKey:       "domain:" + pattern,
+					Targets:        targets,
+					CertificatePEM: certPem,
+					PrivateKeyPEM:  keyPem,
+				}, nil
+			}
+		} else if err != sql.ErrNoRows {
+			log.Error().Err(err).Str("domain", domain).Msg("Error querying pattern route by domain")
 		}
 	}
 
@@ -432,7 +534,7 @@ func GetUserID(db *sql.DB, username string) (int, error) {
 // GetUserProxyRecords returns all proxy records (domains) for a user
 func GetUserProxyRecords(db *sql.DB, userID int) ([]map[string]interface{}, error) {
 	rows, err := db.Query(`
-		SELECT id, domain, target_url, COALESCE(certificate_pem, ''), active FROM user_proxy_records 
+		SELECT id, domain, target_url, COALESCE(certificate_pem, ''), active FROM user_proxy_records
 		WHERE user_id = ? AND active = 1
 		ORDER BY domain ASC`, userID)
 	if err != nil {
@@ -461,7 +563,7 @@ func GetUserProxyRecords(db *sql.DB, userID int) ([]map[string]interface{}, erro
 // ListAllDomains returns all active domains in the system
 func ListAllDomains(db *sql.DB) ([]map[string]interface{}, error) {
 	rows, err := db.Query(`
-		SELECT id, domain, target_url, active, created_at FROM routes 
+		SELECT id, domain, target_url, active, created_at FROM routes
 		WHERE active = 1
 		ORDER BY domain ASC`)
 	if err != nil {

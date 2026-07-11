@@ -1161,7 +1161,7 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
 		case "path":
 			domainVal = ""
 			pathVal = routeKey
-		case "domain":
+		case "domain", "wildcard", "regex":
 			domainVal = routeKey
 			pathVal = ""
 		default:
