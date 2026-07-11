@@ -135,6 +135,12 @@ func main() {
 		log.Info().Int("max_concurrent", ifZeroInt(cfg.RequestQueue.MaxConcurrent, 1)).Int("max_queued", cfg.RequestQueue.MaxQueued).Dur("timeout", timeout).Msg("Request queue enabled")
 	}
 
+	var bandwidthLimiter *traffic.BandwidthLimiter
+	if cfg.Bandwidth.Enabled {
+		bandwidthLimiter = traffic.NewBandwidthLimiter(cfg.Bandwidth.BytesPerSecond, cfg.Bandwidth.BurstBytes)
+		log.Info().Int("bytes_per_second", ifZeroInt(cfg.Bandwidth.BytesPerSecond, 1<<20)).Int("burst_bytes", ifZeroInt(cfg.Bandwidth.BurstBytes, cfg.Bandwidth.BytesPerSecond)).Str("key", ifEmpty(cfg.Bandwidth.Key, "ip")).Msg("Bandwidth limiting enabled")
+	}
+
 	var metricsRecorder *metrics.Recorder
 	if cfg.Metrics.Enabled {
 		metricsRecorder = metrics.NewRecorder()
@@ -272,6 +278,11 @@ func main() {
 			defer func() {
 				metricsRecorder.RecordResponse(metricWriter.Status(), metricWriter.BytesWritten(), time.Since(startTime))
 			}()
+		}
+		if bandwidthLimiter != nil {
+			key := rateLimitKey(r, cfg.Bandwidth.Key)
+			r.Body = traffic.WrapReadCloser(r.Body, bandwidthLimiter, key+":in", r.Context())
+			w = traffic.WrapResponseWriter(w, bandwidthLimiter, key+":out", r.Context())
 		}
 
 		analysisInfo := &debugoverlay.AnalysisInfo{
