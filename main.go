@@ -72,6 +72,7 @@ func main() {
 	log.Info().Msg("Applying initial configuration from snapshot")
 	initialSnap := streamMgr.GetSnapshot()
 	applySnapshotToDB(db, initialSnap)
+	applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
 
 	healthInterval := time.Duration(ifZeroInt(cfg.Health.IntervalSeconds, 10)) * time.Second
 	healthTimeout := time.Duration(ifZeroInt(cfg.Health.TimeoutSeconds, 3)) * time.Second
@@ -100,6 +101,12 @@ func main() {
 		apiKey := resolveAPIKey(cfg)
 		if apiKey == "" {
 			log.Warn().Msg("API_STREAM_URL set but no API_STREAM_KEY/API_KEY provided; external updates will likely be unauthorized")
+		}
+		if agentConfig, err := fetchAgentConfig(apiURL, apiKey); err != nil {
+			log.Warn().Err(err).Msg("Could not fetch startup agent config from stream-server")
+		} else {
+			applyAgentConfigToConfig(cfg, agentConfig)
+			log.Info().Msg("Applied startup agent config from stream-server")
 		}
 		go connectToAPIStream(streamMgr, apiURL, apiKey)
 	} else {
@@ -900,17 +907,7 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 			continue
 		}
 
-		if apiKey != "" {
-			req.Header.Set("X-API-Key", apiKey)
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-		if ztk := os.Getenv("DiamondKey"); ztk != "" {
-			req.Header.Set("X-Diamond-Key", ztk)
-			req.Header.Set("X-Zero-Trust-Key", ztk)
-		}
-		if legacy := os.Getenv("ZERO_TRUST_KEY"); legacy != "" {
-			req.Header.Set("X-Zero-Trust-Key", legacy)
-		}
+		addStreamAuthHeaders(req, apiKey)
 
 		log.Debug().Interface("headers", req.Header).Msg("Sending domains request headers")
 		resp, err := http.DefaultClient.Do(req)
@@ -984,7 +981,8 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 				Priority      int    `json:"priority"`
 				ProxyConfigID string `json:"proxy_config_id"`
 			} `json:"waf_rules"`
-			ZeroTrustEnabled bool `json:"zero_trust_enabled"`
+			ZeroTrustEnabled bool                      `json:"zero_trust_enabled"`
+			AgentConfig      streaming.AgentConfigData `json:"agent_config"`
 		}
 
 		if err := json.Unmarshal(body, &alt); err != nil {
@@ -1002,6 +1000,7 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 			Users:            []streaming.UserData{},
 			UserDomains:      []streaming.UserDomainData{},
 			ZeroTrustEnabled: alt.ZeroTrustEnabled,
+			AgentConfig:      alt.AgentConfig,
 		}
 
 		for _, d := range alt.Domains {
@@ -1083,6 +1082,93 @@ func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget 
 		return nil
 	}
 	return targets
+}
+
+func fetchAgentConfig(apiURL, apiKey string) (streaming.AgentConfigData, error) {
+	configURL := strings.TrimSuffix(apiURL, "/") + "/agent-config"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, configURL, nil)
+	if err != nil {
+		return streaming.AgentConfigData{}, err
+	}
+	addStreamAuthHeaders(req, apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return streaming.AgentConfigData{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return streaming.AgentConfigData{}, fmt.Errorf("unexpected agent config status: %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		AgentConfig streaming.AgentConfigData `json:"agent_config"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return streaming.AgentConfigData{}, err
+	}
+	return payload.AgentConfig, nil
+}
+
+func addStreamAuthHeaders(req *http.Request, apiKey string) {
+	if apiKey != "" {
+		req.Header.Set("X-API-Key", apiKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	if ztk := os.Getenv("DiamondKey"); ztk != "" {
+		req.Header.Set("X-Diamond-Key", ztk)
+		req.Header.Set("X-Zero-Trust-Key", ztk)
+	}
+	if legacy := os.Getenv("ZERO_TRUST_KEY"); legacy != "" {
+		req.Header.Set("X-Zero-Trust-Key", legacy)
+	}
+}
+
+func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentConfigData) {
+	if cfg == nil || agentConfig.IsZero() {
+		return
+	}
+
+	cfg.Cache.Enabled = agentConfig.Cache.Enabled
+	cfg.Cache.TTLSeconds = agentConfig.Cache.TTLSeconds
+	cfg.Cache.MaxEntries = agentConfig.Cache.MaxEntries
+	cfg.Cache.MaxBodyBytes = agentConfig.Cache.MaxBodyBytes
+
+	cfg.RateLimit.Enabled = agentConfig.RateLimit.Enabled
+	cfg.RateLimit.RequestsPerMinute = agentConfig.RateLimit.RequestsPerMinute
+	cfg.RateLimit.Burst = agentConfig.RateLimit.Burst
+	cfg.RateLimit.Key = string(agentConfig.RateLimit.Key)
+
+	cfg.RequestQueue.Enabled = agentConfig.RequestQueue.Enabled
+	cfg.RequestQueue.MaxConcurrent = agentConfig.RequestQueue.MaxConcurrent
+	cfg.RequestQueue.MaxQueued = agentConfig.RequestQueue.MaxQueued
+	cfg.RequestQueue.TimeoutSeconds = agentConfig.RequestQueue.TimeoutSeconds
+
+	cfg.Bandwidth.Enabled = agentConfig.Bandwidth.Enabled
+	cfg.Bandwidth.BytesPerSecond = agentConfig.Bandwidth.BytesPerSecond
+	cfg.Bandwidth.BurstBytes = agentConfig.Bandwidth.BurstBytes
+	cfg.Bandwidth.Key = string(agentConfig.Bandwidth.Key)
+
+	cfg.Metrics.Enabled = agentConfig.Metrics.Enabled
+	cfg.Metrics.Path = agentConfig.Metrics.Path
+
+	cfg.KodaWaf.Enabled = agentConfig.KodaWaf.Enabled
+	cfg.KodaWaf.Threshold = agentConfig.KodaWaf.Threshold
+	cfg.KodaWaf.ModelPath = agentConfig.KodaWaf.ModelPath
+	cfg.KodaWaf.ScalerPath = agentConfig.KodaWaf.ScalerPath
+	cfg.KodaWaf.PythonScript = agentConfig.KodaWaf.PythonScript
+	cfg.KodaWaf.FeatureHeader = agentConfig.KodaWaf.FeatureHeader
+
+	cfg.Koda2.Enabled = agentConfig.Koda2.Enabled
+	cfg.Koda2.Threshold = agentConfig.Koda2.Threshold
+	cfg.Koda2.ModelPath = agentConfig.Koda2.ModelPath
+	cfg.Koda2.ScalerPath = agentConfig.Koda2.ScalerPath
+	cfg.Koda2.PythonScript = agentConfig.Koda2.PythonScript
+	cfg.Koda2.FeatureHeader = agentConfig.Koda2.FeatureHeader
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
