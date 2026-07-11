@@ -30,6 +30,20 @@ anomaly:
   scaler_path: "ai/scaler.pkl"
   python_script: "ai/server.py"
   feature_header: "X-Features"
+koda_waf:
+  enabled: true
+  threshold: 0.82
+  model_path: "ai/smart_waf_model.pkl"
+  scaler_path: "ai/model_features.pkl"
+  python_script: "ai/koda_waf_server.py"
+  feature_header: "X-KodaWaf"
+koda_2:
+  enabled: true
+  threshold: 0.91
+  model_path: "ai/koda2.keras"
+  scaler_path: "ai/koda2_scaler.pkl"
+  python_script: "ai/koda2_server.py"
+  feature_header: "X-Koda2"
 error_pages:
   domain:
     example.com: "/path/to/example-error.html"
@@ -113,6 +127,44 @@ api:
 	}
 	if cfg.Anomaly.FeatureHeader != "X-Features" {
 		t.Errorf("Anomaly.FeatureHeader = %s, want X-Features", cfg.Anomaly.FeatureHeader)
+	}
+
+	if !cfg.KodaWaf.Enabled {
+		t.Error("KodaWaf.Enabled should be true")
+	}
+	if cfg.KodaWaf.Threshold != 0.82 {
+		t.Errorf("KodaWaf.Threshold = %f, want 0.82", cfg.KodaWaf.Threshold)
+	}
+	if cfg.KodaWaf.ModelPath != "ai/smart_waf_model.pkl" {
+		t.Errorf("KodaWaf.ModelPath = %s, want ai/smart_waf_model.pkl", cfg.KodaWaf.ModelPath)
+	}
+	if cfg.KodaWaf.ScalerPath != "ai/model_features.pkl" {
+		t.Errorf("KodaWaf.ScalerPath = %s, want ai/model_features.pkl", cfg.KodaWaf.ScalerPath)
+	}
+	if cfg.KodaWaf.PythonScript != "ai/koda_waf_server.py" {
+		t.Errorf("KodaWaf.PythonScript = %s, want ai/koda_waf_server.py", cfg.KodaWaf.PythonScript)
+	}
+	if cfg.KodaWaf.FeatureHeader != "X-KodaWaf" {
+		t.Errorf("KodaWaf.FeatureHeader = %s, want X-KodaWaf", cfg.KodaWaf.FeatureHeader)
+	}
+
+	if !cfg.Koda2.Enabled {
+		t.Error("Koda2.Enabled should be true")
+	}
+	if cfg.Koda2.Threshold != 0.91 {
+		t.Errorf("Koda2.Threshold = %f, want 0.91", cfg.Koda2.Threshold)
+	}
+	if cfg.Koda2.ModelPath != "ai/koda2.keras" {
+		t.Errorf("Koda2.ModelPath = %s, want ai/koda2.keras", cfg.Koda2.ModelPath)
+	}
+	if cfg.Koda2.ScalerPath != "ai/koda2_scaler.pkl" {
+		t.Errorf("Koda2.ScalerPath = %s, want ai/koda2_scaler.pkl", cfg.Koda2.ScalerPath)
+	}
+	if cfg.Koda2.PythonScript != "ai/koda2_server.py" {
+		t.Errorf("Koda2.PythonScript = %s, want ai/koda2_server.py", cfg.Koda2.PythonScript)
+	}
+	if cfg.Koda2.FeatureHeader != "X-Koda2" {
+		t.Errorf("Koda2.FeatureHeader = %s, want X-Koda2", cfg.Koda2.FeatureHeader)
 	}
 
 	// Test error pages config

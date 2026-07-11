@@ -23,7 +23,7 @@ type AnalysisInfo struct {
 	WAFRuleName    string
 	WAFRuleMatched string
 
-	// AI Analysis
+	// AI Analysis (GoatAI)
 	AIEnabled      bool
 	AIChecked      bool
 	AILabel        string
@@ -32,6 +32,27 @@ type AnalysisInfo struct {
 	AIBlocked      bool
 	AIError        string
 	AIProcessingMs int64
+
+	// Koda-Waf Analysis
+	KodaWafEnabled      bool
+	KodaWafChecked      bool
+	KodaWafLabel        string
+	KodaWafScore        float64
+	KodaWafThreshold    float64
+	KodaWafBlocked      bool
+	KodaWafAttackType   string
+	KodaWafError        string
+	KodaWafProcessingMs int64
+
+	// Koda-2 Analysis
+	Koda2Enabled      bool
+	Koda2Checked      bool
+	Koda2Label        string
+	Koda2Score        float64
+	Koda2Threshold    float64
+	Koda2Blocked      bool
+	Koda2Error        string
+	Koda2ProcessingMs int64
 
 	// Routing
 	TargetURL string
@@ -70,7 +91,7 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 		<span style="font-weight: bold;">NetGoat AI</span>
 		<span id="netgoat-status-indicator" style="width: 8px; height: 8px; border-radius: 50%; background: {{.StatusColor}}; animation: pulse 2s infinite;"></span>
 	</div>
-	
+
 	<div id="netgoat-debug-panel" style="display: none; position: absolute; bottom: 60px; right: 0; background: #1a1a2e; color: #eee; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); width: 420px; max-height: 600px; overflow-y: auto; backdrop-filter: blur(10px);">
 		<div style="padding: 20px; border-bottom: 2px solid #16213e;">
 			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -84,7 +105,7 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 				<span>📍 {{.ClientIP}}</span>
 			</div>
 		</div>
-		
+
 		<!-- Request Info -->
 		<div style="padding: 16px; border-bottom: 1px solid #2a2a3e;">
 			<div style="font-weight: bold; color: #ffa500; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
@@ -103,7 +124,7 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 				</div>
 			</div>
 		</div>
-		
+
 		{{if .WAFChecked}}
 		<!-- WAF Analysis -->
 		<div style="padding: 16px; border-bottom: 1px solid #2a2a3e; background: {{.WAFBackground}};">
@@ -124,19 +145,19 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 			</div>
 		</div>
 		{{end}}
-		
+
 		{{if .AIEnabled}}
-		<!-- AI Analysis -->
+		<!-- AI Analysis (GoatAI) -->
 		<div style="padding: 16px; border-bottom: 1px solid #2a2a3e; background: {{.AIBackground}};">
 			<div style="font-weight: bold; color: #a29bfe; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-				<span>🤖</span> AI Risk Analysis
+				<span>🤖</span> GoatAI Risk Analysis
 			</div>
 			{{if .AIChecked}}
 			<div style="font-size: 11px; line-height: 1.6;">
 				<div style="display: grid; grid-template-columns: 100px 1fr; gap: 8px; margin-bottom: 12px;">
 					<span style="color: #888;">Classification:</span>
 					<span style="color: {{.AILabelColor}}; font-weight: bold;">{{.AILabel}}</span>
-					
+
 					<span style="color: #888;">Risk Score:</span>
 					<div style="display: flex; align-items: center; gap: 8px;">
 						<div style="flex: 1; background: #2a2a3e; border-radius: 10px; height: 16px; overflow: hidden; position: relative;">
@@ -146,17 +167,17 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 							</div>
 						</div>
 					</div>
-					
+
 					<span style="color: #888;">Threshold:</span>
 					<span style="color: #ffa500;">{{.AIThresholdDisplay}}</span>
-					
+
 					<span style="color: #888;">Processing:</span>
 					<span style="color: #888;">{{.AIProcessingMs}}ms</span>
 				</div>
-				
+
 				{{if .AIBlocked}}
 				<div style="background: #ff4757; padding: 8px; border-radius: 6px; border-left: 4px solid #ff0000;">
-					<div style="font-weight: bold; color: white;">⛔ BLOCKED BY AI</div>
+					<div style="font-weight: bold; color: white;">⛔ BLOCKED BY GOATAI</div>
 					<div style="color: #ffe0e0; margin-top: 4px; font-size: 10px;">High-risk behavior detected</div>
 				</div>
 				{{else}}
@@ -179,7 +200,114 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 			{{end}}
 		</div>
 		{{end}}
-		
+
+		{{if .KodaWafEnabled}}
+		<!-- Koda-Waf Analysis -->
+		<div style="padding: 16px; border-bottom: 1px solid #2a2a3e; background: {{.KodaWafBackground}};">
+			<div style="font-weight: bold; color: #ff6b6b; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+				<span>🛡️</span> Koda-Waf Analysis
+			</div>
+			{{if .KodaWafChecked}}
+			<div style="font-size: 11px; line-height: 1.6;">
+				<div style="display: grid; grid-template-columns: 100px 1fr; gap: 8px; margin-bottom: 12px;">
+					<span style="color: #888;">Classification:</span>
+					<span style="color: {{.KodaWafLabelColor}}; font-weight: bold;">{{.KodaWafLabel}}</span>
+
+					{{if ne .KodaWafAttackType ""}}
+					<span style="color: #888;">Attack Type:</span>
+					<span style="color: #ff6348; font-weight: bold;">{{.KodaWafAttackType}}</span>
+					{{end}}
+
+					<span style="color: #888;">Score:</span>
+					<div style="display: flex; align-items: center; gap: 8px;">
+						<div style="flex: 1; background: #2a2a3e; border-radius: 10px; height: 16px; overflow: hidden; position: relative;">
+							<div style="background: {{.KodaWafScoreColor}}; width: {{.KodaWafScorePercent}}%; height: 100%; transition: width 0.3s ease;"></div>
+							<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">
+								{{.KodaWafScoreDisplay}}
+							</div>
+						</div>
+					</div>
+
+					<span style="color: #888;">Processing:</span>
+					<span style="color: #888;">{{.KodaWafProcessingMs}}ms</span>
+				</div>
+
+				{{if .KodaWafBlocked}}
+				<div style="background: #ff4757; padding: 8px; border-radius: 6px; border-left: 4px solid #ff0000;">
+					<div style="font-weight: bold; color: white;">⛔ BLOCKED BY KODA-WAF</div>
+					<div style="color: #ffe0e0; margin-top: 4px; font-size: 10px;">Attack pattern detected: {{.KodaWafLabel}}</div>
+				</div>
+				{{else}}
+				<div style="background: #2ecc71; padding: 8px; border-radius: 6px; border-left: 4px solid #27ae60;">
+					<div style="font-weight: bold; color: white;">✅ NO ATTACK DETECTED</div>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<div style="color: #888; font-size: 11px;">
+				{{if ne .KodaWafError ""}}
+				<div style="background: #f39c12; padding: 8px; border-radius: 6px; color: white;">
+					⚠️ Error: {{.KodaWafError}}
+				</div>
+				{{else}}
+				<div>ℹ️ No Koda-Waf features (use X-KodaWaf-Features header)</div>
+				{{end}}
+			</div>
+			{{end}}
+		</div>
+		{{end}}
+
+		{{if .Koda2Enabled}}
+		<!-- Koda-2 Analysis -->
+		<div style="padding: 16px; border-bottom: 1px solid #2a2a3e; background: {{.Koda2Background}};">
+			<div style="font-weight: bold; color: #fd79a8; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+				<span>🧠</span> Koda-2 Anomaly Analysis
+			</div>
+			{{if .Koda2Checked}}
+			<div style="font-size: 11px; line-height: 1.6;">
+				<div style="display: grid; grid-template-columns: 100px 1fr; gap: 8px; margin-bottom: 12px;">
+					<span style="color: #888;">Classification:</span>
+					<span style="color: {{.Koda2LabelColor}}; font-weight: bold;">{{.Koda2Label}}</span>
+
+					<span style="color: #888;">Anomaly Score:</span>
+					<div style="display: flex; align-items: center; gap: 8px;">
+						<div style="flex: 1; background: #2a2a3e; border-radius: 10px; height: 16px; overflow: hidden; position: relative;">
+							<div style="background: {{.Koda2ScoreColor}}; width: {{.Koda2ScorePercent}}%; height: 100%; transition: width 0.3s ease;"></div>
+							<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">
+								{{.Koda2ScoreDisplay}}
+							</div>
+						</div>
+					</div>
+
+					<span style="color: #888;">Processing:</span>
+					<span style="color: #888;">{{.Koda2ProcessingMs}}ms</span>
+				</div>
+
+				{{if .Koda2Blocked}}
+				<div style="background: #ff4757; padding: 8px; border-radius: 6px; border-left: 4px solid #ff0000;">
+					<div style="font-weight: bold; color: white;">⛔ BLOCKED BY KODA-2</div>
+					<div style="color: #ffe0e0; margin-top: 4px; font-size: 10px;">Multi-vector anomaly detected</div>
+				</div>
+				{{else}}
+				<div style="background: #2ecc71; padding: 8px; border-radius: 6px; border-left: 4px solid #27ae60;">
+					<div style="font-weight: bold; color: white;">✅ ANOMALY CLEAR</div>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<div style="color: #888; font-size: 11px;">
+				{{if ne .Koda2Error ""}}
+				<div style="background: #f39c12; padding: 8px; border-radius: 6px; color: white;">
+					⚠️ Error: {{.Koda2Error}}
+				</div>
+				{{else}}
+				<div>ℹ️ No Koda-2 features (use X-Koda2-Features header)</div>
+				{{end}}
+			</div>
+			{{end}}
+		</div>
+		{{end}}
+
 		<!-- Overall Status -->
 		<div style="padding: 16px;">
 			<div style="font-weight: bold; color: #74b9ff; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
@@ -225,7 +353,7 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 (function() {
 	const toggle = document.getElementById('netgoat-debug-toggle');
 	const panel = document.getElementById('netgoat-debug-panel');
-	
+
 	toggle.addEventListener('click', function() {
 		if (panel.style.display === 'none') {
 			panel.style.display = 'block';
@@ -234,7 +362,7 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 			panel.style.display = 'none';
 		}
 	});
-	
+
 	// Add animation
 	const style = document.createElement('style');
 	style.textContent = '@keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }';
@@ -266,21 +394,52 @@ func generateOverlayHTML(info *AnalysisInfo) string {
 		"WAFRuleName":   info.WAFRuleName,
 		"WAFBackground": getWAFBackground(info),
 
-		// AI
+		// AI (GoatAI)
 		"AIEnabled":          info.AIEnabled,
 		"AIChecked":          info.AIChecked,
 		"AILabel":            info.AILabel,
 		"AIScore":            info.AIScore,
 		"AIScoreDisplay":     fmt.Sprintf("%.1f%%", info.AIScore*100),
 		"AIScorePercent":     fmt.Sprintf("%.0f", info.AIScore*100),
-		"AIScoreColor":       getAIScoreColor(info.AIScore),
-		"AILabelColor":       getAILabelColor(info),
+		"AIScoreColor":       getScoreColor(info.AIScore),
+		"AILabelColor":       getLabelColor(info.AILabel, []string{"attack", "malicious", "anom"}),
 		"AIThreshold":        info.AIThreshold,
 		"AIThresholdDisplay": fmt.Sprintf("%.1f%%", info.AIThreshold*100),
 		"AIBlocked":          info.AIBlocked,
 		"AIError":            info.AIError,
 		"AIProcessingMs":     info.AIProcessingMs,
-		"AIBackground":       getAIBackground(info),
+		"AIBackground":       getModelBackground(info.AIBlocked, info.AIScore, info.AIThreshold),
+
+		// Koda-Waf
+		"KodaWafEnabled":      info.KodaWafEnabled,
+		"KodaWafChecked":      info.KodaWafChecked,
+		"KodaWafLabel":        info.KodaWafLabel,
+		"KodaWafAttackType":   info.KodaWafAttackType,
+		"KodaWafScore":        info.KodaWafScore,
+		"KodaWafScoreDisplay": fmt.Sprintf("%.1f%%", info.KodaWafScore*100),
+		"KodaWafScorePercent": fmt.Sprintf("%.0f", info.KodaWafScore*100),
+		"KodaWafScoreColor":   getScoreColor(info.KodaWafScore),
+		"KodaWafLabelColor":   getLabelColor(info.KodaWafLabel, []string{"sqli", "xss", "rfi", "lfi", "command", "attack"}),
+		"KodaWafThreshold":    info.KodaWafThreshold,
+		"KodaWafBlocked":      info.KodaWafBlocked,
+		"KodaWafError":        info.KodaWafError,
+		"KodaWafProcessingMs": info.KodaWafProcessingMs,
+		"KodaWafBackground":   getModelBackground(info.KodaWafBlocked, info.KodaWafScore, info.KodaWafThreshold),
+
+		// Koda-2
+		"Koda2Enabled":      info.Koda2Enabled,
+		"Koda2Checked":      info.Koda2Checked,
+		"Koda2Label":        info.Koda2Label,
+		"Koda2Score":        info.Koda2Score,
+		"Koda2ScoreDisplay": fmt.Sprintf("%.1f%%", info.Koda2Score*100),
+		"Koda2ScorePercent": fmt.Sprintf("%.0f", info.Koda2Score*100),
+		"Koda2ScoreColor":   getScoreColor(info.Koda2Score),
+		"Koda2LabelColor":   getLabelColor(info.Koda2Label, []string{"anom", "malicious", "attack", "threat"}),
+		"Koda2Threshold":    info.Koda2Threshold,
+		"Koda2Blocked":      info.Koda2Blocked,
+		"Koda2Error":        info.Koda2Error,
+		"Koda2ProcessingMs": info.Koda2ProcessingMs,
+		"Koda2Background":   getModelBackground(info.Koda2Blocked, info.Koda2Score, info.Koda2Threshold),
 	}
 
 	var buf bytes.Buffer
@@ -295,10 +454,10 @@ func getStatusColor(info *AnalysisInfo) string {
 	if !info.RequestAllowed {
 		return "#ff4757"
 	}
-	if info.AIBlocked || info.WAFBlocked {
+	if info.AIBlocked || info.WAFBlocked || info.KodaWafBlocked || info.Koda2Blocked {
 		return "#ff4757"
 	}
-	if info.AIScore > info.AIThreshold*0.7 {
+	if info.AIScore > info.AIThreshold*0.7 || info.KodaWafScore > info.KodaWafThreshold*0.7 || info.Koda2Score > info.Koda2Threshold*0.7 {
 		return "#ffa500"
 	}
 	return "#00ff88"
@@ -325,17 +484,17 @@ func getWAFBackground(info *AnalysisInfo) string {
 	return "transparent"
 }
 
-func getAIBackground(info *AnalysisInfo) string {
-	if info.AIBlocked {
+func getModelBackground(blocked bool, score, threshold float64) string {
+	if blocked {
 		return "rgba(255, 71, 87, 0.1)"
 	}
-	if info.AIScore > info.AIThreshold*0.7 {
+	if score > threshold*0.7 {
 		return "rgba(255, 165, 0, 0.1)"
 	}
 	return "rgba(46, 204, 113, 0.05)"
 }
 
-func getAIScoreColor(score float64) string {
+func getScoreColor(score float64) string {
 	if score >= 0.7 {
 		return "linear-gradient(90deg, #ff4757, #ff6348)"
 	}
@@ -348,12 +507,14 @@ func getAIScoreColor(score float64) string {
 	return "linear-gradient(90deg, #00d2d3, #1dd1a1)"
 }
 
-func getAILabelColor(info *AnalysisInfo) string {
-	label := strings.ToLower(info.AILabel)
-	if strings.Contains(label, "attack") || strings.Contains(label, "malicious") || strings.Contains(label, "anom") {
-		return "#ff4757"
+func getLabelColor(label string, dangerKeywords []string) string {
+	lab := strings.ToLower(label)
+	for _, kw := range dangerKeywords {
+		if strings.Contains(lab, kw) {
+			return "#ff4757"
+		}
 	}
-	if strings.Contains(label, "suspi") || strings.Contains(label, "warning") {
+	if strings.Contains(lab, "suspi") || strings.Contains(lab, "warning") {
 		return "#ffa502"
 	}
 	return "#00ff88"

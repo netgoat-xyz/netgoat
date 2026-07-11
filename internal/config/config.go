@@ -33,6 +33,26 @@ type Config struct {
 		FeatureHeader string  `yaml:"feature_header"` // Header name to read CSV from
 	} `yaml:"anomaly"`
 
+	// Koda-Waf: ML-enhanced WAF attack classification model.
+	KodaWaf struct {
+		Enabled       bool    `yaml:"enabled"`
+		Threshold     float64 `yaml:"threshold"`
+		ModelPath     string  `yaml:"model_path"`    // Path to smart_waf_model.pkl
+		ScalerPath    string  `yaml:"scaler_path"`   // Path to model_features.pkl
+		PythonScript  string  `yaml:"python_script"` // Path to koda_waf_server.py
+		FeatureHeader string  `yaml:"feature_header"`
+	} `yaml:"koda_waf"`
+
+	// Koda-2: next-generation anomaly detection model.
+	Koda2 struct {
+		Enabled       bool    `yaml:"enabled"`
+		Threshold     float64 `yaml:"threshold"`
+		ModelPath     string  `yaml:"model_path"`    // Path to koda2.keras
+		ScalerPath    string  `yaml:"scaler_path"`   // Path to koda2_scaler.pkl
+		PythonScript  string  `yaml:"python_script"` // Path to koda2_server.py
+		FeatureHeader string  `yaml:"feature_header"`
+	} `yaml:"koda_2"`
+
 	// Optional per-domain and per-path error pages. Values are file paths.
 	// If both domain and path match, path takes precedence by longest prefix.
 	ErrorPages struct {
