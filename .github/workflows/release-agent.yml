@@ -1,0 +1,179 @@
+name: Release Agent
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to publish, for example v0.1.0"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the GitHub release as a prerelease"
+        required: false
+        default: true
+        type: boolean
+      draft:
+        description: "Create the GitHub release as a draft"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-agent-${{ github.ref_name || inputs.tag_name }}
+  cancel-in-progress: false
+
+env:
+  CGO_ENABLED: "1"
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+
+jobs:
+  test:
+    name: Test Agent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential
+
+      - name: Test
+        run: go test ./...
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            cc: gcc
+            ext: ""
+            cgo_cflags: ""
+            cgo_ldflags: ""
+            setup: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential zip
+          - target: linux-arm64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            ext: ""
+            cgo_cflags: ""
+            cgo_ldflags: ""
+            setup: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu zip
+          - target: windows-amd64
+            runner: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            cc: x86_64-w64-mingw32-gcc
+            ext: ".exe"
+            cgo_cflags: ""
+            cgo_ldflags: ""
+            setup: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 zip
+          - target: darwin-amd64
+            runner: macos-13
+            goos: darwin
+            goarch: amd64
+            cc: clang
+            ext: ""
+            cgo_cflags: "-arch x86_64"
+            cgo_ldflags: "-arch x86_64"
+            setup: echo "macOS build tools are preinstalled"
+          - target: darwin-arm64
+            runner: macos-13
+            goos: darwin
+            goarch: arm64
+            cc: clang
+            ext: ""
+            cgo_cflags: "-arch arm64"
+            cgo_ldflags: "-arch arm64"
+            setup: echo "macOS build tools are preinstalled"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install build dependencies
+        run: ${{ matrix.setup }}
+
+      - name: Build agent
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          CGO_CFLAGS: ${{ matrix.cgo_cflags }}
+          CGO_LDFLAGS: ${{ matrix.cgo_ldflags }}
+        run: |
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -ldflags="-s -w -buildid=" \
+            -o "dist/netgoat-agent-${{ matrix.target }}${{ matrix.ext }}" \
+            .
+
+      - name: Package asset
+        run: ./.github/scripts/package-agent.sh "${{ matrix.target }}" "dist/netgoat-agent-${{ matrix.target }}${{ matrix.ext }}" dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: netgoat-agent-${{ matrix.target }}
+          path: |
+            dist/netgoat-agent-${{ matrix.target }}.tar.gz
+            dist/netgoat-agent-${{ matrix.target }}.tar.gz.sha256
+            dist/netgoat-agent-${{ matrix.target }}.zip
+            dist/netgoat-agent-${{ matrix.target }}.zip.sha256
+          if-no-files-found: ignore
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Render release notes
+        run: ./.github/scripts/render-release-notes.sh "${RELEASE_TAG}" release-content.md release-assets release-notes.md
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: NetGoat Agent ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          body_path: release-notes.md
+          files: release-assets/*
+          draft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || contains(env.RELEASE_TAG, '-') }}
+          fail_on_unmatched_files: true
+          make_latest: ${{ contains(env.RELEASE_TAG, '-') && 'false' || 'true' }}
