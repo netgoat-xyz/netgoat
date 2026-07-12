@@ -258,7 +258,11 @@ func main() {
 
 		if challengeStore.Verify(challengeID, answer, ip) {
 			log.Info().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verified successfully")
-			http.Redirect(w, r, r.Header.Get("Referer"), http.StatusFound)
+			redirectTo := r.Header.Get("Referer")
+			if redirectTo == "" {
+				redirectTo = "/"
+			}
+			http.Redirect(w, r, redirectTo, http.StatusFound)
 		} else {
 			log.Warn().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verification failed")
 			http.Error(w, "Verification failed. Please try again.", http.StatusForbidden)
@@ -311,8 +315,13 @@ func main() {
 				}
 				return
 			}
-			if authResult.ZeroTrustReq {
-				log.Debug().Str("user", authResult.Username).Msg("User requires zero-trust challenge")
+			if auth.RequireZeroTrustChallenge(authResult, database.IsZeroTrustEnabled(db), challengeStore.IsVerified(getClientIP(r))) {
+				analysisInfo.RequestAllowed = false
+				analysisInfo.BlockReason = "zero-trust verification required"
+				recordBlocked(metricsRecorder, "zero-trust")
+				log.Info().Str("user", authResult.Username).Str("ip", getClientIP(r)).Msg("Zero-trust challenge required")
+				writeZeroTrustChallenge(w, challengeStore, r)
+				return
 			}
 		}
 
@@ -693,6 +702,15 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(dynamicHTML))
+}
+
+func writeZeroTrustChallenge(w http.ResponseWriter, store *challenge.Store, r *http.Request) {
+	ip := getClientIP(r)
+	ch := store.Create(ip, r.UserAgent(), 50, challenge.ChallengeText)
+	html := challenge.RenderDynamicErrorPage(ch, http.StatusForbidden, "Zero-trust verification required")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(html))
 }
 
 func isHTML(b []byte) bool {
