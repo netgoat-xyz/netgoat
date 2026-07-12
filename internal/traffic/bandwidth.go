@@ -11,10 +11,13 @@ import (
 )
 
 type BandwidthLimiter struct {
-	mu      sync.Mutex
-	rate    float64
-	burst   float64
-	buckets map[string]*bucket
+	mu         sync.Mutex
+	rate       float64
+	burst      float64
+	buckets    map[string]*bucket
+	maxBuckets int
+	ttl        time.Duration
+	lastPrune  time.Time
 }
 
 func NewBandwidthLimiter(bytesPerSecond, burstBytes int) *BandwidthLimiter {
@@ -25,9 +28,11 @@ func NewBandwidthLimiter(bytesPerSecond, burstBytes int) *BandwidthLimiter {
 		burstBytes = bytesPerSecond
 	}
 	return &BandwidthLimiter{
-		rate:    float64(bytesPerSecond),
-		burst:   float64(burstBytes),
-		buckets: make(map[string]*bucket),
+		rate:       float64(bytesPerSecond),
+		burst:      float64(burstBytes),
+		buckets:    make(map[string]*bucket),
+		maxBuckets: defaultLimiterMaxBuckets,
+		ttl:        defaultLimiterBucketTTL,
 	}
 }
 
@@ -73,9 +78,11 @@ func (l *BandwidthLimiter) waitChunk(ctx context.Context, key string, bytes int)
 func (l *BandwidthLimiter) reserve(key string, bytes int, now time.Time) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.pruneLocked(now)
 
 	b, ok := l.buckets[key]
 	if !ok {
+		l.ensureCapacityLocked(now)
 		b = &bucket{tokens: l.burst, last: now}
 		l.buckets[key] = b
 	}
@@ -95,6 +102,36 @@ func (l *BandwidthLimiter) reserve(key string, bytes int, now time.Time) time.Du
 		return 0
 	}
 	return time.Duration((need-b.tokens)/l.rate*float64(time.Second)) + time.Millisecond
+}
+
+func (l *BandwidthLimiter) pruneLocked(now time.Time) {
+	if l.ttl <= 0 || now.Sub(l.lastPrune) < time.Minute {
+		return
+	}
+	for key, b := range l.buckets {
+		if now.Sub(b.last) > l.ttl {
+			delete(l.buckets, key)
+		}
+	}
+	l.lastPrune = now
+}
+
+func (l *BandwidthLimiter) ensureCapacityLocked(now time.Time) {
+	if l.maxBuckets <= 0 || len(l.buckets) < l.maxBuckets {
+		return
+	}
+	var oldestKey string
+	var oldestTime time.Time
+	for key, b := range l.buckets {
+		if oldestKey == "" || b.last.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = b.last
+		}
+	}
+	if oldestKey != "" {
+		delete(l.buckets, oldestKey)
+	}
+	l.lastPrune = now
 }
 
 type ThrottledReadCloser struct {

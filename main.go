@@ -496,7 +496,7 @@ func main() {
 			log.Info().Str("client", r.RemoteAddr).Str("host", host).Msg("WebSocket upgrade detected")
 		}
 
-		isCacheable := cacheStore != nil && r.Method == http.MethodGet && r.Header.Get("Upgrade") == ""
+		isCacheable := isRequestCacheableForSharedStore(cacheStore, r)
 		cacheKey := ""
 		if isCacheable {
 			cacheKey = cache.CacheKey(r)
@@ -543,6 +543,9 @@ func main() {
 				return nil
 			}
 			if res.StatusCode != http.StatusOK {
+				return nil
+			}
+			if !isSharedCacheableResponse(res) {
 				return nil
 			}
 
@@ -909,7 +912,7 @@ func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
 
 		addStreamAuthHeaders(req, apiKey)
 
-		log.Debug().Interface("headers", req.Header).Msg("Sending domains request headers")
+		log.Debug().Str("url", domainsURL).Msg("Sending domains request")
 		resp, err := http.DefaultClient.Do(req)
 		cancel()
 		if err != nil {
@@ -1082,6 +1085,60 @@ func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget 
 		return nil
 	}
 	return targets
+}
+
+func isRequestCacheableForSharedStore(store *cache.Store, r *http.Request) bool {
+	if store == nil || r == nil {
+		return false
+	}
+	if r.Method != http.MethodGet || r.Header.Get("Upgrade") != "" {
+		return false
+	}
+	if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+		return false
+	}
+	return true
+}
+
+func isSharedCacheableResponse(res *http.Response) bool {
+	if res == nil {
+		return false
+	}
+	if res.Header.Get("Set-Cookie") != "" {
+		return false
+	}
+	cacheControl := strings.ToLower(res.Header.Get("Cache-Control"))
+	if cacheControl == "" || !hasCacheDirective(cacheControl, "public") {
+		return false
+	}
+	for _, directive := range []string{"private", "no-store", "no-cache"} {
+		if hasCacheDirective(cacheControl, directive) {
+			return false
+		}
+	}
+	vary := strings.ToLower(strings.TrimSpace(res.Header.Get("Vary")))
+	if vary == "" {
+		return true
+	}
+	for _, part := range strings.Split(vary, ",") {
+		switch strings.TrimSpace(part) {
+		case "accept-encoding":
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func hasCacheDirective(header, directive string) bool {
+	for _, part := range strings.Split(header, ",") {
+		name := strings.TrimSpace(strings.SplitN(part, "=", 2)[0])
+		if name == directive {
+			return true
+		}
+	}
+	return false
 }
 
 func fetchAgentConfig(apiURL, apiKey string) (streaming.AgentConfigData, error) {

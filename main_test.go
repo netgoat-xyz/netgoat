@@ -9,6 +9,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"netgoat.xyz/agent/internal/cache"
 
 	"netgoat.xyz/agent/internal/challenge"
 )
@@ -117,3 +120,35 @@ func TestShouldInjectOverlaySkipsCompressedOrUnknownLength(t *testing.T) {
 	}
 }
 
+
+func TestSharedCacheRequiresPublicAnonymousRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	store := cache.NewStore(time.Minute, 10, 1024)
+	if !isRequestCacheableForSharedStore(store, req) {
+		t.Fatal("plain GET should be eligible for shared cache lookup")
+	}
+
+	req.Header.Set("Authorization", "Bearer secret")
+	if isRequestCacheableForSharedStore(store, req) {
+		t.Fatal("authorized request should not use shared cache")
+	}
+}
+
+func TestSharedCacheableResponseRejectsPrivateState(t *testing.T) {
+	res := &http.Response{Header: make(http.Header), StatusCode: http.StatusOK}
+	res.Header.Set("Cache-Control", "public, max-age=60")
+	if !isSharedCacheableResponse(res) {
+		t.Fatal("public response should be cacheable")
+	}
+
+	res.Header.Set("Set-Cookie", "session=abc")
+	if isSharedCacheableResponse(res) {
+		t.Fatal("Set-Cookie response should not be cacheable")
+	}
+
+	res.Header.Del("Set-Cookie")
+	res.Header.Set("Cache-Control", "private, max-age=60")
+	if isSharedCacheableResponse(res) {
+		t.Fatal("private response should not be cacheable")
+	}
+}

@@ -114,8 +114,9 @@ func (d *Detector) Predict(ctx context.Context, csv string) (*Prediction, error)
 		return nil, err
 	}
 
-	go func() {
-		line, err := d.stdout.ReadString('\n')
+	reader := d.stdout
+	go func(reader *bufio.Reader) {
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			done <- err
 			return
@@ -125,7 +126,7 @@ func (d *Detector) Predict(ctx context.Context, csv string) (*Prediction, error)
 			return
 		}
 		done <- nil
-	}()
+	}(reader)
 
 	timer := time.NewTimer(5 * time.Second)
 	defer timer.Stop()

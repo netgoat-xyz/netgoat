@@ -22,7 +22,7 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-agent-${{ github.ref_name || inputs.tag_name }}
@@ -39,6 +39,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -88,7 +90,7 @@ jobs:
             cgo_ldflags: ""
             setup: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 zip
           - target: darwin-amd64
-            runner: macos-13
+            runner: macos-15
             goos: darwin
             goarch: amd64
             cc: clang
@@ -97,7 +99,7 @@ jobs:
             cgo_ldflags: "-arch x86_64"
             setup: echo "macOS build tools are preinstalled"
           - target: darwin-arm64
-            runner: macos-13
+            runner: macos-15
             goos: darwin
             goarch: arm64
             cc: clang
@@ -109,6 +111,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -152,9 +156,13 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download assets
         uses: actions/download-artifact@v4

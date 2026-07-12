@@ -77,8 +77,12 @@ func InjectOverlay(htmlBody []byte, info *AnalysisInfo) []byte {
 
 	overlay := generateOverlayHTML(info)
 
-	// Inject before closing body tag
-	modifiedBody := strings.Replace(bodyStr, "</body>", overlay+"</body>", 1)
+	lowerBody := strings.ToLower(bodyStr)
+	closeIndex := strings.Index(lowerBody, "</body>")
+	if closeIndex < 0 {
+		return htmlBody
+	}
+	modifiedBody := bodyStr[:closeIndex] + overlay + bodyStr[closeIndex:]
 	return []byte(modifiedBody)
 }
 

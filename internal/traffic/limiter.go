@@ -14,16 +14,24 @@ var (
 )
 
 type RateLimiter struct {
-	mu      sync.Mutex
-	rate    float64
-	burst   float64
-	buckets map[string]*bucket
+	mu         sync.Mutex
+	rate       float64
+	burst      float64
+	buckets    map[string]*bucket
+	maxBuckets int
+	ttl        time.Duration
+	lastPrune  time.Time
 }
 
 type bucket struct {
 	tokens float64
 	last   time.Time
 }
+
+const (
+	defaultLimiterMaxBuckets = 10000
+	defaultLimiterBucketTTL  = 10 * time.Minute
+)
 
 func NewRateLimiter(requestsPerMinute, burst int) *RateLimiter {
 	if requestsPerMinute <= 0 {
@@ -33,9 +41,11 @@ func NewRateLimiter(requestsPerMinute, burst int) *RateLimiter {
 		burst = requestsPerMinute
 	}
 	return &RateLimiter{
-		rate:    float64(requestsPerMinute) / 60,
-		burst:   float64(burst),
-		buckets: make(map[string]*bucket),
+		rate:       float64(requestsPerMinute) / 60,
+		burst:      float64(burst),
+		buckets:    make(map[string]*bucket),
+		maxBuckets: defaultLimiterMaxBuckets,
+		ttl:        defaultLimiterBucketTTL,
 	}
 }
 
@@ -50,9 +60,11 @@ func (l *RateLimiter) allowAt(key string, now time.Time) bool {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.pruneLocked(now)
 
 	b, ok := l.buckets[key]
 	if !ok {
+		l.ensureCapacityLocked(now)
 		l.buckets[key] = &bucket{tokens: l.burst - 1, last: now}
 		return true
 	}
@@ -70,6 +82,36 @@ func (l *RateLimiter) allowAt(key string, now time.Time) bool {
 	}
 	b.tokens--
 	return true
+}
+
+func (l *RateLimiter) pruneLocked(now time.Time) {
+	if l.ttl <= 0 || now.Sub(l.lastPrune) < time.Minute {
+		return
+	}
+	for key, b := range l.buckets {
+		if now.Sub(b.last) > l.ttl {
+			delete(l.buckets, key)
+		}
+	}
+	l.lastPrune = now
+}
+
+func (l *RateLimiter) ensureCapacityLocked(now time.Time) {
+	if l.maxBuckets <= 0 || len(l.buckets) < l.maxBuckets {
+		return
+	}
+	var oldestKey string
+	var oldestTime time.Time
+	for key, b := range l.buckets {
+		if oldestKey == "" || b.last.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = b.last
+		}
+	}
+	if oldestKey != "" {
+		delete(l.buckets, oldestKey)
+	}
+	l.lastPrune = now
 }
 
 type Queue struct {
