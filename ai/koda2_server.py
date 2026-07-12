@@ -33,7 +33,7 @@ import numpy as np
 class Koda2Server:
     def __init__(self, model_path, scaler_path):
         try:
-            self.model = keras.saving.load_model(model_path)
+            self.model = keras.models.load_model(model_path)
             self.scaler = self._load_scaler(scaler_path)
         except Exception as e:
             print(f"ERROR: Failed to load Koda-2 model/scaler: {e}", file=sys.stderr)

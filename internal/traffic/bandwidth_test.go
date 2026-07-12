@@ -35,6 +35,28 @@ func TestBandwidthLimiterHonorsContext(t *testing.T) {
 	}
 }
 
+func TestBandwidthLimiterPrunesIdleBuckets(t *testing.T) {
+	limiter := NewBandwidthLimiter(1024, 1024)
+	limiter.ttl = time.Second
+	limiter.lastPrune = time.Unix(0, 0)
+
+	if wait := limiter.reserve("old", 1, time.Unix(100, 0)); wait > 0 {
+		t.Fatalf("old reserve wait = %s, want immediate", wait)
+	}
+	if wait := limiter.reserve("new", 1, time.Unix(200, 0)); wait > 0 {
+		t.Fatalf("new reserve wait = %s, want immediate", wait)
+	}
+
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if _, ok := limiter.buckets["old"]; ok {
+		t.Fatal("old bucket should be pruned")
+	}
+	if _, ok := limiter.buckets["new"]; !ok {
+		t.Fatal("new bucket should remain")
+	}
+}
+
 func TestThrottledReadCloser(t *testing.T) {
 	limiter := NewBandwidthLimiter(1024, 1024)
 	body := io.NopCloser(bytes.NewBufferString("hello"))

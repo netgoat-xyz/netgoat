@@ -53,7 +53,7 @@ bandwidth:
 
 # Runtime traffic counters. Prometheus format is also exposed at <path>.prom.
 metrics:
-  enabled: true
+  enabled: false
   path: "/__netgoat/metrics"
 
 # External API connection for configuration streaming

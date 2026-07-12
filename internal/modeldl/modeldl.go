@@ -34,6 +34,8 @@ func downloadIfMissing(f ModelFile) error {
 		}
 		log.Debug().Str("model", f.Label).Str("path", f.DestPath).Msg("Model file already exists, skipping download")
 		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect model destination %s: %w", f.DestPath, err)
 	}
 
 	dir := filepath.Dir(f.DestPath)

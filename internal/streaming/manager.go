@@ -129,10 +129,22 @@ type AgentConfigData struct {
 	Metrics      AgentMetricsConfig      `json:"metrics"`
 	KodaWaf      AgentModelConfig        `json:"koda_waf"`
 	Koda2        AgentModelConfig        `json:"koda_2"`
+	present      bool
 }
 
 func (c AgentConfigData) IsZero() bool {
-	return c == AgentConfigData{}
+	return !c.present && c == AgentConfigData{}
+}
+
+func (c *AgentConfigData) UnmarshalJSON(data []byte) error {
+	type agentConfigData AgentConfigData
+	var decoded agentConfigData
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*c = AgentConfigData(decoded)
+	c.present = true
+	return nil
 }
 
 type Message struct {

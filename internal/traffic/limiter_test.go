@@ -37,6 +37,50 @@ func TestRateLimiterSeparatesKeys(t *testing.T) {
 	}
 }
 
+func TestRateLimiterPrunesIdleBuckets(t *testing.T) {
+	limiter := NewRateLimiter(60, 1)
+	limiter.ttl = time.Second
+	limiter.lastPrune = time.Unix(0, 0)
+
+	if !limiter.allowAt("old", time.Unix(100, 0)) {
+		t.Fatal("old bucket initial request should pass")
+	}
+	if !limiter.allowAt("new", time.Unix(200, 0)) {
+		t.Fatal("new bucket request should pass")
+	}
+
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if _, ok := limiter.buckets["old"]; ok {
+		t.Fatal("old bucket should be pruned")
+	}
+	if _, ok := limiter.buckets["new"]; !ok {
+		t.Fatal("new bucket should remain")
+	}
+}
+
+func TestRateLimiterCapsBucketCount(t *testing.T) {
+	limiter := NewRateLimiter(60, 1)
+	limiter.maxBuckets = 1
+	now := time.Unix(100, 0)
+
+	if !limiter.allowAt("first", now) {
+		t.Fatal("first request should pass")
+	}
+	if !limiter.allowAt("second", now.Add(time.Second)) {
+		t.Fatal("second request should pass")
+	}
+
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if len(limiter.buckets) != 1 {
+		t.Fatalf("bucket count = %d, want 1", len(limiter.buckets))
+	}
+	if _, ok := limiter.buckets["second"]; !ok {
+		t.Fatal("newest bucket should be retained")
+	}
+}
+
 func TestQueueRejectsWhenFull(t *testing.T) {
 	queue := NewQueue(1, 0, time.Second)
 

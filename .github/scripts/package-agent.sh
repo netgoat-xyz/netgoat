@@ -34,10 +34,10 @@ fi
 
 if [[ "${target}" == windows-* ]]; then
   archive="${out_dir}/${name}.zip"
-  (cd "${out_dir}" && zip -qr "${name}.zip" "${name}")
+  (cd "${out_dir}/.pkg-${name}" && zip -qr "${archive}" "${name}")
 else
   archive="${out_dir}/${name}.tar.gz"
-  tar -C "${out_dir}" -czf "${archive}" "${name}"
+  tar -C "${out_dir}/.pkg-${name}" -czf "${archive}" "${name}"
 fi
 
 if command -v sha256sum >/dev/null 2>&1; then
