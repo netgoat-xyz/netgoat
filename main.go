@@ -28,6 +28,7 @@ import (
 	"netgoat.xyz/agent/internal/balancer"
 	"netgoat.xyz/agent/internal/cache"
 	"netgoat.xyz/agent/internal/challenge"
+	"netgoat.xyz/agent/internal/clientip"
 	"netgoat.xyz/agent/internal/config"
 	"netgoat.xyz/agent/internal/database"
 	"netgoat.xyz/agent/internal/debugoverlay"
@@ -41,6 +42,11 @@ import (
 	"netgoat.xyz/agent/internal/telemetry"
 	"netgoat.xyz/agent/internal/traffic"
 	"netgoat.xyz/agent/internal/waf"
+)
+
+var (
+	directClientAddressResolver, _ = clientip.New(nil)
+	clientAddressResolver          = directClientAddressResolver
 )
 
 func main() {
@@ -59,6 +65,10 @@ func main() {
 		cfg = &config.Config{}
 	} else {
 		log.Info().Bool("debug_logs", cfg.DebugLogs).Bool("honeypot", cfg.Honeypot).Bool("auth_enabled", cfg.Auth.Enabled).Msg("Loaded configuration")
+	}
+	clientAddressResolver, err = clientip.New(cfg.TrustedProxies)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Invalid trusted proxy configuration")
 	}
 
 	dbPath := cfg.DatabasePath()
@@ -600,6 +610,7 @@ func main() {
 			}
 		}
 
+		prepareForwardingHeaders(r, getClientIP(r))
 		if err := proxyHandler.Serve(w, r, routeMatch.RouteKey, targetURLs, func(res *http.Response) error {
 			if cfg.DebugOverlay && shouldInjectOverlay(res) {
 				body, err := io.ReadAll(res.Body)
@@ -822,16 +833,22 @@ func resolveAPIKey(cfg *config.Config) string {
 }
 
 func getClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
+	return clientAddressResolver.ClientIP(r)
+}
+
+func prepareForwardingHeaders(r *http.Request, resolvedClientIP string) {
+	if r == nil {
+		return
 	}
-	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx > 0 {
-		return r.RemoteAddr[:idx]
+	directPeer := directClientAddressResolver.ClientIP(r)
+	r.Header.Del("Forwarded")
+	r.Header.Del("X-Forwarded-Host")
+	r.Header.Del("X-Forwarded-Proto")
+	if resolvedClientIP == "" || resolvedClientIP == directPeer {
+		r.Header.Del("X-Forwarded-For")
+		return
 	}
-	return r.RemoteAddr
+	r.Header.Set("X-Forwarded-For", resolvedClientIP)
 }
 
 func safeLocalRedirect(raw, requestHost string) string {

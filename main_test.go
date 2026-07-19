@@ -214,6 +214,29 @@ func TestSafeLocalRedirect(t *testing.T) {
 	}
 }
 
+func TestPrepareForwardingHeadersRemovesSpoofedValues(t *testing.T) {
+	direct := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	direct.RemoteAddr = "203.0.113.8:4321"
+	direct.Header.Set("Forwarded", "for=198.51.100.7;proto=https")
+	direct.Header.Set("X-Forwarded-For", "198.51.100.7")
+	direct.Header.Set("X-Forwarded-Host", "attacker.test")
+	direct.Header.Set("X-Forwarded-Proto", "https")
+	prepareForwardingHeaders(direct, "203.0.113.8")
+	for _, header := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+		if got := direct.Header.Get(header); got != "" {
+			t.Errorf("%s survived direct-client sanitization: %q", header, got)
+		}
+	}
+
+	proxied := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	proxied.RemoteAddr = "10.0.0.2:443"
+	proxied.Header.Set("X-Forwarded-For", "untrusted garbage")
+	prepareForwardingHeaders(proxied, "198.51.100.9")
+	if got := proxied.Header.Get("X-Forwarded-For"); got != "198.51.100.9" {
+		t.Fatalf("canonical X-Forwarded-For = %q", got)
+	}
+}
+
 func TestLocalConfigSnapshotAppliesDocumentedRoutes(t *testing.T) {
 	db, err := database.Init(":memory:")
 	if err != nil {

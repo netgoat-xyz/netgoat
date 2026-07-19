@@ -12,7 +12,10 @@ type Config struct {
 	DebugLogs    bool `yaml:"debug_logs"`
 	DebugOverlay bool `yaml:"debug_overlay"`
 	Honeypot     bool `yaml:"honeypot"`
-	Auth         struct {
+	// TrustedProxies contains only socket peers that may supply Forwarded or
+	// X-Forwarded-For client address chains. Empty is the secure default.
+	TrustedProxies []string `yaml:"trusted_proxies"`
+	Auth           struct {
 		Enabled       bool   `yaml:"enabled"`
 		SessionSecret string `yaml:"session_secret"`
 	} `yaml:"auth"`
