@@ -103,14 +103,6 @@ koda_2:
 #   users with the cached configuration
 # - Connection attempts are retried with exponential backoff
 # - All route, WAF, and user configurations remain functional during outages
-# - SQLite primary is mirrored to a hot standby; corrupt primary auto-promotes standby
-# - If both DB copies fail, primary is recreated and rehydrated from the config snapshot
-
-# Local SQLite persistence / automatic data failover
-database:
-  path: "./database/proxy.db"
-  standby_path: "./database/proxy.standby.db"
-  backup_interval_seconds: 300  # 0 disables periodic backups (still backs up after config apply)
 
 routes:
   localhost:
@@ -124,3 +116,11 @@ health:
   interval_seconds: 2
   timeout_seconds: 1
   path: "/"
+
+# Opt-in operational telemetry. Disabled by default. When enabled, this sends
+# host/runtime details and aggregate proxy counters to your telemetry-server.
+telemetry:
+  enabled: false
+  endpoint: "http://127.0.0.1:9091/api"
+  ingest_key: "" # Must match TELEMETRY_INGEST_KEY on telemetry-server.
+  interval_seconds: 300

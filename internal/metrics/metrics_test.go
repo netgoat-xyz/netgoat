@@ -2,8 +2,10 @@ package metrics
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +16,7 @@ func TestRecorderSnapshot(t *testing.T) {
 	rec.RecordRequest()
 	rec.RecordCacheHit()
 	rec.RecordBlocked("rate limit")
-	rec.RecordProxyError()
+	rec.RecordProxyError(errors.New("dial tcp: connection refused"))
 	rec.RecordResponse(http.StatusTooManyRequests, 12, 20*time.Millisecond)
 
 	snap := rec.Snapshot()
@@ -30,8 +32,26 @@ func TestRecorderSnapshot(t *testing.T) {
 	if snap.BlockReasons["rate limit"] != 1 {
 		t.Fatalf("BlockReasons[rate limit] = %d, want 1", snap.BlockReasons["rate limit"])
 	}
+	if snap.ErrorStatusCodes["429"] != 1 {
+		t.Fatalf("ErrorStatusCodes[429] = %d, want 1", snap.ErrorStatusCodes["429"])
+	}
+	if len(snap.RecentErrors) == 0 {
+		t.Fatalf("RecentErrors is empty")
+	}
 	if snap.BytesWritten != 12 {
 		t.Fatalf("BytesWritten = %d, want 12", snap.BytesWritten)
+	}
+}
+
+func TestRecorderBoundsDistinctProxyErrors(t *testing.T) {
+	rec := NewRecorder()
+	for i := 0; i < maxTrackedErrors*2; i++ {
+		rec.RecordProxyError(errors.New("upstream failure " + strconv.Itoa(i)))
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if got := len(rec.errors); got > maxTrackedErrors+1 {
+		t.Fatalf("tracked error cardinality = %d", got)
 	}
 }
 

@@ -37,6 +37,7 @@ import (
 	"netgoat.xyz/agent/internal/metrics"
 	"netgoat.xyz/agent/internal/modeldl"
 	"netgoat.xyz/agent/internal/streaming"
+	"netgoat.xyz/agent/internal/telemetry"
 	"netgoat.xyz/agent/internal/traffic"
 	"netgoat.xyz/agent/internal/waf"
 )
@@ -278,6 +279,42 @@ func main() {
 
 	challengeStore := challenge.NewStore()
 	log.Info().Msg("Challenge system initialized")
+
+	telemetryClient := telemetry.NewClient(telemetry.Config{
+		Enabled:   cfg.Telemetry.Enabled,
+		Endpoint:  cfg.Telemetry.Endpoint,
+		IngestKey: cfg.Telemetry.IngestKey,
+		DataDir:   "./database",
+		Interval:  time.Duration(ifZeroInt(cfg.Telemetry.IntervalSeconds, 300)) * time.Second,
+		StatsFunc: func() telemetry.AppStats {
+			stats := telemetry.AppStats{}
+			db.QueryRow("SELECT COUNT(*) FROM routes WHERE active = 1").Scan(&stats.Routes)
+			db.QueryRow("SELECT COUNT(*) FROM users").Scan(&stats.Users)
+			if metricsRecorder != nil {
+				snap := metricsRecorder.Snapshot()
+				stats.Requests = snap.Requests
+				stats.Blocked = snap.Blocked
+				stats.ProxyErrors = snap.ProxyErrors
+				stats.TotalErrors = snap.Blocked + snap.ProxyErrors
+				stats.AvgLatency = snap.AverageLatencyMs
+				stats.StatusCodes = snap.StatusCodes
+				stats.BlockReasons = snap.BlockReasons
+				stats.ErrorStatusCodes = snap.ErrorStatusCodes
+				stats.RecentErrors = make([]telemetry.ErrorInfo, 0, len(snap.RecentErrors))
+				for _, info := range snap.RecentErrors {
+					stats.RecentErrors = append(stats.RecentErrors, telemetry.ErrorInfo{
+						Kind:     info.Kind,
+						Message:  info.Message,
+						Count:    info.Count,
+						LastSeen: info.LastSeen,
+					})
+				}
+			}
+			return stats
+		},
+	})
+	telemetryClient.Start()
+	defer telemetryClient.Stop()
 
 	http.HandleFunc("/__netgoat/verify", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -607,7 +644,7 @@ func main() {
 				status = http.StatusGatewayTimeout
 			}
 			if metricsRecorder != nil {
-				metricsRecorder.RecordProxyError()
+				metricsRecorder.RecordProxyError(err)
 			}
 			log.Error().Err(err).Int("status", status).Str("host", host).Str("path", r.URL.Path).Msg("Failed to proxy request to upstream")
 			writeError(w, pages, challengeStore, r, status, http.StatusText(status))
