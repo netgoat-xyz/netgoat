@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
@@ -137,8 +138,21 @@ func createSession(db *sql.DB, username string) string {
 }
 
 func HandleLogin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if r.Method == "GET" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(` <!doctype html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Zero-Trust Gateway</title><script src="https://cdn.tailwindcss.com"></script></head><body class="flex min-h-screen items-center justify-center bg-zinc-950 font-sans text-zinc-200"><div class="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl"><div class="mb-8 text-center"><div class="mb-4 inline-flex items-center"><img src="https://netgoat.sirv.com/Images/Public_Relations/netgoat_with_text.png" width="150" height="500" alt=""></div><h1 class="text-2xl font-bold tracking-tight text-white">Access Verification</h1><p class="mt-2 text-sm text-zinc-400">Continuous authentication active</p></div><form class="space-y-5" method="POST" action="/login"><div><label class="mb-1 block text-xs font-medium text-zinc-400 uppercase">Corporate ID</label><input placeholder="ducky" class="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 transition-all outline-none placeholder:text-zinc-600 focus:border-transparent focus:ring-2 focus:ring-indigo-500" name="username"/></div><div><label class="mb-1 block text-xs font-medium text-zinc-400 uppercase">Access Token</label><input type="password" placeholder="••••••••" class="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 transition-all outline-none placeholder:text-zinc-600 focus:border-transparent focus:ring-2 focus:ring-indigo-500" name="password" /></div><button type="submit" class="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white transition-all hover:bg-indigo-500 active:scale-[0.98]">Authorize Session</button></form><div class="mt-8 border-t border-zinc-800 pt-6 text-center"><p class="text-xs leading-relaxed text-zinc-500">By attempting access, you agree to the <br /><span class="text-indigo-400">Least Privilege Policy</span>. All actions logged.</p></div></div></body></html> `))
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid login request", http.StatusBadRequest)
 		return
 	}
 
@@ -169,8 +183,11 @@ func HandleLogin(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 		Name:     "auth_token",
 		Value:    token,
 		Path:     "/",
+		MaxAge:   24 * 60 * 60,
+		Expires:  time.Now().Add(24 * time.Hour).UTC(),
+		Secure:   r.TLS != nil,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 
 	http.Redirect(w, r, "/", http.StatusFound)

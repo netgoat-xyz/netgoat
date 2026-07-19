@@ -40,8 +40,11 @@ func TestHandleLoginCreatesValidSessionCookie(t *testing.T) {
 		if !cookie.HttpOnly {
 			t.Error("cookie should be HttpOnly")
 		}
-		if cookie.SameSite != http.SameSiteLaxMode {
-			t.Errorf("cookie SameSite = %v, want %v", cookie.SameSite, http.SameSiteLaxMode)
+		if cookie.SameSite != http.SameSiteStrictMode {
+			t.Errorf("cookie SameSite = %v, want %v", cookie.SameSite, http.SameSiteStrictMode)
+		}
+		if cookie.MaxAge != 24*60*60 {
+			t.Errorf("cookie MaxAge = %d, want one day", cookie.MaxAge)
 		}
 	}
 	if token == "" {

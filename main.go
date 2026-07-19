@@ -329,10 +329,7 @@ func main() {
 
 		if challengeStore.Verify(challengeID, answer, ip) {
 			log.Info().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verified successfully")
-			redirectTo := r.Header.Get("Referer")
-			if redirectTo == "" {
-				redirectTo = "/"
-			}
+			redirectTo := safeLocalRedirect(r.Header.Get("Referer"), r.Host)
 			http.Redirect(w, r, redirectTo, http.StatusFound)
 		} else {
 			log.Warn().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verification failed")
@@ -835,6 +832,20 @@ func getClientIP(r *http.Request) string {
 		return r.RemoteAddr[:idx]
 	}
 	return r.RemoteAddr
+}
+
+func safeLocalRedirect(raw, requestHost string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Path == "" || !strings.HasPrefix(parsed.Path, "/") || strings.HasPrefix(parsed.Path, "//") {
+		return "/"
+	}
+	if parsed.Host != "" && !strings.EqualFold(parsed.Host, requestHost) {
+		return "/"
+	}
+	if parsed.Scheme != "" && parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "/"
+	}
+	return parsed.RequestURI()
 }
 
 func rateLimitKey(r *http.Request, keyMode string) string {

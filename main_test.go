@@ -196,6 +196,24 @@ func TestSharedCacheTTLHonorsResponseDirectives(t *testing.T) {
 	}
 }
 
+func TestSafeLocalRedirect(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want string
+	}{
+		{"", "/"},
+		{"/dashboard?tab=one", "/dashboard?tab=one"},
+		{"https://example.test/path?q=1", "/path?q=1"},
+		{"https://attacker.test/phish", "/"},
+		{"//attacker.test/phish", "/"},
+		{"javascript:alert(1)", "/"},
+	} {
+		if got := safeLocalRedirect(tc.raw, "example.test"); got != tc.want {
+			t.Errorf("safeLocalRedirect(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
 func TestLocalConfigSnapshotAppliesDocumentedRoutes(t *testing.T) {
 	db, err := database.Init(":memory:")
 	if err != nil {
