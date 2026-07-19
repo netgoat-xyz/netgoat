@@ -97,6 +97,10 @@ func main() {
 		}
 		applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
 	}
+	wafEngine := waf.NewEngine()
+	if err := wafEngine.Reload(db); err != nil {
+		log.Error().Err(err).Msg("Failed to compile initial WAF rules")
+	}
 
 	if backupEvery := cfg.DatabaseBackupIntervalSeconds(); backupEvery > 0 {
 		startDatabaseBackupLoop(db, standbyPath, time.Duration(backupEvery)*time.Second)
@@ -142,7 +146,7 @@ func main() {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
 
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -490,7 +494,7 @@ func main() {
 		}
 
 		analysisInfo.WAFChecked = true
-		block, ruleName := waf.Check(db, r, cfg.DebugLogs)
+		block, ruleName := wafEngine.Check(r, cfg.DebugLogs)
 		if block {
 			analysisInfo.WAFBlocked = true
 			analysisInfo.WAFRuleName = ruleName
@@ -1389,7 +1393,7 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1401,6 +1405,9 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 		if err := applySnapshotToDB(db, mergeConfigSnapshots(local, snap)); err != nil {
 			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to apply config snapshot atomically")
 			continue
+		}
+		if err := wafEngine.Reload(db); err != nil {
+			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload WAF rules")
 		}
 		if healthChecksEnabled {
 			syncHealthTargets(db, healthWorker)
@@ -1527,10 +1534,13 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
 		}
 	}
 	rulesApplied := 0
-	for _, rule := range snap.WAFRules {
-		name := strings.TrimSpace(rule.Name)
+	for key, rule := range snap.WAFRules {
+		name := ifEmpty(strings.TrimSpace(rule.Name), strings.TrimSpace(key))
 		if name == "" || strings.TrimSpace(rule.Expression) == "" {
 			return errors.New("WAF rule name and expression are required")
+		}
+		if err := waf.ValidateExpression(rule.Expression); err != nil {
+			return fmt.Errorf("validate WAF rule %q: %w", name, err)
 		}
 		if _, err := tx.Exec(`INSERT INTO waf_rules (name, expression, action, priority) VALUES (?, ?, ?, ?)`,
 			name, rule.Expression, ifEmpty(strings.ToUpper(strings.TrimSpace(rule.Action)), "BLOCK"), rule.Priority); err != nil {

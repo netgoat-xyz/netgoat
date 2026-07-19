@@ -15,7 +15,6 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to open in-memory db: %v", err)
 	}
 	db.SetMaxOpenConns(1)
-	
 
 	// Create the WAF rules table schema
 	_, err = db.Exec(`CREATE TABLE waf_rules (
@@ -123,5 +122,41 @@ func TestWAFCheck(t *testing.T) {
 				t.Errorf("Expected rule triggered: %s, got: %s", tc.expectedRule, ruleName)
 			}
 		})
+	}
+}
+
+func TestEngineReloadsRulesAtomicallyAndHonorsAllow(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`DELETE FROM waf_rules`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO waf_rules (name, expression, action, priority) VALUES
+		('allow health', 'Host == "api.example.test" && Path == "/health"', 'ALLOW', 100),
+		('block api', 'Host == "api.example.test"', 'BLOCK', 10)`); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := NewEngine()
+	if err := engine.Reload(db); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	health := httptest.NewRequest("GET", "http://api.example.test/health", nil)
+	if blocked, rule := engine.Check(health, false); blocked || rule != "allow health" {
+		t.Fatalf("health decision blocked/rule = %v/%q", blocked, rule)
+	}
+	private := httptest.NewRequest("GET", "http://api.example.test/private", nil)
+	if blocked, rule := engine.Check(private, false); !blocked || rule != "block api" {
+		t.Fatalf("private decision blocked/rule = %v/%q", blocked, rule)
+	}
+
+	if _, err := db.Exec(`UPDATE waf_rules SET expression = 'not valid expr ???' WHERE name = 'block api'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Reload(db); err == nil {
+		t.Fatal("invalid replacement should fail to compile")
+	}
+	if blocked, rule := engine.Check(private, false); !blocked || rule != "block api" {
+		t.Fatalf("failed reload replaced live rules: %v/%q", blocked, rule)
 	}
 }
