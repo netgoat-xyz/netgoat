@@ -56,23 +56,35 @@ func main() {
 		log.Info().Bool("debug_logs", cfg.DebugLogs).Bool("honeypot", cfg.Honeypot).Bool("auth_enabled", cfg.Auth.Enabled).Msg("Loaded configuration")
 	}
 
-	if err := os.MkdirAll("./database", 0755); err != nil {
+	dbPath := cfg.DatabasePath()
+	standbyPath := cfg.DatabaseStandbyPath()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		log.Fatal().Err(err).Msg("Failed to create database directory")
 	}
 
-	db, err := database.Init("./database/proxy.db")
+	db, recovered, err := database.OpenWithFailover(dbPath, standbyPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize database")
 	}
 	defer db.Close()
+	if recovered {
+		log.Info().Str("primary", dbPath).Str("standby", standbyPath).Msg("Database recovered from standby")
+	}
 
-	streamMgr := streaming.NewManager("./database/config-snapshot.json")
+	snapshotPath := filepath.Join(filepath.Dir(dbPath), "config-snapshot.json")
+	streamMgr := streaming.NewManager(snapshotPath)
 	defer streamMgr.Close()
 
 	log.Info().Msg("Applying initial configuration from snapshot")
 	initialSnap := streamMgr.GetSnapshot()
 	applySnapshotToDB(db, initialSnap)
+	refreshDatabaseStandby(db, standbyPath)
 	applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
+
+	if backupEvery := cfg.DatabaseBackupIntervalSeconds(); backupEvery > 0 {
+		startDatabaseBackupLoop(db, standbyPath, time.Duration(backupEvery)*time.Second)
+		log.Info().Int("interval_seconds", backupEvery).Str("standby", standbyPath).Msg("Periodic database standby backups enabled")
+	}
 
 	healthInterval := time.Duration(ifZeroInt(cfg.Health.IntervalSeconds, 10)) * time.Second
 	healthTimeout := time.Duration(ifZeroInt(cfg.Health.TimeoutSeconds, 3)) * time.Second
@@ -113,7 +125,7 @@ func main() {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
 
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, standbyPath)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -1247,7 +1259,7 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, standbyPath string) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1257,10 +1269,35 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 			continue
 		}
 		applySnapshotToDB(db, snap)
+		refreshDatabaseStandby(db, standbyPath)
 		if healthChecksEnabled {
 			syncHealthTargets(db, healthWorker)
 		}
 	}
+}
+
+func refreshDatabaseStandby(db *sql.DB, standbyPath string) {
+	if standbyPath == "" {
+		return
+	}
+	if err := database.BackupTo(db, standbyPath); err != nil {
+		log.Warn().Err(err).Str("path", standbyPath).Msg("Failed to update database standby")
+		return
+	}
+	log.Debug().Str("path", standbyPath).Msg("Database standby updated")
+}
+
+func startDatabaseBackupLoop(db *sql.DB, standbyPath string, interval time.Duration) {
+	if db == nil || standbyPath == "" || interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			refreshDatabaseStandby(db, standbyPath)
+		}
+	}()
 }
 
 func syncHealthTargets(db *sql.DB, worker *health.Worker) {

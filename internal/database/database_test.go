@@ -2,6 +2,8 @@ package database
 
 import (
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -75,5 +77,105 @@ func TestGetRouteTargetsRegexDomain(t *testing.T) {
 	}
 	if got := match.Targets[0].URL; got != "http://regex" {
 		t.Fatalf("target = %s, want http://regex", got)
+	}
+}
+
+func TestBackupToAndOpenWithFailoverPromotesStandby(t *testing.T) {
+	dir := t.TempDir()
+	primary := filepath.Join(dir, "proxy.db")
+	standby := filepath.Join(dir, "proxy.standby.db")
+
+	db, err := Init(primary)
+	if err != nil {
+		t.Fatalf("Init primary failed: %v", err)
+	}
+	insertRoute(t, db, "domain", "failover.example.test", "http://failover-target")
+	if err := BackupTo(db, standby); err != nil {
+		t.Fatalf("BackupTo failed: %v", err)
+	}
+	_ = db.Close()
+
+	if err := os.WriteFile(primary, []byte("this is not a sqlite database"), 0644); err != nil {
+		t.Fatalf("corrupt primary: %v", err)
+	}
+	_ = os.Remove(primary + "-wal")
+	_ = os.Remove(primary + "-shm")
+
+	recoveredDB, recovered, err := OpenWithFailover(primary, standby)
+	if err != nil {
+		t.Fatalf("OpenWithFailover failed: %v", err)
+	}
+	t.Cleanup(func() { _ = recoveredDB.Close() })
+	if !recovered {
+		t.Fatal("expected recovered=true after promoting standby")
+	}
+
+	match, err := GetRouteTargets(recoveredDB, "failover.example.test", "/")
+	if err != nil {
+		t.Fatalf("GetRouteTargets failed: %v", err)
+	}
+	if got := match.Targets[0].URL; got != "http://failover-target" {
+		t.Fatalf("target = %s, want http://failover-target", got)
+	}
+}
+
+func TestOpenWithFailoverRecreatesWhenPrimaryAndStandbyUnusable(t *testing.T) {
+	dir := t.TempDir()
+	primary := filepath.Join(dir, "proxy.db")
+	standby := filepath.Join(dir, "proxy.standby.db")
+
+	if err := os.WriteFile(primary, []byte("corrupt-primary"), 0644); err != nil {
+		t.Fatalf("write primary: %v", err)
+	}
+	if err := os.WriteFile(standby, []byte("corrupt-standby"), 0644); err != nil {
+		t.Fatalf("write standby: %v", err)
+	}
+
+	db, recovered, err := OpenWithFailover(primary, standby)
+	if err != nil {
+		t.Fatalf("OpenWithFailover failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if recovered {
+		t.Fatal("expected recovered=false when recreating empty primary")
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM routes`).Scan(&count); err != nil {
+		t.Fatalf("query routes: %v", err)
+	}
+	if count == 0 {
+		t.Fatal("recreated database should include seeded defaults")
+	}
+}
+
+func TestBackupToCreatesOpenableCopy(t *testing.T) {
+	dir := t.TempDir()
+	primary := filepath.Join(dir, "proxy.db")
+	standby := filepath.Join(dir, "proxy.standby.db")
+
+	db, err := Init(primary)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	insertRoute(t, db, "domain", "backup.example.test", "http://backup-target")
+
+	if err := BackupTo(db, standby); err != nil {
+		t.Fatalf("BackupTo failed: %v", err)
+	}
+
+	standbyDB, err := Init(standby)
+	if err != nil {
+		t.Fatalf("Init standby failed: %v", err)
+	}
+	t.Cleanup(func() { _ = standbyDB.Close() })
+
+	match, err := GetRouteTargets(standbyDB, "backup.example.test", "/")
+	if err != nil {
+		t.Fatalf("GetRouteTargets failed: %v", err)
+	}
+	if got := match.Targets[0].URL; got != "http://backup-target" {
+		t.Fatalf("target = %s, want http://backup-target", got)
 	}
 }
