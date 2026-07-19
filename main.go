@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -627,12 +628,16 @@ func main() {
 			if !isSharedCacheableResponse(res) {
 				return nil
 			}
+			responseTTL, ok := sharedCacheTTL(res.Header.Get("Cache-Control"), cacheStore.TTL())
+			if !ok {
+				return nil
+			}
 
 			if !cfg.DebugOverlay || !strings.Contains(res.Header.Get("Content-Type"), "text/html") {
 				status := res.StatusCode
 				header := res.Header.Clone()
 				res.Body = cache.CaptureOnEOF(res.Body, cacheStore.MaxBodyBytes(), func(body []byte) {
-					cacheStore.Set(cacheKey, status, header, body)
+					cacheStore.SetWithTTL(cacheKey, status, header, body, responseTTL)
 				})
 				res.Header.Set("X-Cache", "MISS")
 			}
@@ -1298,6 +1303,16 @@ func isRequestCacheableForSharedStore(store *cache.Store, r *http.Request) bool 
 	if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
 		return false
 	}
+	for _, header := range []string{"Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"} {
+		if r.Header.Get(header) != "" {
+			return false
+		}
+	}
+	requestCacheControl := strings.ToLower(r.Header.Get("Cache-Control"))
+	if hasCacheDirective(requestCacheControl, "no-cache") || hasCacheDirective(requestCacheControl, "no-store") ||
+		hasCacheDirective(requestCacheControl, "max-age") || strings.EqualFold(strings.TrimSpace(r.Header.Get("Pragma")), "no-cache") {
+		return false
+	}
 	return true
 }
 
@@ -1330,6 +1345,30 @@ func isSharedCacheableResponse(res *http.Response) bool {
 		}
 	}
 	return true
+}
+
+func sharedCacheTTL(cacheControl string, maximum time.Duration) (time.Duration, bool) {
+	if maximum <= 0 {
+		return 0, false
+	}
+	for _, preferred := range []string{"s-maxage", "max-age"} {
+		for _, part := range strings.Split(cacheControl, ",") {
+			pieces := strings.SplitN(strings.TrimSpace(part), "=", 2)
+			if len(pieces) != 2 || !strings.EqualFold(pieces[0], preferred) {
+				continue
+			}
+			seconds, err := strconv.ParseInt(strings.Trim(strings.TrimSpace(pieces[1]), `"`), 10, 64)
+			if err != nil || seconds <= 0 {
+				return 0, false
+			}
+			ttl := time.Duration(seconds) * time.Second
+			if ttl < maximum {
+				return ttl, true
+			}
+			return maximum, true
+		}
+	}
+	return maximum, true
 }
 
 func hasCacheDirective(header, directive string) bool {
