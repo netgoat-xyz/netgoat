@@ -82,10 +82,16 @@ func main() {
 	defer streamMgr.Close()
 
 	log.Info().Msg("Applying initial configuration from snapshot")
+	localSnap := localConfigSnapshot(cfg)
+	if len(localSnap.Routes) > 0 {
+		localSnap.ZeroTrustEnabled = database.IsZeroTrustEnabled(db)
+		applySnapshotToDB(db, localSnap)
+	}
 	initialSnap := streamMgr.GetSnapshot()
-	applySnapshotToDB(db, initialSnap)
-	refreshDatabaseStandby(db, standbyPath)
-	applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
+	if snapshotHasContent(initialSnap) {
+		applySnapshotToDB(db, initialSnap)
+		applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
+	}
 
 	if backupEvery := cfg.DatabaseBackupIntervalSeconds(); backupEvery > 0 {
 		startDatabaseBackupLoop(db, standbyPath, time.Duration(backupEvery)*time.Second)
@@ -1119,6 +1125,60 @@ func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget 
 		return nil
 	}
 	return targets
+}
+
+func localConfigSnapshot(cfg *config.Config) *streaming.ConfigSnapshot {
+	snapshot := &streaming.ConfigSnapshot{
+		Timestamp:   time.Now(),
+		Routes:      make(map[string]streaming.RouteData),
+		WAFRules:    make(map[string]streaming.WAFRuleData),
+		Users:       []streaming.UserData{},
+		UserDomains: []streaming.UserDomainData{},
+	}
+	if cfg == nil {
+		return snapshot
+	}
+
+	for key, route := range cfg.Routes {
+		key = strings.TrimSpace(key)
+		if key == "" || !route.IsActive() {
+			continue
+		}
+		targets := make([]streaming.RouteTarget, 0, len(route.Targets)+1)
+		if target := strings.TrimSpace(route.Target); target != "" {
+			targets = append(targets, streaming.RouteTarget{URL: target, HealthCheck: "http"})
+		}
+		for _, target := range route.Targets {
+			targetURL := strings.TrimSpace(target.URL)
+			if targetURL == "" {
+				continue
+			}
+			check := strings.ToLower(strings.TrimSpace(target.HealthCheck))
+			if check == "" {
+				check = "http"
+			}
+			targets = append(targets, streaming.RouteTarget{URL: targetURL, HealthCheck: check})
+		}
+		if len(targets) == 0 {
+			log.Warn().Str("route", key).Msg("Ignoring local route without an upstream target")
+			continue
+		}
+		snapshot.Routes[key] = streaming.RouteData{
+			Type:           ifEmpty(strings.ToLower(strings.TrimSpace(route.Type)), "domain"),
+			Targets:        targets,
+			CertificatePEM: route.CertificatePEM,
+			PrivateKeyPEM:  route.PrivateKeyPEM,
+		}
+	}
+	return snapshot
+}
+
+func snapshotHasContent(snapshot *streaming.ConfigSnapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	return snapshot.Version > 0 || len(snapshot.Routes) > 0 || len(snapshot.WAFRules) > 0 ||
+		len(snapshot.Users) > 0 || len(snapshot.UserDomains) > 0 || !snapshot.AgentConfig.IsZero()
 }
 
 func isRequestCacheableForSharedStore(store *cache.Store, r *http.Request) bool {
