@@ -2,10 +2,7 @@ package database
 
 import (
 	"database/sql"
-	"fmt"
-	"io"
-	"os"
-	"path/filepath"
+	"net"
 	"regexp"
 	"strings"
 	"time"
@@ -455,7 +452,7 @@ func findRouteByDomain(db *sql.DB, domain string) (int, string, string, string, 
 	err := db.QueryRow(`
 		SELECT id, target_url, COALESCE(certificate_pem, ''), COALESCE(private_key_pem, '')
 		FROM routes
-		WHERE route_type = 'domain' AND domain = ? AND active = 1
+		WHERE route_type = 'domain' AND domain = ? COLLATE NOCASE AND active = 1
 		LIMIT 1`, domain).Scan(&routeID, &targetURL, &certPem, &keyPem)
 	return routeID, targetURL, certPem, keyPem, err
 }
@@ -541,21 +538,21 @@ func wildcardDomainMatch(pattern, domain string) bool {
 	return true
 }
 
-func findRouteByPath(db *sql.DB, path string) (int, string, error) {
+func findRouteByPath(db *sql.DB, path string) (int, string, string, error) {
 	var routeID int
-	var targetURL string
+	var targetURL, pathPrefix string
 	err := db.QueryRow(`
-		SELECT id, target_url FROM routes
+		SELECT id, target_url, path_prefix FROM routes
 		WHERE route_type = 'path' AND ? LIKE path_prefix || '%' AND active = 1
 		ORDER BY LENGTH(path_prefix) DESC
-		LIMIT 1`, path).Scan(&routeID, &targetURL)
-	return routeID, targetURL, err
+		LIMIT 1`, path).Scan(&routeID, &targetURL, &pathPrefix)
+	return routeID, targetURL, pathPrefix, err
 }
 
 // GetRouteTargets resolves a route and returns all configured upstream targets.
 func GetRouteTargets(db *sql.DB, domain, path string) (*RouteMatch, error) {
 	if domain != "" {
-		domain = strings.Split(domain, ":")[0]
+		domain = normalizeDomain(domain)
 		routeID, fallbackURL, certPem, keyPem, err := findRouteByDomain(db, domain)
 		if err == nil {
 			targets, err := loadRouteTargets(db, routeID)
@@ -600,7 +597,7 @@ func GetRouteTargets(db *sql.DB, domain, path string) (*RouteMatch, error) {
 	}
 
 	if path != "" {
-		routeID, fallbackURL, err := findRouteByPath(db, path)
+		routeID, fallbackURL, pathPrefix, err := findRouteByPath(db, path)
 		if err == nil {
 			targets, err := loadRouteTargets(db, routeID)
 			if err != nil {
@@ -611,7 +608,7 @@ func GetRouteTargets(db *sql.DB, domain, path string) (*RouteMatch, error) {
 			}
 			if len(targets) > 0 {
 				return &RouteMatch{
-					RouteKey: "path:" + path,
+					RouteKey: "path:" + pathPrefix,
 					Targets:  targets,
 				}, nil
 			}
@@ -622,6 +619,16 @@ func GetRouteTargets(db *sql.DB, domain, path string) (*RouteMatch, error) {
 
 	log.Warn().Str("domain", domain).Str("path", path).Msg("No route found for domain or path")
 	return nil, sql.ErrNoRows
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	if host, _, err := net.SplitHostPort(domain); err == nil {
+		domain = host
+	} else {
+		domain = strings.TrimPrefix(strings.TrimSuffix(domain, "]"), "[")
+	}
+	return strings.ToLower(strings.TrimSuffix(domain, "."))
 }
 
 // SetRouteTargets replaces upstream targets for a route.
