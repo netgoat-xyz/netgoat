@@ -134,6 +134,26 @@ func TestSharedCacheRequiresPublicAnonymousRequest(t *testing.T) {
 	if isRequestCacheableForSharedStore(store, req) {
 		t.Fatal("authorized request should not use shared cache")
 	}
+
+	for _, tc := range []struct {
+		name   string
+		header string
+		value  string
+	}{
+		{"range", "Range", "bytes=0-10"},
+		{"conditional", "If-None-Match", `"etag"`},
+		{"request no-cache", "Cache-Control", "no-cache"},
+		{"request max-age", "Cache-Control", "max-age=0"},
+		{"legacy no-cache", "Pragma", "no-cache"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+			candidate.Header.Set(tc.header, tc.value)
+			if isRequestCacheableForSharedStore(store, candidate) {
+				t.Fatalf("request with %s should bypass shared cache", tc.header)
+			}
+		})
+	}
 }
 
 func TestSharedCacheableResponseRejectsPrivateState(t *testing.T) {
@@ -152,6 +172,27 @@ func TestSharedCacheableResponseRejectsPrivateState(t *testing.T) {
 	res.Header.Set("Cache-Control", "private, max-age=60")
 	if isSharedCacheableResponse(res) {
 		t.Fatal("private response should not be cacheable")
+	}
+}
+
+func TestSharedCacheTTLHonorsResponseDirectives(t *testing.T) {
+	maximum := time.Minute
+	for _, tc := range []struct {
+		control string
+		want    time.Duration
+		ok      bool
+	}{
+		{"public, max-age=5", 5 * time.Second, true},
+		{"public, max-age=120", maximum, true},
+		{"public, max-age=60, s-maxage=2", 2 * time.Second, true},
+		{"public", maximum, true},
+		{"public, max-age=0", 0, false},
+		{"public, max-age=invalid", 0, false},
+	} {
+		got, ok := sharedCacheTTL(tc.control, maximum)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("sharedCacheTTL(%q) = %s/%v, want %s/%v", tc.control, got, ok, tc.want, tc.ok)
+		}
 	}
 }
 

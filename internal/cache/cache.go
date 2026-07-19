@@ -83,8 +83,20 @@ func (s *Store) Get(key string) *Entry {
 
 // Set inserts or updates a cache entry.
 func (s *Store) Set(key string, status int, header http.Header, body []byte) {
+	s.SetWithTTL(key, status, header, body, s.ttl)
+}
+
+// SetWithTTL inserts an entry whose lifetime cannot exceed the configured
+// store TTL. A non-positive response TTL is intentionally not cached.
+func (s *Store) SetWithTTL(key string, status int, header http.Header, body []byte, ttl time.Duration) {
 	if len(body) > s.maxBodyBytes {
 		return
+	}
+	if ttl <= 0 {
+		return
+	}
+	if ttl > s.ttl {
+		ttl = s.ttl
 	}
 
 	s.mu.Lock()
@@ -100,7 +112,7 @@ func (s *Store) Set(key string, status int, header http.Header, body []byte) {
 			status:  status,
 			header:  cloneHeader(header),
 			body:    append([]byte(nil), body...),
-			expires: time.Now().Add(s.ttl),
+			expires: time.Now().Add(ttl),
 		}
 		return
 	}
@@ -110,7 +122,7 @@ func (s *Store) Set(key string, status int, header http.Header, body []byte) {
 		status:  status,
 		header:  cloneHeader(header),
 		body:    append([]byte(nil), body...),
-		expires: time.Now().Add(s.ttl),
+		expires: time.Now().Add(ttl),
 	}
 	ele := s.ll.PushFront(ent)
 	s.items[key] = ele
@@ -118,6 +130,14 @@ func (s *Store) Set(key string, status int, header http.Header, body []byte) {
 	if s.ll.Len() > s.maxEntries {
 		s.removeOldest()
 	}
+}
+
+// TTL returns the maximum lifetime of an entry in the store.
+func (s *Store) TTL() time.Duration {
+	if s == nil {
+		return 0
+	}
+	return s.ttl
 }
 
 func (s *Store) removeOldest() {
