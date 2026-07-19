@@ -62,6 +62,12 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		log.Fatal().Err(err).Msg("Failed to create database directory")
 	}
+	// Keep the historical snapshot location stable so custom database.path values
+	// do not orphan an existing ./database/config-snapshot.json.
+	const snapshotPath = "./database/config-snapshot.json"
+	if err := os.MkdirAll(filepath.Dir(snapshotPath), 0755); err != nil {
+		log.Fatal().Err(err).Msg("Failed to create config snapshot directory")
+	}
 
 	db, recovered, err := database.OpenWithFailover(dbPath, standbyPath)
 	if err != nil {
@@ -72,7 +78,6 @@ func main() {
 		log.Info().Str("primary", dbPath).Str("standby", standbyPath).Msg("Database recovered from standby")
 	}
 
-	snapshotPath := filepath.Join(filepath.Dir(dbPath), "config-snapshot.json")
 	streamMgr := streaming.NewManager(snapshotPath)
 	defer streamMgr.Close()
 

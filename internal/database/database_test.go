@@ -179,3 +179,62 @@ func TestBackupToCreatesOpenableCopy(t *testing.T) {
 		t.Fatalf("target = %s, want http://backup-target", got)
 	}
 }
+
+func TestBackupToOverwritesExistingStandby(t *testing.T) {
+	dir := t.TempDir()
+	primary := filepath.Join(dir, "proxy.db")
+	standby := filepath.Join(dir, "proxy.standby.db")
+
+	db, err := Init(primary)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := BackupTo(db, standby); err != nil {
+		t.Fatalf("first BackupTo failed: %v", err)
+	}
+	insertRoute(t, db, "domain", "second.example.test", "http://second-target")
+	if err := BackupTo(db, standby); err != nil {
+		t.Fatalf("second BackupTo (overwrite) failed: %v", err)
+	}
+
+	standbyDB, err := Init(standby)
+	if err != nil {
+		t.Fatalf("Init standby failed: %v", err)
+	}
+	t.Cleanup(func() { _ = standbyDB.Close() })
+
+	match, err := GetRouteTargets(standbyDB, "second.example.test", "/")
+	if err != nil {
+		t.Fatalf("GetRouteTargets failed: %v", err)
+	}
+	if got := match.Targets[0].URL; got != "http://second-target" {
+		t.Fatalf("target = %s, want http://second-target", got)
+	}
+}
+
+func TestReplaceFileOverwritesExisting(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+	if err := os.WriteFile(src, []byte("new"), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0644); err != nil {
+		t.Fatalf("write dst: %v", err)
+	}
+	if err := replaceFile(src, dst); err != nil {
+		t.Fatalf("replaceFile failed: %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read dst: %v", err)
+	}
+	if string(got) != "new" {
+		t.Fatalf("dst = %q, want %q", got, "new")
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("src should be gone after rename, stat err = %v", err)
+	}
+}

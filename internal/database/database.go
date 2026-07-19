@@ -178,9 +178,27 @@ func copyFile(src, dst string) (err error) {
 		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, dst); err != nil {
+	if err := replaceFile(tmp, dst); err != nil {
 		_ = os.Remove(tmp)
 		return err
+	}
+	return nil
+}
+
+// replaceFile moves src onto dest, replacing dest if it already exists.
+// Plain os.Rename cannot overwrite on Windows, which would break periodic backups.
+func replaceFile(src, dest string) error {
+	if err := os.Rename(src, dest); err == nil {
+		return nil
+	} else if _, statErr := os.Stat(dest); statErr != nil {
+		// Dest does not exist (or is unreadable); surface the original rename error.
+		return err
+	}
+	if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove existing dest: %w", err)
+	}
+	if err := os.Rename(src, dest); err != nil {
+		return fmt.Errorf("replace after remove: %w", err)
 	}
 	return nil
 }
@@ -208,7 +226,7 @@ func BackupTo(db *sql.DB, destPath string) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("vacuum into standby: %w", err)
 	}
-	if err := os.Rename(tmp, destPath); err != nil {
+	if err := replaceFile(tmp, destPath); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
