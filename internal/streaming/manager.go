@@ -12,14 +12,19 @@ import (
 )
 
 type ConfigSnapshot struct {
-	Version          int64                  `json:"version"`
-	Timestamp        time.Time              `json:"timestamp"`
-	Routes           map[string]RouteData   `json:"routes"`
-	WAFRules         map[string]WAFRuleData `json:"waf_rules"`
-	Users            []UserData             `json:"users"`
-	UserDomains      []UserDomainData       `json:"user_domains"`
-	ZeroTrustEnabled bool                   `json:"zero_trust_enabled"`
-	AgentConfig      AgentConfigData        `json:"agent_config"`
+	Version            int64                  `json:"version"`
+	Timestamp          time.Time              `json:"timestamp"`
+	Routes             map[string]RouteData   `json:"routes"`
+	RoutesConfigured   bool                   `json:"routes_configured,omitempty"`
+	WAFRules           map[string]WAFRuleData `json:"waf_rules"`
+	WAFRulesConfigured bool                   `json:"waf_rules_configured,omitempty"`
+	Users              []UserData             `json:"users"`
+	UserDomains        []UserDomainData       `json:"user_domains"`
+	ZeroTrustEnabled   bool                   `json:"zero_trust_enabled"`
+	// ZeroTrustConfigured distinguishes an explicit false from a field omitted
+	// by older control planes or an empty local snapshot.
+	ZeroTrustConfigured bool            `json:"zero_trust_configured,omitempty"`
+	AgentConfig         AgentConfigData `json:"agent_config"`
 }
 
 type RouteTarget struct {
@@ -291,14 +296,17 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 	copy(userDomains, s.UserDomains)
 
 	return &ConfigSnapshot{
-		Version:          s.Version,
-		Timestamp:        s.Timestamp,
-		Routes:           routes,
-		WAFRules:         rules,
-		Users:            users,
-		UserDomains:      userDomains,
-		ZeroTrustEnabled: s.ZeroTrustEnabled,
-		AgentConfig:      s.AgentConfig,
+		Version:             s.Version,
+		Timestamp:           s.Timestamp,
+		Routes:              routes,
+		RoutesConfigured:    s.RoutesConfigured,
+		WAFRules:            rules,
+		WAFRulesConfigured:  s.WAFRulesConfigured,
+		Users:               users,
+		UserDomains:         userDomains,
+		ZeroTrustEnabled:    s.ZeroTrustEnabled,
+		ZeroTrustConfigured: s.ZeroTrustConfigured,
+		AgentConfig:         s.AgentConfig,
 	}
 }
 
@@ -315,7 +323,7 @@ func (m *Manager) saveToDisk() error {
 
 	// Write to temp file first, then rename for atomicity
 	tmpFile := m.recoveryFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return err
 	}
 

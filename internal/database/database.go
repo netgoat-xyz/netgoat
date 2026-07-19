@@ -639,7 +639,24 @@ func SetRouteTargets(db *sql.DB, routeID int, targets []RouteTarget) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM route_targets WHERE route_id = ?`, routeID); err != nil {
+	if err := setRouteTargets(tx, routeID, targets); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// SetRouteTargetsTx replaces upstream targets inside an existing transaction.
+func SetRouteTargetsTx(tx *sql.Tx, routeID int, targets []RouteTarget) error {
+	return setRouteTargets(tx, routeID, targets)
+}
+
+type routeTargetExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func setRouteTargets(exec routeTargetExecer, routeID int, targets []RouteTarget) error {
+	if _, err := exec.Exec(`DELETE FROM route_targets WHERE route_id = ?`, routeID); err != nil {
 		return err
 	}
 
@@ -651,14 +668,13 @@ func SetRouteTargets(db *sql.DB, routeID int, targets []RouteTarget) error {
 		if check == "" {
 			check = "http"
 		}
-		if _, err := tx.Exec(
+		if _, err := exec.Exec(
 			`INSERT INTO route_targets (route_id, target_url, health_check, sort_order) VALUES (?, ?, ?, ?)`,
 			routeID, t.URL, check, i); err != nil {
 			return err
 		}
 	}
-
-	return tx.Commit()
+	return nil
 }
 
 // ListAllRouteTargets returns every active upstream for health monitoring.
