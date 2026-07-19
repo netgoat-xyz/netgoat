@@ -1,8 +1,10 @@
 package balancer
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +58,52 @@ func TestBalancer_RoundRobinAndFailover(t *testing.T) {
 	}
 	if first == second {
 		t.Fatalf("round-robin returned same target twice: %q", first)
+	}
+}
+
+func TestProxyHandler_PreservesTargetBasePathAndQuery(t *testing.T) {
+	var seenPath, seenQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path
+		seenQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	worker := health.NewWorker(time.Second, time.Second, "/")
+	handler := NewProxyHandler(New(worker), nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/users?active=true", nil)
+
+	if err := handler.Serve(rec, req, "route", []string{upstream.URL + "/v1?token=abc"}, nil); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	if seenPath != "/v1/users" {
+		t.Fatalf("upstream path = %q, want /v1/users", seenPath)
+	}
+	if seenQuery != "token=abc&active=true" {
+		t.Fatalf("upstream query = %q, want target and request queries", seenQuery)
+	}
+}
+
+func TestProxyHandler_BoundsRetryableErrorBody(t *testing.T) {
+	largeBody := strings.Repeat("x", maxRetryResponseBytes+1024)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, largeBody)
+	}))
+	defer upstream.Close()
+
+	worker := health.NewWorker(time.Second, time.Second, "/")
+	handler := NewProxyHandler(New(worker), nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+
+	if err := handler.Serve(rec, req, "route", []string{upstream.URL}, nil); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError || rec.Body.Len() != len(largeBody) {
+		t.Fatalf("status/body = %d/%d, want %d/%d", rec.Code, rec.Body.Len(), http.StatusInternalServerError, len(largeBody))
 	}
 }
 

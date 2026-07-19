@@ -577,13 +577,11 @@ func main() {
 			}
 
 			if !cfg.DebugOverlay || !strings.Contains(res.Header.Get("Content-Type"), "text/html") {
-				body, err := io.ReadAll(res.Body)
-				if err != nil {
-					return err
-				}
-				res.Body.Close()
-				res.Body = io.NopCloser(bytes.NewReader(body))
-				cacheStore.Set(cacheKey, res.StatusCode, res.Header, body)
+				status := res.StatusCode
+				header := res.Header.Clone()
+				res.Body = cache.CaptureOnEOF(res.Body, cacheStore.MaxBodyBytes(), func(body []byte) {
+					cacheStore.Set(cacheKey, status, header, body)
+				})
 				res.Header.Set("X-Cache", "MISS")
 			}
 

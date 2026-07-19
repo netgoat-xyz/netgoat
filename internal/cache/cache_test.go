@@ -1,7 +1,11 @@
 package cache
 
 import (
+	"bytes"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -385,12 +389,12 @@ func TestIsHopByHop(t *testing.T) {
 
 func TestCacheKey(t *testing.T) {
 	tests := []struct {
-		name     string
-		method   string
-		host     string
-		path     string
-		query    string
-		wantKey  string
+		name    string
+		method  string
+		host    string
+		path    string
+		query   string
+		wantKey string
 	}{
 		{
 			name:    "simple GET",
@@ -398,7 +402,7 @@ func TestCacheKey(t *testing.T) {
 			host:    "example.com",
 			path:    "/path",
 			query:   "",
-			wantKey: "GET|example.com|/path?",
+			wantKey: "GET|example.com|/path?|ae=",
 		},
 		{
 			name:    "with query",
@@ -406,7 +410,7 @@ func TestCacheKey(t *testing.T) {
 			host:    "example.com",
 			path:    "/path",
 			query:   "foo=bar&baz=qux",
-			wantKey: "GET|example.com|/path?foo=bar&baz=qux",
+			wantKey: "GET|example.com|/path?foo=bar&baz=qux|ae=",
 		},
 		{
 			name:    "POST request",
@@ -414,7 +418,7 @@ func TestCacheKey(t *testing.T) {
 			host:    "api.example.com",
 			path:    "/api/users",
 			query:   "",
-			wantKey: "POST|api.example.com|/api/users?",
+			wantKey: "POST|api.example.com|/api/users?|ae=",
 		},
 		{
 			name:    "root path",
@@ -422,7 +426,7 @@ func TestCacheKey(t *testing.T) {
 			host:    "example.com",
 			path:    "/",
 			query:   "",
-			wantKey: "GET|example.com|/?",
+			wantKey: "GET|example.com|/?|ae=",
 		},
 	}
 
@@ -515,4 +519,60 @@ func TestStoreBodyIsolation(t *testing.T) {
 	if string(entry.Body()) != "original" {
 		t.Errorf("Body was affected by modification of original: %s", string(entry.Body()))
 	}
+}
+
+func TestCacheKeyVariesByAcceptEncoding(t *testing.T) {
+	plain := httptest.NewRequest(http.MethodGet, "http://Example.COM/assets/app.js", nil)
+	gzip := httptest.NewRequest(http.MethodGet, "http://example.com/assets/app.js", nil)
+	gzip.Header.Set("Accept-Encoding", "gzip, br")
+
+	if CacheKey(plain) == CacheKey(gzip) {
+		t.Fatal("cache keys must differ by Accept-Encoding")
+	}
+}
+
+func TestCaptureOnEOFStoresOnlyCompleteBoundedBodies(t *testing.T) {
+	t.Run("complete body", func(t *testing.T) {
+		var captured []byte
+		wrapped := CaptureOnEOF(io.NopCloser(strings.NewReader("small")), 8, func(body []byte) {
+			captured = body
+		})
+		got, err := io.ReadAll(wrapped)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+		if !bytes.Equal(got, []byte("small")) || !bytes.Equal(captured, got) {
+			t.Fatalf("streamed = %q, captured = %q", got, captured)
+		}
+	})
+
+	t.Run("oversized body", func(t *testing.T) {
+		called := false
+		wrapped := CaptureOnEOF(io.NopCloser(strings.NewReader("too large")), 4, func([]byte) {
+			called = true
+		})
+		got, err := io.ReadAll(wrapped)
+		if err != nil {
+			t.Fatalf("ReadAll() error = %v", err)
+		}
+		if string(got) != "too large" {
+			t.Fatalf("streamed body = %q", got)
+		}
+		if called {
+			t.Fatal("oversized body should not be captured")
+		}
+	})
+
+	t.Run("closed before EOF", func(t *testing.T) {
+		called := false
+		wrapped := CaptureOnEOF(io.NopCloser(strings.NewReader("partial")), 16, func([]byte) {
+			called = true
+		})
+		buf := make([]byte, 2)
+		_, _ = wrapped.Read(buf)
+		_ = wrapped.Close()
+		if called {
+			t.Fatal("truncated body should not be captured")
+		}
+	})
 }
