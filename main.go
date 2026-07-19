@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -1276,10 +1277,17 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 	}
 }
 
+// databaseStandbyMu serializes refreshDatabaseStandby so config-update and
+// periodic backup goroutines cannot race on the same standby staging files.
+var databaseStandbyMu sync.Mutex
+
 func refreshDatabaseStandby(db *sql.DB, standbyPath string) {
 	if standbyPath == "" {
 		return
 	}
+	databaseStandbyMu.Lock()
+	defer databaseStandbyMu.Unlock()
+
 	if err := database.BackupTo(db, standbyPath); err != nil {
 		log.Warn().Err(err).Str("path", standbyPath).Msg("Failed to update database standby")
 		return
