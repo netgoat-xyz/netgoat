@@ -576,3 +576,30 @@ custom_error_page: "/path/with spaces/error.html"
 		t.Errorf("CustomErrorPage not preserved correctly")
 	}
 }
+
+func TestDatabasePathDefaults(t *testing.T) {
+	var nilCfg *Config
+	if got := nilCfg.DatabasePath(); got != "./database/proxy.db" {
+		t.Fatalf("nil DatabasePath = %s", got)
+	}
+	if got := nilCfg.DatabaseStandbyPath(); got != "./database/proxy.standby.db" {
+		t.Fatalf("nil DatabaseStandbyPath = %s", got)
+	}
+
+	cfg := &Config{}
+	cfg.Database.Path = "./data/custom.db"
+	if got := cfg.DatabaseStandbyPath(); got != "./data/custom.standby.db" {
+		t.Fatalf("DatabaseStandbyPath = %s, want ./data/custom.standby.db", got)
+	}
+	cfg.Database.StandbyPath = "./data/hot.db"
+	if got := cfg.DatabaseStandbyPath(); got != "./data/hot.db" {
+		t.Fatalf("DatabaseStandbyPath = %s, want ./data/hot.db", got)
+	}
+	if got := cfg.DatabaseBackupIntervalSeconds(); got != 0 {
+		t.Fatalf("BackupInterval default = %d, want 0", got)
+	}
+	cfg.Database.BackupIntervalSeconds = 300
+	if got := cfg.DatabaseBackupIntervalSeconds(); got != 300 {
+		t.Fatalf("BackupInterval = %d, want 300", got)
+	}
+}

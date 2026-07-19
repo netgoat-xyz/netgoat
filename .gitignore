@@ -57,6 +57,8 @@ ai/*.h5
 # Config snapshots
 database/config-snapshot.json
 database/proxy.db
+database/proxy.standby.db
+database/*.corrupt.*
 
 # Compiled binaries
 agent

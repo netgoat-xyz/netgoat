@@ -2,8 +2,13 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
@@ -16,11 +21,193 @@ func Init(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	if err := createTables(db); err != nil {
+	if err := configureDB(db, path); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
 
+	if err := createTables(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	if !isMemoryPath(path) {
+		if err := validateIntegrity(db); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+
 	return db, nil
+}
+
+func isMemoryPath(path string) bool {
+	return path == ":memory:" || strings.Contains(path, "mode=memory")
+}
+
+func configureDB(db *sql.DB, path string) error {
+	if isMemoryPath(path) {
+		_, err := db.Exec(`PRAGMA foreign_keys=ON`)
+		return err
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		return fmt.Errorf("enable WAL: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		return fmt.Errorf("set busy_timeout: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+		return fmt.Errorf("enable foreign_keys: %w", err)
+	}
+	return nil
+}
+
+func validateIntegrity(db *sql.DB) error {
+	var result string
+	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&result); err != nil {
+		return fmt.Errorf("integrity_check: %w", err)
+	}
+	if !strings.EqualFold(result, "ok") {
+		return fmt.Errorf("integrity_check failed: %s", result)
+	}
+	return nil
+}
+
+// OpenWithFailover opens the primary database. If that fails, it promotes the
+// standby copy to primary. If both are unusable, it recreates an empty primary
+// so callers can rehydrate from the config snapshot.
+func OpenWithFailover(primary, standby string) (*sql.DB, bool, error) {
+	db, err := Init(primary)
+	if err == nil {
+		return db, false, nil
+	}
+	log.Warn().Err(err).Str("path", primary).Msg("Primary database open failed; attempting standby failover")
+
+	if standby != "" {
+		if _, statErr := os.Stat(standby); statErr == nil {
+			if promoteErr := promoteStandby(standby, primary); promoteErr != nil {
+				log.Warn().Err(promoteErr).Str("standby", standby).Msg("Failed to promote standby database")
+			} else if db, err = Init(primary); err == nil {
+				log.Info().Str("primary", primary).Str("standby", standby).Msg("Promoted standby database to primary")
+				return db, true, nil
+			} else {
+				log.Warn().Err(err).Msg("Promoted standby database is still unusable")
+			}
+		} else {
+			log.Warn().Err(statErr).Str("standby", standby).Msg("Standby database unavailable")
+		}
+	}
+
+	if err := removeDBFiles(primary); err != nil {
+		log.Warn().Err(err).Str("path", primary).Msg("Failed to remove corrupt primary before recreate")
+	}
+	db, err = Init(primary)
+	if err != nil {
+		return nil, false, err
+	}
+	log.Warn().Str("path", primary).Msg("Recreated empty primary database; apply config snapshot to rehydrate")
+	return db, false, nil
+}
+
+func promoteStandby(standby, primary string) error {
+	if err := os.MkdirAll(filepath.Dir(primary), 0755); err != nil {
+		return err
+	}
+	if err := quarantineFile(primary); err != nil {
+		return fmt.Errorf("quarantine primary: %w", err)
+	}
+	_ = os.Remove(primary + "-wal")
+	_ = os.Remove(primary + "-shm")
+	if err := copyFile(standby, primary); err != nil {
+		return fmt.Errorf("copy standby to primary: %w", err)
+	}
+	return nil
+}
+
+func quarantineFile(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	quarantine := fmt.Sprintf("%s.corrupt.%d", path, time.Now().Unix())
+	if err := os.Rename(path, quarantine); err != nil {
+		if remErr := os.Remove(path); remErr != nil {
+			return err
+		}
+		log.Warn().Str("path", path).Msg("Removed corrupt primary database after quarantine rename failed")
+		return nil
+	}
+	log.Warn().Str("quarantine", quarantine).Msg("Quarantined corrupt primary database")
+	return nil
+}
+
+func removeDBFiles(path string) error {
+	var firstErr error
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	tmp := dst + ".promote.tmp"
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// BackupTo writes a consistent copy of db to destPath using an atomic temp+rename.
+func BackupTo(db *sql.DB, destPath string) error {
+	if db == nil {
+		return fmt.Errorf("nil database")
+	}
+	if destPath == "" {
+		return fmt.Errorf("empty standby path")
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+
+	// Best-effort checkpoint so on-disk WAL state is tidy; VACUUM INTO is still consistent.
+	_, _ = db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+
+	tmp := destPath + ".tmp"
+	_ = os.Remove(tmp)
+	quoted := strings.ReplaceAll(tmp, "'", "''")
+	if _, err := db.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, quoted)); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("vacuum into standby: %w", err)
+	}
+	if err := os.Rename(tmp, destPath); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func createTables(db *sql.DB) error {

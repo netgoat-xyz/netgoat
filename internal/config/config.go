@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -104,6 +106,13 @@ type Config struct {
 		TimeoutSeconds  int    `yaml:"timeout_seconds"`
 		Path            string `yaml:"path"`
 	} `yaml:"health"`
+
+	// Local SQLite persistence and automatic data failover.
+	Database struct {
+		Path                  string `yaml:"path"`
+		StandbyPath           string `yaml:"standby_path"`
+		BackupIntervalSeconds int    `yaml:"backup_interval_seconds"`
+	} `yaml:"database"`
 }
 
 // HealthChecksEnabled reports whether upstream health probes should run.
@@ -113,6 +122,37 @@ func (c *Config) HealthChecksEnabled() bool {
 		return true
 	}
 	return *c.Health.Enabled
+}
+
+// DatabasePath returns the primary SQLite path (default ./database/proxy.db).
+func (c *Config) DatabasePath() string {
+	if c != nil && strings.TrimSpace(c.Database.Path) != "" {
+		return c.Database.Path
+	}
+	return "./database/proxy.db"
+}
+
+// DatabaseStandbyPath returns the hot-standby SQLite path.
+// Defaults to <primary without extension>.standby.db.
+func (c *Config) DatabaseStandbyPath() string {
+	if c != nil && strings.TrimSpace(c.Database.StandbyPath) != "" {
+		return c.Database.StandbyPath
+	}
+	primary := c.DatabasePath()
+	ext := filepath.Ext(primary)
+	if ext == "" {
+		return primary + ".standby.db"
+	}
+	return strings.TrimSuffix(primary, ext) + ".standby" + ext
+}
+
+// DatabaseBackupIntervalSeconds returns how often to refresh the standby copy.
+// Zero means periodic backups are disabled (snapshot-triggered backups still run).
+func (c *Config) DatabaseBackupIntervalSeconds() int {
+	if c == nil || c.Database.BackupIntervalSeconds <= 0 {
+		return 0
+	}
+	return c.Database.BackupIntervalSeconds
 }
 
 func Load(path string) (*Config, error) {
