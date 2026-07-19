@@ -153,14 +153,18 @@ func removeDBFiles(path string) error {
 	return firstErr
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() {
+		if cerr := in.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
 
-	tmp := dst + ".promote.tmp"
+	tmp := fmt.Sprintf("%s.promote.%d.tmp", dst, time.Now().UnixNano())
 	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
@@ -182,6 +186,7 @@ func copyFile(src, dst string) error {
 }
 
 // BackupTo writes a consistent copy of db to destPath using an atomic temp+rename.
+// Callers that may run concurrently for the same destPath must serialize externally.
 func BackupTo(db *sql.DB, destPath string) error {
 	if db == nil {
 		return fmt.Errorf("nil database")
@@ -196,8 +201,8 @@ func BackupTo(db *sql.DB, destPath string) error {
 	// Best-effort checkpoint so on-disk WAL state is tidy; VACUUM INTO is still consistent.
 	_, _ = db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 
-	tmp := destPath + ".tmp"
-	_ = os.Remove(tmp)
+	// Unique staging path avoids collisions if multiple BackupTo calls overlap.
+	tmp := filepath.Join(filepath.Dir(destPath), fmt.Sprintf(".%s.%d.tmp", filepath.Base(destPath), time.Now().UnixNano()))
 	quoted := strings.ReplaceAll(tmp, "'", "''")
 	if _, err := db.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, quoted)); err != nil {
 		_ = os.Remove(tmp)
