@@ -50,7 +50,7 @@ var (
 )
 
 func main() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	setupLogger("agent")
 
 	loadEnvFromFile(".env")
 	if k := os.Getenv("DiamondKey"); k != "" {
@@ -687,6 +687,50 @@ func main() {
 		if err := server.ListenAndServe(); err != nil {
 			log.Fatal().Err(err).Msg("Server failed")
 		}
+	}
+}
+
+func setupLogger(service string) {
+	noColor := os.Getenv("NO_COLOR") != ""
+	writer := zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "15:04:05",
+		NoColor:    noColor,
+	}
+	writer.FormatLevel = func(i interface{}) string {
+		level := strings.ToLower(fmt.Sprint(i))
+		if noColor {
+			return strings.ToUpper(level)
+		}
+		return logLevelColor(level) + strings.ToUpper(level) + "\x1b[0m"
+	}
+	writer.FormatMessage = func(i interface{}) string {
+		if noColor {
+			return fmt.Sprint(i)
+		}
+		return "\x1b[1m" + fmt.Sprint(i) + "\x1b[0m"
+	}
+	writer.FormatFieldName = func(i interface{}) string {
+		if noColor {
+			return fmt.Sprintf("%v=", i)
+		}
+		return fmt.Sprintf("\x1b[2m%s=\x1b[0m", i)
+	}
+	log.Logger = zerolog.New(writer).With().Timestamp().Str("service", service).Logger()
+}
+
+func logLevelColor(level string) string {
+	switch level {
+	case "debug":
+		return "\x1b[36m"
+	case "info":
+		return "\x1b[32m"
+	case "warn":
+		return "\x1b[33m"
+	case "error", "fatal", "panic":
+		return "\x1b[31m"
+	default:
+		return "\x1b[37m"
 	}
 }
 
