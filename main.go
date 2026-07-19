@@ -336,8 +336,19 @@ func main() {
 		challengeID := r.FormValue("challenge_id")
 		answer := r.FormValue("answer")
 		ip := getClientIP(r)
+		binding := ip
+		if cfg.Auth.Enabled {
+			if result := auth.Check(r, db); result.Authenticated {
+				binding = zeroTrustChallengeBinding(ip, result)
+			}
+		}
 
-		if challengeStore.Verify(challengeID, answer, ip) {
+		verified := challengeStore.Verify(challengeID, answer, binding)
+		if !verified && binding != ip {
+			// Non-authentication error challenges remain bound to the client IP.
+			verified = challengeStore.Verify(challengeID, answer, ip)
+		}
+		if verified {
 			log.Info().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verified successfully")
 			redirectTo := safeLocalRedirect(r.Header.Get("Referer"), r.Host)
 			http.Redirect(w, r, redirectTo, http.StatusFound)
@@ -393,12 +404,13 @@ func main() {
 				}
 				return
 			}
-			if auth.RequireZeroTrustChallenge(authResult, database.IsZeroTrustEnabled(db), challengeStore.IsVerified(getClientIP(r))) {
+			challengeBinding := zeroTrustChallengeBinding(getClientIP(r), authResult)
+			if auth.RequireZeroTrustChallenge(authResult, database.IsZeroTrustEnabled(db), challengeStore.IsVerified(challengeBinding)) {
 				analysisInfo.RequestAllowed = false
 				analysisInfo.BlockReason = "zero-trust verification required"
 				recordBlocked(metricsRecorder, "zero-trust")
 				log.Info().Str("user", authResult.Username).Str("ip", getClientIP(r)).Msg("Zero-trust challenge required")
-				writeZeroTrustChallenge(w, challengeStore, r)
+				writeZeroTrustChallenge(w, challengeStore, r, challengeBinding)
 				return
 			}
 		}
@@ -829,13 +841,19 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 	_, _ = w.Write([]byte(dynamicHTML))
 }
 
-func writeZeroTrustChallenge(w http.ResponseWriter, store *challenge.Store, r *http.Request) {
-	ip := getClientIP(r)
-	ch := store.Create(ip, r.UserAgent(), 50, challenge.ChallengeText)
+func writeZeroTrustChallenge(w http.ResponseWriter, store *challenge.Store, r *http.Request, binding string) {
+	ch := store.Create(binding, r.UserAgent(), 50, challenge.ChallengeText)
 	html := challenge.RenderDynamicErrorPage(ch, http.StatusForbidden, "Zero-trust verification required")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
 	_, _ = w.Write([]byte(html))
+}
+
+func zeroTrustChallengeBinding(ip string, result *auth.AuthResult) string {
+	if result == nil || !result.Authenticated || result.UserID <= 0 {
+		return ip
+	}
+	return ip + "|user:" + strconv.Itoa(result.UserID)
 }
 
 func isHTML(b []byte) bool {

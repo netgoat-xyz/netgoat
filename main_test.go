@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"netgoat.xyz/agent/internal/auth"
 	"netgoat.xyz/agent/internal/cache"
 
 	"netgoat.xyz/agent/internal/challenge"
@@ -234,6 +235,17 @@ func TestPrepareForwardingHeadersRemovesSpoofedValues(t *testing.T) {
 	prepareForwardingHeaders(proxied, "198.51.100.9")
 	if got := proxied.Header.Get("X-Forwarded-For"); got != "198.51.100.9" {
 		t.Fatalf("canonical X-Forwarded-For = %q", got)
+	}
+}
+
+func TestZeroTrustChallengeBindingSeparatesUsersBehindNAT(t *testing.T) {
+	first := zeroTrustChallengeBinding("203.0.113.8", &auth.AuthResult{Authenticated: true, UserID: 1})
+	second := zeroTrustChallengeBinding("203.0.113.8", &auth.AuthResult{Authenticated: true, UserID: 2})
+	if first == second || first == "203.0.113.8" || second == "203.0.113.8" {
+		t.Fatalf("user challenge bindings were not isolated: %q / %q", first, second)
+	}
+	if got := zeroTrustChallengeBinding("203.0.113.8", nil); got != "203.0.113.8" {
+		t.Fatalf("anonymous binding = %q", got)
 	}
 }
 
