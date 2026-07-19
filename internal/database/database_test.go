@@ -51,6 +51,45 @@ func TestGetRouteTargetsExactDomainWinsOverWildcard(t *testing.T) {
 	}
 }
 
+func TestGetRouteTargetsNormalizesDomain(t *testing.T) {
+	db := newTestDB(t)
+	insertRoute(t, db, "domain", "api.example.test", "http://exact")
+
+	for _, host := range []string{"API.EXAMPLE.TEST", "Api.Example.Test:8443", "api.example.test."} {
+		match, err := GetRouteTargets(db, host, "/")
+		if err != nil {
+			t.Fatalf("GetRouteTargets(%q) failed: %v", host, err)
+		}
+		if got := match.Targets[0].URL; got != "http://exact" {
+			t.Fatalf("target for %q = %s, want http://exact", host, got)
+		}
+	}
+}
+
+func TestGetRouteTargetsUsesConfiguredPathAsBalancerKey(t *testing.T) {
+	db := newTestDB(t)
+	res, err := db.Exec(
+		`INSERT INTO routes (route_type, domain, path_prefix, target_url, active) VALUES ('path', '', '/api/', 'http://path', 1)`,
+	)
+	if err != nil {
+		t.Fatalf("insert path route: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	if err := SetRouteTargets(db, int(id), []RouteTarget{{URL: "http://path"}}); err != nil {
+		t.Fatalf("SetRouteTargets: %v", err)
+	}
+
+	for _, path := range []string{"/api/users", "/api/orders/42"} {
+		match, err := GetRouteTargets(db, "", path)
+		if err != nil {
+			t.Fatalf("GetRouteTargets(%q): %v", path, err)
+		}
+		if match.RouteKey != "path:/api/" {
+			t.Fatalf("RouteKey for %q = %q, want path:/api/", path, match.RouteKey)
+		}
+	}
+}
+
 func TestGetRouteTargetsWildcardDomain(t *testing.T) {
 	db := newTestDB(t)
 	insertRoute(t, db, "wildcard", "*.example.test", "http://wildcard")
