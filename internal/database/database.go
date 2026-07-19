@@ -2,7 +2,9 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"net"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -18,7 +20,7 @@ func Init(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	if err := configureDB(db, path); err != nil {
+	if err := createTables(db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -310,6 +312,10 @@ func createTables(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires_at);`)
+	if err != nil {
+		return err
+	}
 
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS route_targets (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -332,7 +338,11 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	return migrateRouteTargets(db)
+	if err := migrateRouteTargets(db); err != nil {
+		return err
+	}
+	_, err = PruneExpiredSessions(db)
+	return err
 }
 
 func migrateRouteNulls(db *sql.DB) error {
@@ -366,13 +376,12 @@ func seedDefaults(db *sql.DB) error {
 	}
 
 	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
-	if err == nil && count == 0 {
-		hash, _ := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
-		_, err = db.Exec(`INSERT INTO users (username, password_hash) VALUES (?, ?)`, "admin", string(hash))
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to insert default user")
-		} else {
-			log.Info().Msg("Inserted default user: admin / admin")
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		if err := seedBootstrapUser(db); err != nil {
+			return err
 		}
 	}
 
@@ -406,6 +415,48 @@ func seedDefaults(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+const (
+	bootstrapUsernameEnv = "NETGOAT_BOOTSTRAP_USERNAME"
+	bootstrapPasswordEnv = "NETGOAT_BOOTSTRAP_PASSWORD"
+	minBootstrapPassword = 12
+)
+
+func seedBootstrapUser(db *sql.DB) error {
+	username := strings.TrimSpace(os.Getenv(bootstrapUsernameEnv))
+	password := os.Getenv(bootstrapPasswordEnv)
+	if username == "" && password == "" {
+		log.Info().Str("username_env", bootstrapUsernameEnv).Str("password_env", bootstrapPasswordEnv).
+			Msg("No users configured; bootstrap credentials were not provided")
+		return nil
+	}
+	if username == "" || password == "" {
+		return fmt.Errorf("both %s and %s must be set to bootstrap a user", bootstrapUsernameEnv, bootstrapPasswordEnv)
+	}
+	if len(password) < minBootstrapPassword {
+		return fmt.Errorf("%s must contain at least %d characters", bootstrapPasswordEnv, minBootstrapPassword)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash bootstrap password: %w", err)
+	}
+	if _, err := db.Exec(`INSERT INTO users (username, password_hash) VALUES (?, ?)`, username, string(hash)); err != nil {
+		return fmt.Errorf("insert bootstrap user: %w", err)
+	}
+	log.Info().Str("username", username).Msg("Inserted bootstrap user from environment")
+	return nil
+}
+
+// PruneExpiredSessions removes authentication sessions that can no longer be
+// used. It is safe to call at startup and before creating a new session.
+func PruneExpiredSessions(db *sql.DB) (int64, error) {
+	result, err := db.Exec(`DELETE FROM user_sessions WHERE expires_at <= CURRENT_TIMESTAMP`)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // RouteTarget is a single upstream for a route.

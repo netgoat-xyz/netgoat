@@ -9,6 +9,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
+
+	dbstore "netgoat.xyz/agent/internal/database"
 )
 
 type AuthResult struct {
@@ -16,7 +18,7 @@ type AuthResult struct {
 	Username      string
 	UserID        int
 	ZeroTrustReq  bool
-	SessionToken  string
+	SessionToken  string // Set only when an existing cookie session is authenticated.
 }
 
 func Check(r *http.Request, db *sql.DB) *AuthResult {
@@ -53,7 +55,6 @@ func Check(r *http.Request, db *sql.DB) *AuthResult {
 
 	if authenticateUser(db, username, password, result) {
 		result.Authenticated = true
-		result.SessionToken = createSession(db, username)
 	}
 
 	return result
@@ -109,6 +110,12 @@ func createSession(db *sql.DB, username string) string {
 	if err := db.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID); err != nil {
 		log.Warn().Err(err).Str("user", username).Msg("Failed to create session: user not found")
 		return ""
+	}
+	if _, err := dbstore.PruneExpiredSessions(db); err != nil {
+		// Cleanup is maintenance and should not turn valid credentials into an
+		// authentication outage. The insert below still surfaces failures that
+		// prevent creation of the requested session.
+		log.Warn().Err(err).Msg("Failed to prune expired sessions")
 	}
 
 	tokenBytes := make([]byte, 32)
