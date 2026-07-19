@@ -1,7 +1,9 @@
 package cache
 
 import (
+	"bytes"
 	"container/list"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -90,11 +92,16 @@ func (s *Store) Set(key string, status int, header http.Header, body []byte) {
 
 	if ele, ok := s.items[key]; ok {
 		s.ll.MoveToFront(ele)
-		ent := ele.Value.(*Entry)
-		ent.status = status
-		ent.header = cloneHeader(header)
-		ent.body = append([]byte(nil), body...)
-		ent.expires = time.Now().Add(s.ttl)
+		// Entries may still be referenced by concurrent cache hits. Replace the
+		// value instead of mutating it so readers always observe an immutable
+		// response and do not race with cache refreshes.
+		ele.Value = &Entry{
+			key:     key,
+			status:  status,
+			header:  cloneHeader(header),
+			body:    append([]byte(nil), body...),
+			expires: time.Now().Add(s.ttl),
+		}
 		return
 	}
 
@@ -151,5 +158,60 @@ func isHopByHop(k string) bool {
 
 // CacheKey builds a cache key from method, host, path, query.
 func CacheKey(r *http.Request) string {
-	return r.Method + "|" + r.Host + "|" + r.URL.Path + "?" + r.URL.RawQuery
+	// Vary: Accept-Encoding is supported by the shared cache, so the request
+	// encoding preference must be part of the key. Otherwise a gzip response
+	// can be replayed to a client that never advertised gzip support.
+	encoding := strings.ToLower(strings.Join(strings.Fields(r.Header.Get("Accept-Encoding")), ""))
+	return r.Method + "|" + strings.ToLower(r.Host) + "|" + r.URL.EscapedPath() + "?" + r.URL.RawQuery + "|ae=" + encoding
+}
+
+// MaxBodyBytes returns the largest response body accepted by the store.
+func (s *Store) MaxBodyBytes() int {
+	if s == nil {
+		return 0
+	}
+	return s.maxBodyBytes
+}
+
+// CaptureOnEOF wraps a response body and records at most maxBytes while the
+// response streams to the client. onComplete is called only after a complete,
+// successful read whose body fits within the limit. This avoids buffering an
+// untrusted upstream response before proxying it.
+func CaptureOnEOF(body io.ReadCloser, maxBytes int, onComplete func([]byte)) io.ReadCloser {
+	if body == nil || maxBytes <= 0 || onComplete == nil {
+		return body
+	}
+	return &captureReadCloser{
+		ReadCloser: body,
+		maxBytes:   maxBytes,
+		onComplete: onComplete,
+	}
+}
+
+type captureReadCloser struct {
+	io.ReadCloser
+	buf        bytes.Buffer
+	maxBytes   int
+	overflow   bool
+	completed  bool
+	onComplete func([]byte)
+}
+
+func (r *captureReadCloser) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 && !r.overflow {
+		if r.buf.Len()+n <= r.maxBytes {
+			_, _ = r.buf.Write(p[:n])
+		} else {
+			r.overflow = true
+			r.buf.Reset()
+		}
+	}
+	if err == io.EOF && !r.completed {
+		r.completed = true
+		if !r.overflow {
+			r.onComplete(append([]byte(nil), r.buf.Bytes()...))
+		}
+	}
+	return n, err
 }

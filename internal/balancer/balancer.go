@@ -5,17 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"strings"
 	"sync"
 
 	"netgoat.xyz/agent/internal/health"
 )
 
 var ErrNoHealthyTargets = errors.New("no healthy upstream targets available")
+
+const (
+	maxRetryResponseBytes = 1 << 20
+	maxProxyCacheEntries  = 1024
+)
 
 // Balancer selects healthy upstreams using round-robin.
 type Balancer struct {
@@ -116,11 +119,13 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 		clone := *proxy
 		proxy = &clone
 
-		out := &streamWriter{w: w, header: make(http.Header)}
+		out := &streamWriter{w: w, header: make(http.Header), bufferLimit: maxRetryResponseBytes}
 		var attemptErr error
+		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
-			req.URL.Scheme = parsed.Scheme
-			req.URL.Host = parsed.Host
+			// Preserve NewSingleHostReverseProxy's path and query joining. Replacing
+			// its director without calling it drops a target such as /api?token=x.
+			originalDirector(req)
 			req.Host = parsed.Host
 
 			// Preserve original host/proto for upstream services.
@@ -134,7 +139,6 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 					req.Header.Set("X-Forwarded-Proto", "http")
 				}
 			}
-			appendXForwardedFor(req.Header, clientIPFromRequest(r))
 		}
 		proxy.ModifyResponse = modify
 		proxy.ErrorHandler = func(_ http.ResponseWriter, _ *http.Request, proxyErr error) {
@@ -195,18 +199,32 @@ func (p *ProxyHandler) proxyFor(targetURL string) (*httputil.ReverseProxy, *url.
 		proxy.Transport = p.Transport
 	}
 	p.ProxyCacheMu.Lock()
+	if existing, ok := p.ProxyCache[targetURL]; ok {
+		p.ProxyCacheMu.Unlock()
+		return existing, parsed, nil
+	}
+	if len(p.ProxyCache) >= maxProxyCacheEntries {
+		// Config snapshots may introduce and later remove arbitrary targets.
+		// Bound the cache so those historical targets cannot retain proxies
+		// forever. Any evicted proxy is cheap to rebuild on demand.
+		for key := range p.ProxyCache {
+			delete(p.ProxyCache, key)
+			break
+		}
+	}
 	p.ProxyCache[targetURL] = proxy
 	p.ProxyCacheMu.Unlock()
 	return proxy, parsed, nil
 }
 
 type streamWriter struct {
-	w        http.ResponseWriter
-	header   http.Header
-	status   int
-	wroteHdr bool
-	retry    bool
-	buf      bytes.Buffer
+	w           http.ResponseWriter
+	header      http.Header
+	status      int
+	wroteHdr    bool
+	retry       bool
+	buf         bytes.Buffer
+	bufferLimit int
 }
 
 func (s *streamWriter) Header() http.Header {
@@ -236,6 +254,13 @@ func (s *streamWriter) Write(p []byte) (int, error) {
 		s.WriteHeader(http.StatusOK)
 	}
 	if s.retry {
+		if s.bufferLimit > 0 && s.buf.Len()+len(p) > s.bufferLimit {
+			// Stop retrying once buffering the upstream error would become a
+			// memory risk. Commit this response and stream the remainder instead.
+			s.flushRetryTo(s.w)
+			s.retry = false
+			return s.w.Write(p)
+		}
 		return s.buf.Write(p)
 	}
 	return s.w.Write(p)
@@ -265,6 +290,7 @@ func (s *streamWriter) flushRetryTo(w http.ResponseWriter) {
 	}
 	w.WriteHeader(s.status)
 	_, _ = w.Write(s.buf.Bytes())
+	s.buf.Reset()
 }
 
 // ReadResponseBody reads and replaces a response body, returning the bytes read.
@@ -276,34 +302,4 @@ func ReadResponseBody(res *http.Response) ([]byte, error) {
 	res.Body.Close()
 	res.Body = io.NopCloser(bytes.NewReader(body))
 	return body, nil
-}
-
-func clientIPFromRequest(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	// Prefer existing X-Forwarded-For chain if present.
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// first IP is the client
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && host != "" {
-		return host
-	}
-	return r.RemoteAddr
-}
-
-func appendXForwardedFor(h http.Header, clientIP string) {
-	if clientIP == "" {
-		return
-	}
-	if prior := h.Get("X-Forwarded-For"); prior != "" {
-		h.Set("X-Forwarded-For", prior+", "+clientIP)
-		return
-	}
-	h.Set("X-Forwarded-For", clientIP)
 }
