@@ -1,18 +1,17 @@
 package anomaly
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"strings"
-	"sync"
 	"time"
+
+	"netgoat.xyz/agent/internal/aiworker"
 )
+
+const maxFeatureInputBytes = 8192
 
 type LocalSettings struct {
 	Enabled      bool
@@ -20,14 +19,12 @@ type LocalSettings struct {
 	ModelPath    string
 	ScalerPath   string
 	PythonScript string
+	Timeout      time.Duration
 }
 
 type LocalDetector struct {
 	settings LocalSettings
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	stdout   *bufio.Reader
-	mu       sync.Mutex
+	worker   *aiworker.Worker
 }
 
 func NewLocalDetector(s LocalSettings) (*LocalDetector, error) {
@@ -45,32 +42,18 @@ func NewLocalDetector(s LocalSettings) (*LocalDetector, error) {
 		return nil, fmt.Errorf("python script not found: %w", err)
 	}
 
-	cmd := exec.Command("python3", s.PythonScript, s.ModelPath, s.ScalerPath)
-
-	stdin, err := cmd.StdinPipe()
+	worker, err := aiworker.New(aiworker.Config{
+		Name:            "local anomaly worker",
+		PythonScript:    s.PythonScript,
+		Args:            []string{s.ModelPath, s.ScalerPath},
+		RequestTimeout:  s.Timeout,
+		MaxRequestBytes: maxFeatureInputBytes,
+		Stderr:          os.Stderr,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stdin: %w", err)
+		return nil, err
 	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stdout: %w", err)
-	}
-
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start python server: %w", err)
-	}
-
-	d := &LocalDetector{
-		settings: s,
-		cmd:      cmd,
-		stdin:    stdin,
-		stdout:   bufio.NewReader(stdout),
-	}
-
-	return d, nil
+	return &LocalDetector{settings: s, worker: worker}, nil
 }
 
 func (d *LocalDetector) PredictCSV(ctx context.Context, csv string) (label string, score float64, err error) {
@@ -78,51 +61,29 @@ func (d *LocalDetector) PredictCSV(ctx context.Context, csv string) (label strin
 		return "", 0, errors.New("local detector disabled")
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	done := make(chan error, 1)
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return "", 0, errors.New("feature input is empty")
+	}
+	if len(csv) > maxFeatureInputBytes {
+		return "", 0, fmt.Errorf("feature input too large: %d bytes", len(csv))
+	}
 	var result struct {
 		Label      string  `json:"label"`
 		Score      float64 `json:"score"`
 		Confidence float64 `json:"confidence"`
 		Error      string  `json:"error"`
 	}
-
-	go func() {
-		if _, err := fmt.Fprintln(d.stdin, strings.TrimSpace(csv)); err != nil {
-			done <- err
-			return
+	if err := d.worker.Request(ctx, csv, &result); err != nil {
+		if errors.Is(err, aiworker.ErrRequestTimeout) {
+			return "", 0, errors.New("prediction timeout")
 		}
-
-		line, err := d.stdout.ReadString('\n')
-		if err != nil {
-			done <- err
-			return
-		}
-
-		if err := json.Unmarshal([]byte(line), &result); err != nil {
-			done <- err
-			return
-		}
-
-		done <- nil
-	}()
-
-	select {
-	case <-ctx.Done():
-		return "", 0, ctx.Err()
-	case err := <-done:
-		if err != nil {
-			return "", 0, err
-		}
-		if result.Error != "" {
-			return "", 0, errors.New(result.Error)
-		}
-		return result.Label, result.Score, nil
-	case <-time.After(5 * time.Second):
-		return "", 0, errors.New("prediction timeout")
+		return "", 0, err
 	}
+	if result.Error != "" {
+		return "", 0, errors.New(result.Error)
+	}
+	return result.Label, result.Score, nil
 }
 
 func (d *LocalDetector) IsAnomalous(label string, score float64) bool {
@@ -137,13 +98,8 @@ func (d *LocalDetector) IsAnomalous(label string, score float64) bool {
 }
 
 func (d *LocalDetector) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.stdin != nil {
-		d.stdin.Close()
+	if d.worker == nil {
+		return nil
 	}
-	if d.cmd != nil && d.cmd.Process != nil {
-		d.cmd.Process.Kill()
-	}
-	return nil
+	return d.worker.Close()
 }

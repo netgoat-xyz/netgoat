@@ -1,17 +1,14 @@
 package koda2
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"strings"
-	"sync"
 	"time"
+
+	"netgoat.xyz/agent/internal/aiworker"
 )
 
 const maxFeatureInputBytes = 8192
@@ -22,14 +19,12 @@ type Settings struct {
 	ModelPath    string
 	ScalerPath   string
 	PythonScript string
+	Timeout      time.Duration
 }
 
 type Detector struct {
 	settings Settings
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	stdout   *bufio.Reader
-	mu       sync.Mutex
+	worker   *aiworker.Worker
 }
 
 func NewDetector(s Settings) (*Detector, error) {
@@ -46,34 +41,18 @@ func NewDetector(s Settings) (*Detector, error) {
 		return nil, fmt.Errorf("koda-2 python script not found: %w", err)
 	}
 
-	d := &Detector{settings: s}
-	if err := d.startLocked(); err != nil {
+	worker, err := aiworker.New(aiworker.Config{
+		Name:            "koda-2 worker",
+		PythonScript:    s.PythonScript,
+		Args:            []string{s.ModelPath, s.ScalerPath},
+		RequestTimeout:  s.Timeout,
+		MaxRequestBytes: maxFeatureInputBytes,
+		Stderr:          os.Stderr,
+	})
+	if err != nil {
 		return nil, err
 	}
-	return d, nil
-}
-
-func (d *Detector) startLocked() error {
-	s := d.settings
-	cmd := exec.Command("python3", s.PythonScript, s.ModelPath, s.ScalerPath)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("koda-2 failed to create stdin: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("koda-2 failed to create stdout: %w", err)
-	}
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("koda-2 failed to start python server: %w", err)
-	}
-
-	d.cmd = cmd
-	d.stdin = stdin
-	d.stdout = bufio.NewReader(stdout)
-	return nil
+	return &Detector{settings: s, worker: worker}, nil
 }
 
 type Prediction struct {
@@ -96,64 +75,17 @@ func (d *Detector) Predict(ctx context.Context, csv string) (*Prediction, error)
 		return nil, errors.New("koda-2 feature input is empty")
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	done := make(chan error, 1)
 	result := &Prediction{}
-
-	if d.cmd == nil || d.stdin == nil || d.stdout == nil {
-		if err := d.startLocked(); err != nil {
-			return nil, err
-		}
-	}
-	if _, err := fmt.Fprintln(d.stdin, csv); err != nil {
-		if restartErr := d.restartLocked(); restartErr != nil {
-			return nil, fmt.Errorf("koda-2 failed to write request: %w; restart failed: %v", err, restartErr)
+	if err := d.worker.Request(ctx, csv, result); err != nil {
+		if errors.Is(err, aiworker.ErrRequestTimeout) {
+			return nil, errors.New("koda-2 prediction timeout")
 		}
 		return nil, err
 	}
-
-	reader := d.stdout
-	go func(reader *bufio.Reader) {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			done <- err
-			return
-		}
-		if err := json.Unmarshal([]byte(line), result); err != nil {
-			done <- err
-			return
-		}
-		done <- nil
-	}(reader)
-
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		if restartErr := d.restartLocked(); restartErr != nil {
-			return nil, fmt.Errorf("%w; koda-2 restart failed: %v", ctx.Err(), restartErr)
-		}
-		return nil, ctx.Err()
-	case err := <-done:
-		if err != nil {
-			if restartErr := d.restartLocked(); restartErr != nil {
-				return nil, fmt.Errorf("koda-2 prediction failed: %w; restart failed: %v", err, restartErr)
-			}
-			return nil, err
-		}
-		if result.Error != "" {
-			return nil, errors.New(result.Error)
-		}
-		return result, nil
-	case <-timer.C:
-		if restartErr := d.restartLocked(); restartErr != nil {
-			return nil, fmt.Errorf("koda-2 prediction timeout; restart failed: %w", restartErr)
-		}
-		return nil, errors.New("koda-2 prediction timeout")
+	if result.Error != "" {
+		return nil, errors.New(result.Error)
 	}
+	return result, nil
 }
 
 func (d *Detector) IsAnomalous(p *Prediction) bool {
@@ -171,26 +103,8 @@ func (d *Detector) IsAnomalous(p *Prediction) bool {
 }
 
 func (d *Detector) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.closeProcessLocked()
-}
-
-func (d *Detector) restartLocked() error {
-	_ = d.closeProcessLocked()
-	return d.startLocked()
-}
-
-func (d *Detector) closeProcessLocked() error {
-	if d.stdin != nil {
-		_ = d.stdin.Close()
-		d.stdin = nil
+	if d.worker == nil {
+		return nil
 	}
-	if d.cmd != nil && d.cmd.Process != nil {
-		_ = d.cmd.Process.Kill()
-		_ = d.cmd.Wait()
-	}
-	d.cmd = nil
-	d.stdout = nil
-	return nil
+	return d.worker.Close()
 }

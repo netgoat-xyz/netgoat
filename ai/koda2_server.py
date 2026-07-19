@@ -7,10 +7,8 @@ Features: Flow Duration, Total Fwd Packets, Total Backward Packets,
           Packet Length Mean, Flow IAT Mean, Fwd Flag Count
 """
 import sys
-import json
 import pickle
 import os
-import struct
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -24,10 +22,40 @@ except ImportError:
     try:
         import keras
     except ImportError:
-        print("ERROR: No Keras/TensorFlow available", file=sys.stderr)
+        ts = __import__("datetime").datetime.now().strftime("%H:%M:%S")
+        if os.environ.get("NO_COLOR"):
+            print(f"{ts} koda-2   ERROR no Keras/TensorFlow available", file=sys.stderr)
+        else:
+            print(f"\033[2m{ts}\033[0m \033[35mkoda-2\033[0m \033[31mERROR\033[0m no Keras/TensorFlow available", file=sys.stderr)
         sys.exit(1)
 
 import numpy as np
+
+from worker_protocol import iter_requests, write_response
+
+
+COLORS = {
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+    "info": "\033[32m",
+    "warn": "\033[33m",
+    "error": "\033[31m",
+    "service": "\033[35m",
+}
+
+
+def log(level, message):
+    ts = __import__("datetime").datetime.now().strftime("%H:%M:%S")
+    if os.environ.get("NO_COLOR"):
+        print(f"{ts} koda-2   {level.upper():<5} {message}", file=sys.stderr)
+        return
+    print(
+        f"{COLORS['dim']}{ts}{COLORS['reset']} "
+        f"{COLORS['service']}koda-2{COLORS['reset']} "
+        f"{COLORS.get(level, '')}{level.upper():<5}{COLORS['reset']} "
+        f"{message}",
+        file=sys.stderr,
+    )
 
 
 class Koda2Server:
@@ -36,7 +64,7 @@ class Koda2Server:
             self.model = keras.models.load_model(model_path)
             self.scaler = self._load_scaler(scaler_path)
         except Exception as e:
-            print(f"ERROR: Failed to load Koda-2 model/scaler: {e}", file=sys.stderr)
+            log("error", f"failed to load model/scaler: {e}")
             sys.exit(1)
 
     def _load_scaler(self, path):
@@ -114,23 +142,26 @@ class Koda2Server:
 
 def main():
     if len(sys.argv) < 3:
-        print("USAGE: koda2_server.py <model_path> <scaler_path>", file=sys.stderr)
+        log("warn", "usage: koda2_server.py <model_path> <scaler_path>")
         sys.exit(1)
 
     model_path = sys.argv[1]
     scaler_path = sys.argv[2]
 
     server = Koda2Server(model_path, scaler_path)
+    log("info", "ready")
 
-    for line in sys.stdin:
-        line = line.strip()
+    for line, protocol_error in iter_requests():
+        if protocol_error:
+            write_response({"error": protocol_error})
+            continue
         if not line:
             continue
         try:
             result = server.predict(line)
-            print(json.dumps(result))
+            write_response(result)
         except Exception as e:
-            print(json.dumps({"error": str(e)}))
+            write_response({"error": str(e)})
 
 
 if __name__ == '__main__':
