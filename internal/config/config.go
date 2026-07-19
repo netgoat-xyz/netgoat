@@ -110,6 +110,13 @@ type Config struct {
 		Path            string `yaml:"path"`
 	} `yaml:"health"`
 
+	Telemetry struct {
+		Enabled         bool   `yaml:"enabled"`
+		Endpoint        string `yaml:"endpoint"`
+		IngestKey       string `yaml:"ingest_key"`
+		IntervalSeconds int    `yaml:"interval_seconds"`
+	} `yaml:"telemetry"`
+
 	// Routes are local fallback routes keyed by domain, wildcard/regex pattern,
 	// or path prefix. Streamed routes with the same key take precedence.
 	Routes map[string]Route `yaml:"routes"`

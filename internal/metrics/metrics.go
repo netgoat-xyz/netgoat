@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+const maxTrackedErrors = 128
 
 type Recorder struct {
 	started int64
@@ -27,6 +30,14 @@ type Recorder struct {
 	mu       sync.Mutex
 	statuses map[int]uint64
 	blocks   map[string]uint64
+	errors   map[string]*ErrorInfo
+}
+
+type ErrorInfo struct {
+	Kind     string    `json:"kind"`
+	Message  string    `json:"message"`
+	Count    uint64    `json:"count"`
+	LastSeen time.Time `json:"last_seen"`
 }
 
 type Snapshot struct {
@@ -41,6 +52,8 @@ type Snapshot struct {
 	AverageLatencyMs float64           `json:"average_latency_ms"`
 	StatusCodes      map[string]uint64 `json:"status_codes"`
 	BlockReasons     map[string]uint64 `json:"block_reasons"`
+	ErrorStatusCodes map[string]uint64 `json:"error_status_codes"`
+	RecentErrors     []ErrorInfo       `json:"recent_errors"`
 }
 
 func NewRecorder() *Recorder {
@@ -48,6 +61,7 @@ func NewRecorder() *Recorder {
 		started:  time.Now().Unix(),
 		statuses: make(map[int]uint64),
 		blocks:   make(map[string]uint64),
+		errors:   make(map[string]*ErrorInfo),
 	}
 }
 
@@ -69,6 +83,9 @@ func (r *Recorder) RecordResponse(status int, bytes int64, duration time.Duratio
 
 	r.mu.Lock()
 	r.statuses[status]++
+	if status >= 400 {
+		r.recordErrorLocked("http", strconv.Itoa(status))
+	}
 	r.mu.Unlock()
 }
 
@@ -87,8 +104,15 @@ func (r *Recorder) RecordCacheHit() {
 	r.cacheHits.Add(1)
 }
 
-func (r *Recorder) RecordProxyError() {
+func (r *Recorder) RecordProxyError(err error) {
 	r.proxyErrors.Add(1)
+	message := "upstream proxy failed"
+	if err != nil {
+		message = err.Error()
+	}
+	r.mu.Lock()
+	r.recordErrorLocked("proxy", message)
+	r.mu.Unlock()
 }
 
 func (r *Recorder) Snapshot() Snapshot {
@@ -108,7 +132,23 @@ func (r *Recorder) Snapshot() Snapshot {
 	for reason, count := range r.blocks {
 		blocks[reason] = count
 	}
+	errorStatuses := make(map[string]uint64)
+	errors := make([]ErrorInfo, 0, len(r.errors))
+	for _, info := range r.errors {
+		copied := *info
+		errors = append(errors, copied)
+		if copied.Kind == "http" {
+			errorStatuses[copied.Message] += copied.Count
+		}
+	}
 	r.mu.Unlock()
+
+	sort.Slice(errors, func(i, j int) bool {
+		return errors[i].LastSeen.After(errors[j].LastSeen)
+	})
+	if len(errors) > 8 {
+		errors = errors[:8]
+	}
 
 	return Snapshot{
 		StartedAt:        started,
@@ -122,6 +162,8 @@ func (r *Recorder) Snapshot() Snapshot {
 		AverageLatencyMs: avgLatency,
 		StatusCodes:      statuses,
 		BlockReasons:     blocks,
+		ErrorStatusCodes: errorStatuses,
+		RecentErrors:     errors,
 	}
 }
 
@@ -159,6 +201,34 @@ func sortedKeys(m map[string]uint64) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func (r *Recorder) recordErrorLocked(kind, message string) {
+	if message == "" {
+		message = "unknown error"
+	}
+	message = compact(message, 180)
+	key := kind + ":" + message
+	info, ok := r.errors[key]
+	if !ok && len(r.errors) >= maxTrackedErrors {
+		key = kind + ":other"
+		message = "other errors"
+		info, ok = r.errors[key]
+	}
+	if !ok {
+		info = &ErrorInfo{Kind: kind, Message: message}
+		r.errors[key] = info
+	}
+	info.Count++
+	info.LastSeen = time.Now()
+}
+
+func compact(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "..."
 }
 
 type ResponseWriter struct {
