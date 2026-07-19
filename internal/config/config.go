@@ -107,12 +107,28 @@ type Config struct {
 		Path            string `yaml:"path"`
 	} `yaml:"health"`
 
-	// Local SQLite persistence and automatic data failover.
-	Database struct {
-		Path                  string `yaml:"path"`
-		StandbyPath           string `yaml:"standby_path"`
-		BackupIntervalSeconds int    `yaml:"backup_interval_seconds"`
-	} `yaml:"database"`
+	// Routes are local fallback routes keyed by domain, wildcard/regex pattern,
+	// or path prefix. Streamed routes with the same key take precedence.
+	Routes map[string]Route `yaml:"routes"`
+}
+
+type Route struct {
+	Type           string        `yaml:"type"`
+	Target         string        `yaml:"target"`
+	Targets        []RouteTarget `yaml:"targets"`
+	CertificatePEM string        `yaml:"certificate_pem"`
+	PrivateKeyPEM  string        `yaml:"private_key_pem"`
+	Active         *bool         `yaml:"active"`
+}
+
+type RouteTarget struct {
+	URL         string `yaml:"url"`
+	HealthCheck string `yaml:"health_check"`
+}
+
+// IsActive treats an omitted active flag as enabled.
+func (r Route) IsActive() bool {
+	return r.Active == nil || *r.Active
 }
 
 // HealthChecksEnabled reports whether upstream health probes should run.

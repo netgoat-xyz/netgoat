@@ -577,29 +577,35 @@ custom_error_page: "/path/with spaces/error.html"
 	}
 }
 
-func TestDatabasePathDefaults(t *testing.T) {
-	var nilCfg *Config
-	if got := nilCfg.DatabasePath(); got != "./database/proxy.db" {
-		t.Fatalf("nil DatabasePath = %s", got)
-	}
-	if got := nilCfg.DatabaseStandbyPath(); got != "./database/proxy.standby.db" {
-		t.Fatalf("nil DatabaseStandbyPath = %s", got)
+func TestLoadParsesLocalRoutes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	data := []byte(`routes:
+  api.example.test:
+    type: domain
+    targets:
+      - url: http://127.0.0.1:9001/base
+        health_check: http
+      - url: http://127.0.0.1:9002
+        health_check: tcp
+  /internal/:
+    type: path
+    target: http://127.0.0.1:9010
+    active: false
+`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 
-	cfg := &Config{}
-	cfg.Database.Path = "./data/custom.db"
-	if got := cfg.DatabaseStandbyPath(); got != "./data/custom.standby.db" {
-		t.Fatalf("DatabaseStandbyPath = %s, want ./data/custom.standby.db", got)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-	cfg.Database.StandbyPath = "./data/hot.db"
-	if got := cfg.DatabaseStandbyPath(); got != "./data/hot.db" {
-		t.Fatalf("DatabaseStandbyPath = %s, want ./data/hot.db", got)
+	route, ok := cfg.Routes["api.example.test"]
+	if !ok || len(route.Targets) != 2 || route.Targets[1].HealthCheck != "tcp" || !route.IsActive() {
+		t.Fatalf("domain route was not decoded: %+v", route)
 	}
-	if got := cfg.DatabaseBackupIntervalSeconds(); got != 0 {
-		t.Fatalf("BackupInterval default = %d, want 0", got)
-	}
-	cfg.Database.BackupIntervalSeconds = 300
-	if got := cfg.DatabaseBackupIntervalSeconds(); got != 300 {
-		t.Fatalf("BackupInterval = %d, want 300", got)
+	if cfg.Routes["/internal/"].IsActive() {
+		t.Fatal("explicitly inactive route should remain inactive")
 	}
 }

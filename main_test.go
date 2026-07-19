@@ -14,6 +14,9 @@ import (
 	"netgoat.xyz/agent/internal/cache"
 
 	"netgoat.xyz/agent/internal/challenge"
+	"netgoat.xyz/agent/internal/config"
+	"netgoat.xyz/agent/internal/database"
+	"netgoat.xyz/agent/internal/streaming"
 )
 
 func TestProxyErrorHandlerReturnsBadGatewayOnConnectRefused(t *testing.T) {
@@ -120,7 +123,6 @@ func TestShouldInjectOverlaySkipsCompressedOrUnknownLength(t *testing.T) {
 	}
 }
 
-
 func TestSharedCacheRequiresPublicAnonymousRequest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	store := cache.NewStore(time.Minute, 10, 1024)
@@ -150,5 +152,43 @@ func TestSharedCacheableResponseRejectsPrivateState(t *testing.T) {
 	res.Header.Set("Cache-Control", "private, max-age=60")
 	if isSharedCacheableResponse(res) {
 		t.Fatal("private response should not be cacheable")
+	}
+}
+
+func TestLocalConfigSnapshotAppliesDocumentedRoutes(t *testing.T) {
+	db, err := database.Init(":memory:")
+	if err != nil {
+		t.Fatalf("database.Init: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	cfg := &config.Config{Routes: map[string]config.Route{
+		"local.example.test": {
+			Type: "domain",
+			Targets: []config.RouteTarget{
+				{URL: "http://127.0.0.1:9001/base", HealthCheck: "http"},
+				{URL: "http://127.0.0.1:9002", HealthCheck: "tcp"},
+			},
+		},
+	}}
+
+	snapshot := localConfigSnapshot(cfg)
+	applySnapshotToDB(db, snapshot)
+	match, err := database.GetRouteTargets(db, "LOCAL.EXAMPLE.TEST", "/")
+	if err != nil {
+		t.Fatalf("GetRouteTargets: %v", err)
+	}
+	if len(match.Targets) != 2 || match.Targets[0].URL != "http://127.0.0.1:9001/base" || match.Targets[1].HealthCheck != "tcp" {
+		t.Fatalf("local route targets = %+v", match.Targets)
+	}
+}
+
+func TestEmptyRecoverySnapshotHasNoContent(t *testing.T) {
+	if snapshotHasContent(nil) {
+		t.Fatal("nil snapshot should be empty")
+	}
+	if snapshotHasContent(&streaming.ConfigSnapshot{}) {
+		t.Fatal("zero-value snapshot should not override local state")
 	}
 }
