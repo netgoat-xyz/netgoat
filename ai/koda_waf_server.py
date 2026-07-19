@@ -26,6 +26,32 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import numpy as np
 
+from worker_protocol import iter_requests, write_response
+
+
+COLORS = {
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+    "info": "\033[32m",
+    "warn": "\033[33m",
+    "error": "\033[31m",
+    "service": "\033[35m",
+}
+
+
+def log(level, message):
+    ts = __import__("datetime").datetime.now().strftime("%H:%M:%S")
+    if os.environ.get("NO_COLOR"):
+        print(f"{ts} koda-waf {level.upper():<5} {message}", file=sys.stderr)
+        return
+    print(
+        f"{COLORS['dim']}{ts}{COLORS['reset']} "
+        f"{COLORS['service']}koda-waf{COLORS['reset']} "
+        f"{COLORS.get(level, '')}{level.upper():<5}{COLORS['reset']} "
+        f"{message}",
+        file=sys.stderr,
+    )
+
 
 class KodaWafServer:
     def __init__(self, model_path, features_path):
@@ -36,7 +62,7 @@ class KodaWafServer:
             with open(features_path, 'rb') as f:
                 self.expected_cols = pickle.load(f)
         except Exception as e:
-            print(f"ERROR: Failed to load Koda-Waf model: {e}", file=sys.stderr)
+            log("error", f"failed to load model: {e}")
             sys.exit(1)
 
     def _cnt(self, text, patterns):
@@ -143,23 +169,26 @@ class KodaWafServer:
 
 def main():
     if len(sys.argv) < 3:
-        print("USAGE: koda_waf_server.py <model_path> <features_path>", file=sys.stderr)
+        log("warn", "usage: koda_waf_server.py <model_path> <features_path>")
         sys.exit(1)
 
     model_path = sys.argv[1]
     features_path = sys.argv[2]
 
     server = KodaWafServer(model_path, features_path)
+    log("info", "ready")
 
-    for line in sys.stdin:
-        line = line.strip()
+    for line, protocol_error in iter_requests():
+        if protocol_error:
+            write_response({"error": protocol_error})
+            continue
         if not line:
             continue
         try:
             result = server.predict(line)
-            print(json.dumps(result))
+            write_response(result)
         except Exception as e:
-            print(json.dumps({"error": str(e)}))
+            write_response({"error": str(e)})
 
 
 if __name__ == '__main__':
