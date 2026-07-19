@@ -129,15 +129,13 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 			req.Host = parsed.Host
 
 			// Preserve original host/proto for upstream services.
-			if req.Header.Get("X-Forwarded-Host") == "" && r.Host != "" {
+			if r.Host != "" {
 				req.Header.Set("X-Forwarded-Host", r.Host)
 			}
-			if req.Header.Get("X-Forwarded-Proto") == "" {
-				if r.TLS != nil {
-					req.Header.Set("X-Forwarded-Proto", "https")
-				} else {
-					req.Header.Set("X-Forwarded-Proto", "http")
-				}
+			if r.TLS != nil {
+				req.Header.Set("X-Forwarded-Proto", "https")
+			} else {
+				req.Header.Set("X-Forwarded-Proto", "http")
 			}
 		}
 		proxy.ModifyResponse = modify
