@@ -15,7 +15,7 @@ func TestWriteZeroTrustChallenge(t *testing.T) {
 	req.RemoteAddr = "203.0.113.44:12345"
 	rr := httptest.NewRecorder()
 
-	writeZeroTrustChallenge(rr, store, req)
+	writeZeroTrustChallenge(rr, store, req, "192.0.2.1|user:1")
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
