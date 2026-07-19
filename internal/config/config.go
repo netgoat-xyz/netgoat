@@ -96,8 +96,11 @@ type Config struct {
 	} `yaml:"metrics"`
 
 	API struct {
-		URL string `yaml:"url"`
-		Key string `yaml:"key"`
+		URL                      string `yaml:"url"`
+		Key                      string `yaml:"key"`
+		PollIntervalSeconds      int    `yaml:"poll_interval"`
+		ConnectionTimeoutSeconds int    `yaml:"connection_timeout"`
+		MaxRetryIntervalSeconds  int    `yaml:"max_retry_interval"`
 	} `yaml:"api"`
 
 	Health struct {

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"database/sql"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,13 +85,16 @@ func main() {
 
 	log.Info().Msg("Applying initial configuration from snapshot")
 	localSnap := localConfigSnapshot(cfg)
-	if len(localSnap.Routes) > 0 {
-		localSnap.ZeroTrustEnabled = database.IsZeroTrustEnabled(db)
-		applySnapshotToDB(db, localSnap)
+	if localSnap.RoutesConfigured {
+		if err := applySnapshotToDB(db, localSnap); err != nil {
+			log.Error().Err(err).Msg("Failed to apply local routes")
+		}
 	}
 	initialSnap := streamMgr.GetSnapshot()
 	if snapshotHasContent(initialSnap) {
-		applySnapshotToDB(db, initialSnap)
+		if err := applySnapshotToDB(db, mergeConfigSnapshots(localSnap, initialSnap)); err != nil {
+			log.Error().Err(err).Msg("Failed to apply recovered configuration")
+		}
 		applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
 	}
 
@@ -132,12 +137,12 @@ func main() {
 			applyAgentConfigToConfig(cfg, agentConfig)
 			log.Info().Msg("Applied startup agent config from stream-server")
 		}
-		go connectToAPIStream(streamMgr, apiURL, apiKey)
+		go connectToAPIStream(streamMgr, apiURL, apiKey, streamSettingsFromConfig(cfg))
 	} else {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
 
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, standbyPath)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -891,224 +896,250 @@ func loadEnvFromFile(path string) {
 	}
 }
 
-// connectToAPIStream connects to the external API WebSocket for config streaming.
-func connectToAPIStream(mgr *streaming.Manager, apiURL, apiKey string) {
-	log.Info().Str("url", apiURL).Msg("Starting config stream connection to external API")
-	retryInterval := 5 * time.Second
-	maxRetryInterval := 2 * time.Minute
+const maxDomainsResponseBytes = 8 << 20
+
+type streamPollSettings struct {
+	pollInterval     time.Duration
+	requestTimeout   time.Duration
+	maxRetryInterval time.Duration
+}
+
+type domainPollState struct {
+	digest      [sha256.Size]byte
+	hasDigest   bool
+	lastVersion int64
+}
+
+type domainsResponse struct {
+	Domains          []domainRecord            `json:"domains"`
+	WAFRules         []wafRuleRecord           `json:"waf_rules"`
+	ZeroTrustEnabled *bool                     `json:"zero_trust_enabled"`
+	AgentConfig      streaming.AgentConfigData `json:"agent_config"`
+}
+
+type domainRecord struct {
+	Domain         string            `json:"domain"`
+	TargetURL      string            `json:"target_url"`
+	TargetURLs     []string          `json:"target_urls"`
+	CertificatePEM string            `json:"certificate_pem"`
+	PrivateKeyPEM  string            `json:"private_key_pem"`
+	Active         any               `json:"active"`
+	Subdomains     []subdomainRecord `json:"subdomains"`
+}
+
+type subdomainRecord struct {
+	FullDomain string   `json:"full_domain"`
+	TargetURL  string   `json:"target_url"`
+	TargetURLs []string `json:"target_urls"`
+	Active     any      `json:"active"`
+}
+
+type wafRuleRecord struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
+	Action     string `json:"action"`
+	Priority   int    `json:"priority"`
+}
+
+func streamSettingsFromConfig(cfg *config.Config) streamPollSettings {
+	settings := streamPollSettings{
+		pollInterval:     5 * time.Second,
+		requestTimeout:   10 * time.Second,
+		maxRetryInterval: 2 * time.Minute,
+	}
+	if cfg == nil {
+		return settings
+	}
+	if cfg.API.PollIntervalSeconds > 0 {
+		settings.pollInterval = time.Duration(cfg.API.PollIntervalSeconds) * time.Second
+	}
+	if cfg.API.ConnectionTimeoutSeconds > 0 {
+		settings.requestTimeout = time.Duration(cfg.API.ConnectionTimeoutSeconds) * time.Second
+	}
+	if cfg.API.MaxRetryIntervalSeconds > 0 {
+		settings.maxRetryInterval = time.Duration(cfg.API.MaxRetryIntervalSeconds) * time.Second
+	}
+	if settings.maxRetryInterval < settings.pollInterval {
+		settings.maxRetryInterval = settings.pollInterval
+	}
+	return settings
+}
+
+func connectToAPIStream(mgr *streaming.Manager, apiURL, apiKey string, settings streamPollSettings) {
+	domainsURL := strings.TrimSuffix(apiURL, "/") + "/domains"
+	state := &domainPollState{lastVersion: mgr.GetSnapshot().Version}
+	retryInterval := settings.pollInterval
 	consecutiveFailures := 0
+	log.Info().Str("url", domainsURL).Dur("poll_interval", settings.pollInterval).Msg("Starting domains polling connection")
 
 	for {
-		log.Debug().Int("consecutive_failures", consecutiveFailures).Dur("retry_interval", retryInterval).Msg("Attempting API connection")
+		ctx, cancel := context.WithTimeout(context.Background(), settings.requestTimeout)
+		changed, err := pollDomains(ctx, mgr, domainsURL, apiKey, state)
+		cancel()
 
-		err := pollDomains(mgr, apiURL, apiKey)
-
+		delay := settings.pollInterval
 		if err != nil {
 			consecutiveFailures++
 			mgr.SetConnectionStatus(false, err)
-			log.Warn().Err(err).Str("api_url", apiURL).Dur("retry_in", retryInterval).Int("failures", consecutiveFailures).Msg("Stream connection failed, will retry")
+			delay = retryInterval
+			log.Warn().Err(err).Str("url", domainsURL).Dur("retry_in", delay).Int("failures", consecutiveFailures).Msg("Domains poll failed; serving cached configuration")
+			if retryInterval < settings.maxRetryInterval {
+				retryInterval *= 2
+				if retryInterval > settings.maxRetryInterval {
+					retryInterval = settings.maxRetryInterval
+				}
+			}
 		} else {
+			if consecutiveFailures > 0 {
+				log.Info().Int("previous_failures", consecutiveFailures).Msg("Domains connection recovered")
+			}
 			consecutiveFailures = 0
-			retryInterval = 5 * time.Second
+			retryInterval = settings.pollInterval
 			mgr.SetConnectionStatus(true, nil)
-			log.Info().Msg("Stream connection established successfully")
-		}
-
-		time.Sleep(retryInterval)
-		if retryInterval < maxRetryInterval {
-			retryInterval *= 2
-			if retryInterval > maxRetryInterval {
-				retryInterval = maxRetryInterval
+			if !changed {
+				log.Debug().Msg("Domains configuration unchanged")
 			}
 		}
+		time.Sleep(delay)
 	}
 }
 
-// pollDomains polls the WhiteDiamond /domains endpoint and converts it
-// into a streaming.ConfigSnapshot for the agent.
-func pollDomains(mgr *streaming.Manager, apiURL, apiKey string) error {
-	domainsURL := strings.TrimSuffix(apiURL, "/") + "/domains"
-	lastVersion := int64(-1)
-	log.Info().Str("url", domainsURL).Msg("Starting domains polling connection")
+// pollDomains fetches and applies one control-plane snapshot.
+func pollDomains(ctx context.Context, mgr *streaming.Manager, domainsURL, apiKey string, state *domainPollState) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, domainsURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("build domains request: %w", err)
+	}
+	addStreamAuthHeaders(req, apiKey)
 
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return false, errors.New("unauthorized: check API key / zero trust key")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("unexpected status from domains: %d", resp.StatusCode)
+	}
 
-	consecutiveFailures := 0
-	maxConsecutiveFailures := 12
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDomainsResponseBytes+1))
+	if err != nil {
+		return false, fmt.Errorf("read domains response: %w", err)
+	}
+	if len(body) > maxDomainsResponseBytes {
+		return false, fmt.Errorf("domains response exceeds %d bytes", maxDomainsResponseBytes)
+	}
 
-	for range ticker.C {
-		log.Debug().Str("url", domainsURL).Msg("Polling domains...")
+	var payload domainsResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false, fmt.Errorf("decode domains response: %w", err)
+	}
+	snapshot := snapshotFromDomainsResponse(payload)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, domainsURL, nil)
-		if err != nil {
-			cancel()
-			log.Warn().Err(err).Msg("Failed to build domains request")
-			consecutiveFailures++
-			mgr.SetConnectionStatus(false, err)
-			continue
-		}
+	digestPayload, err := json.Marshal(snapshot)
+	if err != nil {
+		return false, fmt.Errorf("encode domains snapshot: %w", err)
+	}
+	digest := sha256.Sum256(digestPayload)
+	if state.hasDigest && digest == state.digest {
+		return false, nil
+	}
 
-		addStreamAuthHeaders(req, apiKey)
+	version := time.Now().UnixNano()
+	if version <= state.lastVersion {
+		version = state.lastVersion + 1
+	}
+	snapshot.Version = version
+	snapshot.Timestamp = time.Now()
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return false, fmt.Errorf("encode versioned snapshot: %w", err)
+	}
+	if err := mgr.HandleMessage(&streaming.Message{Type: "snapshot", Version: version, Timestamp: snapshot.Timestamp, Data: data}); err != nil {
+		return false, fmt.Errorf("apply domains snapshot: %w", err)
+	}
+	state.digest = digest
+	state.hasDigest = true
+	state.lastVersion = version
+	log.Info().Int64("version", version).Int("routes", len(snapshot.Routes)).Msg("Applied domains configuration")
+	return true, nil
+}
 
-		log.Debug().Str("url", domainsURL).Msg("Sending domains request")
-		resp, err := http.DefaultClient.Do(req)
-		cancel()
-		if err != nil {
-			consecutiveFailures++
-			mgr.SetConnectionStatus(false, err)
-			if consecutiveFailures >= maxConsecutiveFailures {
-				log.Warn().Err(err).Str("url", domainsURL).Int("failures", consecutiveFailures).Msg("Multiple polling failures detected - continuing with cached config")
-			} else {
-				log.Debug().Err(err).Str("url", domainsURL).Int("failures", consecutiveFailures).Msg("Polling failed")
-			}
-			continue
-		}
+func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapshot {
+	snapshot := streaming.ConfigSnapshot{
+		Routes:             make(map[string]streaming.RouteData),
+		RoutesConfigured:   payload.Domains != nil,
+		WAFRules:           make(map[string]streaming.WAFRuleData),
+		WAFRulesConfigured: payload.WAFRules != nil,
+		Users:              []streaming.UserData{},
+		UserDomains:        []streaming.UserDomainData{},
+		AgentConfig:        payload.AgentConfig,
+	}
+	if payload.ZeroTrustEnabled != nil {
+		snapshot.ZeroTrustEnabled = *payload.ZeroTrustEnabled
+		snapshot.ZeroTrustConfigured = true
+	}
 
-		log.Debug().Int("status", resp.StatusCode).Msg("Poll response received")
-
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			resp.Body.Close()
-			consecutiveFailures++
-			authErr := errors.New("unauthorized: check API key / zero trust key")
-			mgr.SetConnectionStatus(false, authErr)
-			if consecutiveFailures == 1 || consecutiveFailures%10 == 0 {
-				log.Warn().Int("status", resp.StatusCode).Int("failures", consecutiveFailures).Msg("Domains request unauthorized; check keys")
-			}
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			consecutiveFailures++
-			statusErr := fmt.Errorf("unexpected status from domains: %d", resp.StatusCode)
-			mgr.SetConnectionStatus(false, statusErr)
-			log.Debug().Int("status", resp.StatusCode).Msg("Non-200 status code from domains endpoint")
-			continue
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			consecutiveFailures++
-			mgr.SetConnectionStatus(false, err)
-			log.Warn().Err(err).Msg("Failed to read domains body")
-			continue
-		}
-
-		var alt struct {
-			Domains []struct {
-				ID             string   `json:"id"`
-				Domain         string   `json:"domain"`
-				TargetURL      string   `json:"target_url"`
-				TargetURLs     []string `json:"target_urls"`
-				CertificatePEM string   `json:"certificate_pem"`
-				PrivateKeyPEM  string   `json:"private_key_pem"`
-				TeamID         string   `json:"team_id"`
-				Active         any      `json:"active"`
-				Subdomains     []struct {
-					ID         string   `json:"id"`
-					Subdomain  string   `json:"subdomain"`
-					FullDomain string   `json:"full_domain"`
-					TargetURL  string   `json:"target_url"`
-					TargetURLs []string `json:"target_urls"`
-					Active     any      `json:"active"`
-				} `json:"subdomains"`
-			} `json:"domains"`
-			WAFRules []struct {
-				ID            string `json:"id"`
-				Name          string `json:"name"`
-				Expression    string `json:"expression"`
-				Action        string `json:"action"`
-				Priority      int    `json:"priority"`
-				ProxyConfigID string `json:"proxy_config_id"`
-			} `json:"waf_rules"`
-			ZeroTrustEnabled bool                      `json:"zero_trust_enabled"`
-			AgentConfig      streaming.AgentConfigData `json:"agent_config"`
-		}
-
-		if err := json.Unmarshal(body, &alt); err != nil {
-			consecutiveFailures++
-			mgr.SetConnectionStatus(false, err)
-			log.Warn().Err(err).Msg("Failed to decode /domains response")
-			continue
-		}
-
-		snapshot := streaming.ConfigSnapshot{
-			Version:          time.Now().Unix(),
-			Timestamp:        time.Now(),
-			Routes:           make(map[string]streaming.RouteData),
-			WAFRules:         make(map[string]streaming.WAFRuleData),
-			Users:            []streaming.UserData{},
-			UserDomains:      []streaming.UserDomainData{},
-			ZeroTrustEnabled: alt.ZeroTrustEnabled,
-			AgentConfig:      alt.AgentConfig,
-		}
-
-		for _, d := range alt.Domains {
-			if d.Domain != "" {
-				snapshot.Routes[d.Domain] = streaming.RouteData{
-					Type:           "domain",
-					Target:         d.TargetURL,
-					Targets:        routeTargetsFromAPI(d.TargetURL, d.TargetURLs),
-					CertificatePEM: d.CertificatePEM,
-					PrivateKeyPEM:  d.PrivateKeyPEM,
-				}
-			}
-			for _, s := range d.Subdomains {
-				if s.FullDomain != "" {
-					snapshot.Routes[s.FullDomain] = streaming.RouteData{
-						Type:    "domain",
-						Target:  s.TargetURL,
-						Targets: routeTargetsFromAPI(s.TargetURL, s.TargetURLs),
-					}
-				}
+	for _, domain := range payload.Domains {
+		if apiRecordActive(domain.Active) && strings.TrimSpace(domain.Domain) != "" {
+			snapshot.Routes[domain.Domain] = streaming.RouteData{
+				Type:           "domain",
+				Target:         domain.TargetURL,
+				Targets:        routeTargetsFromAPI(domain.TargetURL, domain.TargetURLs),
+				CertificatePEM: domain.CertificatePEM,
+				PrivateKeyPEM:  domain.PrivateKeyPEM,
 			}
 		}
-
-		for _, w := range alt.WAFRules {
-			name := w.Name
-			if name == "" {
-				name = w.ID
+		for _, subdomain := range domain.Subdomains {
+			if !apiRecordActive(domain.Active) || !apiRecordActive(subdomain.Active) || strings.TrimSpace(subdomain.FullDomain) == "" {
+				continue
 			}
-			snapshot.WAFRules[name] = streaming.WAFRuleData{
-				Name:       name,
-				Expression: w.Expression,
-				Action:     ifEmpty(w.Action, "BLOCK"),
-				Priority:   w.Priority,
+			snapshot.Routes[subdomain.FullDomain] = streaming.RouteData{
+				Type:    "domain",
+				Target:  subdomain.TargetURL,
+				Targets: routeTargetsFromAPI(subdomain.TargetURL, subdomain.TargetURLs),
 			}
-		}
-
-		mgr.SetConnectionStatus(true, nil)
-
-		if consecutiveFailures > 0 {
-			log.Info().Int("previous_failures", consecutiveFailures).Msg("Connection recovered")
-			consecutiveFailures = 0
-		}
-
-		if snapshot.Version > lastVersion {
-			log.Info().Int64("new_version", snapshot.Version).Int64("last_version", lastVersion).Int("routes", len(snapshot.Routes)).Msg("New config version detected")
-			lastVersion = snapshot.Version
-			msg := &streaming.Message{
-				Type:      "snapshot",
-				Version:   snapshot.Version,
-				Timestamp: time.Now(),
-			}
-			if data, err := json.Marshal(snapshot); err == nil {
-				msg.Data = data
-				if err := mgr.HandleMessage(msg); err != nil {
-					log.Error().Err(err).Msg("Failed to handle message")
-				} else {
-					log.Info().Int64("version", snapshot.Version).Int("routes", len(snapshot.Routes)).Msg("Applied new config from /domains")
-				}
-			}
-		} else {
-			log.Debug().Int64("version", snapshot.Version).Msg("Config version unchanged")
 		}
 	}
 
-	return nil
+	for _, rule := range payload.WAFRules {
+		name := ifEmpty(strings.TrimSpace(rule.Name), strings.TrimSpace(rule.ID))
+		if name == "" || strings.TrimSpace(rule.Expression) == "" {
+			continue
+		}
+		snapshot.WAFRules[name] = streaming.WAFRuleData{
+			Name:       name,
+			Expression: rule.Expression,
+			Action:     ifEmpty(rule.Action, "BLOCK"),
+			Priority:   rule.Priority,
+		}
+	}
+	return snapshot
+}
+
+func apiRecordActive(value any) bool {
+	switch active := value.(type) {
+	case nil:
+		return true
+	case bool:
+		return active
+	case float64:
+		return active != 0
+	case string:
+		switch strings.ToLower(strings.TrimSpace(active)) {
+		case "", "1", "true", "yes", "on", "active", "enabled":
+			return true
+		case "0", "false", "no", "off", "inactive", "disabled":
+			return false
+		default:
+			return true
+		}
+	default:
+		return true
+	}
 }
 
 func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget {
@@ -1129,11 +1160,12 @@ func routeTargetsFromAPI(primary string, urls []string) []streaming.RouteTarget 
 
 func localConfigSnapshot(cfg *config.Config) *streaming.ConfigSnapshot {
 	snapshot := &streaming.ConfigSnapshot{
-		Timestamp:   time.Now(),
-		Routes:      make(map[string]streaming.RouteData),
-		WAFRules:    make(map[string]streaming.WAFRuleData),
-		Users:       []streaming.UserData{},
-		UserDomains: []streaming.UserDomainData{},
+		Timestamp:        time.Now(),
+		Routes:           make(map[string]streaming.RouteData),
+		RoutesConfigured: cfg != nil && cfg.Routes != nil,
+		WAFRules:         make(map[string]streaming.WAFRuleData),
+		Users:            []streaming.UserData{},
+		UserDomains:      []streaming.UserDomainData{},
 	}
 	if cfg == nil {
 		return snapshot
@@ -1177,8 +1209,42 @@ func snapshotHasContent(snapshot *streaming.ConfigSnapshot) bool {
 	if snapshot == nil {
 		return false
 	}
-	return snapshot.Version > 0 || len(snapshot.Routes) > 0 || len(snapshot.WAFRules) > 0 ||
+	return snapshot.Version > 0 || snapshot.RoutesConfigured || snapshot.WAFRulesConfigured || len(snapshot.Routes) > 0 || len(snapshot.WAFRules) > 0 ||
 		len(snapshot.Users) > 0 || len(snapshot.UserDomains) > 0 || !snapshot.AgentConfig.IsZero()
+}
+
+func mergeConfigSnapshots(local, remote *streaming.ConfigSnapshot) *streaming.ConfigSnapshot {
+	merged := &streaming.ConfigSnapshot{
+		Routes:      make(map[string]streaming.RouteData),
+		WAFRules:    make(map[string]streaming.WAFRuleData),
+		Users:       []streaming.UserData{},
+		UserDomains: []streaming.UserDomainData{},
+	}
+	if local != nil {
+		merged.RoutesConfigured = local.RoutesConfigured || len(local.Routes) > 0
+		for key, route := range local.Routes {
+			merged.Routes[key] = route
+		}
+	}
+	if remote == nil {
+		return merged
+	}
+	merged.Version = remote.Version
+	merged.Timestamp = remote.Timestamp
+	merged.RoutesConfigured = merged.RoutesConfigured || remote.RoutesConfigured || len(remote.Routes) > 0
+	for key, route := range remote.Routes {
+		merged.Routes[key] = route
+	}
+	merged.WAFRulesConfigured = remote.WAFRulesConfigured || len(remote.WAFRules) > 0
+	for key, rule := range remote.WAFRules {
+		merged.WAFRules[key] = rule
+	}
+	merged.Users = append(merged.Users, remote.Users...)
+	merged.UserDomains = append(merged.UserDomains, remote.UserDomains...)
+	merged.ZeroTrustEnabled = remote.ZeroTrustEnabled
+	merged.ZeroTrustConfigured = remote.ZeroTrustConfigured
+	merged.AgentConfig = remote.AgentConfig
+	return merged
 }
 
 func isRequestCacheableForSharedStore(store *cache.Store, r *http.Request) bool {
@@ -1323,7 +1389,7 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, standbyPath string) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1332,8 +1398,10 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 			log.Warn().Msg("Received nil snapshot")
 			continue
 		}
-		applySnapshotToDB(db, snap)
-		refreshDatabaseStandby(db, standbyPath)
+		if err := applySnapshotToDB(db, mergeConfigSnapshots(local, snap)); err != nil {
+			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to apply config snapshot atomically")
+			continue
+		}
 		if healthChecksEnabled {
 			syncHealthTargets(db, healthWorker)
 		}
@@ -1384,138 +1452,163 @@ func syncHealthTargets(db *sql.DB, worker *health.Worker) {
 	worker.Sync(healthTargets)
 }
 
-func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) {
-	log.Info().Int("route_count", len(snap.Routes)).Int("waf_rule_count", len(snap.WAFRules)).Msg("Processing config snapshot")
+func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
+	if db == nil || snap == nil {
+		return errors.New("database and snapshot are required")
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin snapshot transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	reconcileRoutes := snap.RoutesConfigured || len(snap.Routes) > 0
+	if reconcileRoutes {
+		if _, err := tx.Exec(`UPDATE routes SET active = 0`); err != nil {
+			return fmt.Errorf("mark existing routes stale: %w", err)
+		}
+	}
 
 	routesApplied := 0
-	routesFailed := 0
 	for routeKey, route := range snap.Routes {
-		targets := route.AllTargets()
-		primaryTarget := ""
-		if len(targets) > 0 {
-			primaryTarget = targets[0].URL
-		}
-		log.Debug().Str("route_key", routeKey).Str("target", primaryTarget).Int("targets", len(targets)).Str("type", route.Type).Msg("Updating route")
-
-		routeType := strings.ToLower(strings.TrimSpace(route.Type))
-		if routeType == "" {
-			routeType = "domain"
-		}
-
-		var domainVal string
-		var pathVal string
+		routeKey = strings.TrimSpace(routeKey)
+		routeType := ifEmpty(strings.ToLower(strings.TrimSpace(route.Type)), "domain")
+		var domainVal, pathVal string
 		switch routeType {
 		case "path":
-			domainVal = ""
+			if !strings.HasPrefix(routeKey, "/") {
+				return fmt.Errorf("path route %q must start with /", routeKey)
+			}
 			pathVal = routeKey
 		case "domain", "wildcard", "regex":
+			if routeKey == "" {
+				return errors.New("domain route key cannot be empty")
+			}
 			domainVal = routeKey
-			pathVal = ""
 		default:
-			log.Warn().Str("route_key", routeKey).Str("type", route.Type).Msg("Unknown route type; skipping")
-			routesFailed++
-			continue
+			return fmt.Errorf("route %q has unsupported type %q", routeKey, route.Type)
 		}
 
-		_, err := db.Exec(
-			`INSERT INTO routes (route_type, domain, path_prefix, target_url, certificate_pem, private_key_pem, active) VALUES (?, ?, ?, ?, ?, ?, 1)
-				 ON CONFLICT(route_type, domain, path_prefix) DO UPDATE SET target_url=excluded.target_url, certificate_pem=excluded.certificate_pem, private_key_pem=excluded.private_key_pem, updated_at=CURRENT_TIMESTAMP`,
-			routeType, domainVal, pathVal, primaryTarget, route.CertificatePEM, route.PrivateKeyPEM)
+		targets, err := normalizedRouteTargets(route.AllTargets())
 		if err != nil {
-			log.Error().Err(err).Str("route", routeKey).Str("target", primaryTarget).Str("type", routeType).Msg("Failed to update route")
-			routesFailed++
-			continue
+			return fmt.Errorf("route %q: %w", routeKey, err)
+		}
+		primaryTarget := targets[0].URL
+		if _, err := tx.Exec(
+			`INSERT INTO routes (route_type, domain, path_prefix, target_url, certificate_pem, private_key_pem, active) VALUES (?, ?, ?, ?, ?, ?, 1)
+			 ON CONFLICT(route_type, domain, path_prefix) DO UPDATE SET target_url=excluded.target_url, certificate_pem=excluded.certificate_pem, private_key_pem=excluded.private_key_pem, active=1, updated_at=CURRENT_TIMESTAMP`,
+			routeType, domainVal, pathVal, primaryTarget, route.CertificatePEM, route.PrivateKeyPEM); err != nil {
+			return fmt.Errorf("upsert route %q: %w", routeKey, err)
 		}
 
 		var routeID int
-		err = db.QueryRow(`
-			SELECT id FROM routes
-			WHERE route_type = ? AND COALESCE(domain, '') = COALESCE(?, '') AND COALESCE(path_prefix, '') = COALESCE(?, '')`,
-			routeType, domainVal, pathVal).Scan(&routeID)
-		if err != nil {
-			log.Error().Err(err).Str("route", routeKey).Msg("Failed to resolve route ID after upsert")
-			routesFailed++
-			continue
+		if err := tx.QueryRow(`SELECT id FROM routes WHERE route_type = ? AND domain = ? AND path_prefix = ?`, routeType, domainVal, pathVal).Scan(&routeID); err != nil {
+			return fmt.Errorf("resolve route %q: %w", routeKey, err)
 		}
-
-		dbTargets := make([]database.RouteTarget, 0, len(targets))
-		for _, t := range targets {
-			dbTargets = append(dbTargets, database.RouteTarget{URL: t.URL, HealthCheck: t.HealthCheck})
+		if err := database.SetRouteTargetsTx(tx, routeID, targets); err != nil {
+			return fmt.Errorf("replace targets for route %q: %w", routeKey, err)
 		}
-		if err := database.SetRouteTargets(db, routeID, dbTargets); err != nil {
-			log.Error().Err(err).Str("route", routeKey).Msg("Failed to update route targets")
-			routesFailed++
-			continue
-		}
-
-		log.Info().Str("route", routeKey).Str("target", primaryTarget).Int("targets", len(dbTargets)).Str("type", routeType).Msg("Route updated")
 		routesApplied++
 	}
 
-	rulesApplied := 0
-	rulesFailed := 0
-	for _, rule := range snap.WAFRules {
-		log.Debug().Str("name", rule.Name).Str("expression", rule.Expression).Msg("Updating WAF rule")
-		_, err := db.Exec(
-			`INSERT INTO waf_rules (name, expression, action, priority) VALUES (?, ?, ?, ?)
-				 ON CONFLICT(name) DO UPDATE SET expression=excluded.expression, action=excluded.action, priority=excluded.priority`,
-			rule.Name, rule.Expression, rule.Action, rule.Priority)
-		if err != nil {
-			log.Error().Err(err).Str("name", rule.Name).Msg("Failed to update WAF rule")
-			rulesFailed++
-		} else {
-			log.Info().Str("name", rule.Name).Msg("WAF rule updated")
-			rulesApplied++
+	if reconcileRoutes {
+		if _, err := tx.Exec(`DELETE FROM route_targets WHERE route_id IN (SELECT id FROM routes WHERE active = 0)`); err != nil {
+			return fmt.Errorf("delete stale route targets: %w", err)
 		}
+		if _, err := tx.Exec(`DELETE FROM routes WHERE active = 0`); err != nil {
+			return fmt.Errorf("delete stale routes: %w", err)
+		}
+	}
+
+	reconcileRules := snap.WAFRulesConfigured || len(snap.WAFRules) > 0
+	if reconcileRules {
+		if _, err := tx.Exec(`DELETE FROM waf_rules`); err != nil {
+			return fmt.Errorf("clear stale WAF rules: %w", err)
+		}
+	}
+	rulesApplied := 0
+	for _, rule := range snap.WAFRules {
+		name := strings.TrimSpace(rule.Name)
+		if name == "" || strings.TrimSpace(rule.Expression) == "" {
+			return errors.New("WAF rule name and expression are required")
+		}
+		if _, err := tx.Exec(`INSERT INTO waf_rules (name, expression, action, priority) VALUES (?, ?, ?, ?)`,
+			name, rule.Expression, ifEmpty(strings.ToUpper(strings.TrimSpace(rule.Action)), "BLOCK"), rule.Priority); err != nil {
+			return fmt.Errorf("insert WAF rule %q: %w", name, err)
+		}
+		rulesApplied++
 	}
 
 	usersApplied := 0
-	usersFailed := 0
 	for _, user := range snap.Users {
-		_, err := db.Exec(
+		if _, err := tx.Exec(
 			`INSERT INTO users (username, password_hash, email, zero_trust_enabled) VALUES (?, ?, ?, ?)
-				 ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, email=excluded.email, zero_trust_enabled=excluded.zero_trust_enabled`,
-			user.Username, user.PasswordHash, user.Email, user.ZeroTrustEnabled)
-		if err != nil {
-			log.Error().Err(err).Str("username", user.Username).Msg("Failed to update user")
-			usersFailed++
-		} else {
-			usersApplied++
+			 ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, email=excluded.email, zero_trust_enabled=excluded.zero_trust_enabled`,
+			user.Username, user.PasswordHash, user.Email, user.ZeroTrustEnabled); err != nil {
+			return fmt.Errorf("upsert user %q: %w", user.Username, err)
 		}
+		usersApplied++
 	}
 
 	userDomainsApplied := 0
-	userDomainsFailed := 0
-	for _, ud := range snap.UserDomains {
+	for _, userDomain := range snap.UserDomains {
 		var userID int
-		err := db.QueryRow("SELECT id FROM users WHERE username = ?", ud.Username).Scan(&userID)
-		if err != nil {
-			log.Error().Err(err).Str("username", ud.Username).Str("domain", ud.Domain).Msg("Failed to find user for domain")
-			userDomainsFailed++
+		if err := tx.QueryRow("SELECT id FROM users WHERE username = ?", userDomain.Username).Scan(&userID); err != nil {
+			return fmt.Errorf("resolve user %q for domain %q: %w", userDomain.Username, userDomain.Domain, err)
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO user_proxy_records (user_id, domain, target_url, active) VALUES (?, ?, ?, ?)
+			 ON CONFLICT(user_id, domain) DO UPDATE SET target_url=excluded.target_url, active=excluded.active, updated_at=CURRENT_TIMESTAMP`,
+			userID, userDomain.Domain, userDomain.TargetURL, userDomain.Active); err != nil {
+			return fmt.Errorf("upsert user domain %q: %w", userDomain.Domain, err)
+		}
+		userDomainsApplied++
+	}
+
+	if snap.ZeroTrustConfigured || snap.ZeroTrustEnabled {
+		if _, err := tx.Exec(`INSERT INTO zero_trust_settings (key, value) VALUES ('enabled', ?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
+			fmt.Sprintf("%v", snap.ZeroTrustEnabled)); err != nil {
+			return fmt.Errorf("update zero-trust setting: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit snapshot: %w", err)
+	}
+	log.Info().Int("routes_applied", routesApplied).Int("rules_applied", rulesApplied).
+		Int("users_applied", usersApplied).Int("user_domains_applied", userDomainsApplied).
+		Int64("version", snap.Version).Msg("Snapshot applied atomically")
+	return nil
+}
+
+func normalizedRouteTargets(targets []streaming.RouteTarget) ([]database.RouteTarget, error) {
+	seen := make(map[string]struct{}, len(targets))
+	normalized := make([]database.RouteTarget, 0, len(targets))
+	for _, target := range targets {
+		targetURL := strings.TrimSpace(target.URL)
+		if targetURL == "" {
 			continue
 		}
-
-		_, err = db.Exec(
-			`INSERT INTO user_proxy_records (user_id, domain, target_url, active) VALUES (?, ?, ?, ?)
-				 ON CONFLICT(user_id, domain) DO UPDATE SET target_url=excluded.target_url, active=excluded.active, updated_at=CURRENT_TIMESTAMP`,
-			userID, ud.Domain, ud.TargetURL, ud.Active)
-		if err != nil {
-			log.Error().Err(err).Str("domain", ud.Domain).Msg("Failed to update user domain")
-			userDomainsFailed++
-		} else {
-			userDomainsApplied++
+		parsed, err := url.Parse(targetURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return nil, fmt.Errorf("invalid HTTP upstream URL %q", targetURL)
 		}
+		if _, ok := seen[targetURL]; ok {
+			continue
+		}
+		seen[targetURL] = struct{}{}
+		check := strings.ToLower(strings.TrimSpace(target.HealthCheck))
+		if check == "" {
+			check = "http"
+		}
+		if check != "http" && check != "tcp" {
+			return nil, fmt.Errorf("unsupported health check %q", target.HealthCheck)
+		}
+		normalized = append(normalized, database.RouteTarget{URL: targetURL, HealthCheck: check})
 	}
-
-	_, err := db.Exec(`INSERT INTO zero_trust_settings (key, value) VALUES ('enabled', ?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
-		fmt.Sprintf("%v", snap.ZeroTrustEnabled))
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to update zero trust settings")
+	if len(normalized) == 0 {
+		return nil, errors.New("at least one valid upstream target is required")
 	}
-
-	log.Info().Int("routes_applied", routesApplied).Int("routes_failed", routesFailed).
-		Int("rules_applied", rulesApplied).Int("rules_failed", rulesFailed).
-		Int("users_applied", usersApplied).Int("user_domains_applied", userDomainsApplied).
-		Msg("Snapshot applied")
+	return normalized, nil
 }
