@@ -13,6 +13,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	maxConcurrentProbes       = 8
+	maxProbeResponseDrainSize = 64 << 10
+)
+
 // Target describes an upstream to probe.
 type Target struct {
 	URL         string
@@ -22,6 +27,7 @@ type Target struct {
 // Worker periodically probes upstreams and tracks healthy vs. unhealthy state.
 type Worker struct {
 	mu       sync.RWMutex
+	probeMu  sync.Mutex
 	healthy  map[string]bool
 	checked  map[string]bool
 	targets  map[string]Target
@@ -141,6 +147,11 @@ func (w *Worker) Start(ctx context.Context) {
 }
 
 func (w *Worker) probeAll() {
+	// ProbeAllOnce can run alongside the background loop. Serializing cycles
+	// prevents duplicate probes and stale cycles from multiplying load.
+	w.probeMu.Lock()
+	defer w.probeMu.Unlock()
+
 	w.mu.RLock()
 	targets := make([]Target, 0, len(w.targets))
 	for _, t := range w.targets {
@@ -148,20 +159,47 @@ func (w *Worker) probeAll() {
 	}
 	w.mu.RUnlock()
 
-	for _, t := range targets {
-		ok := w.probe(t)
-		w.mu.Lock()
-		prev := w.healthy[t.URL]
-		w.healthy[t.URL] = ok
-		w.checked[t.URL] = true
-		w.mu.Unlock()
+	workerCount := min(maxConcurrentProbes, len(targets))
+	if workerCount == 0 {
+		return
+	}
 
-		if prev != ok {
-			if ok {
-				log.Info().Str("target", t.URL).Msg("Upstream became healthy")
-			} else {
-				log.Warn().Str("target", t.URL).Str("check", t.HealthCheck).Msg("Upstream became unhealthy")
+	jobs := make(chan Target)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for target := range jobs {
+				w.recordProbe(target, w.probe(target))
 			}
+		}()
+	}
+
+	for _, target := range targets {
+		jobs <- target
+	}
+	close(jobs)
+	workers.Wait()
+}
+
+func (w *Worker) recordProbe(target Target, healthy bool) {
+	w.mu.Lock()
+	current, exists := w.targets[target.URL]
+	if !exists || current != target {
+		w.mu.Unlock()
+		return
+	}
+	previous := w.healthy[target.URL]
+	w.healthy[target.URL] = healthy
+	w.checked[target.URL] = true
+	w.mu.Unlock()
+
+	if previous != healthy {
+		if healthy {
+			log.Info().Str("target", target.URL).Msg("Upstream became healthy")
+		} else {
+			log.Warn().Str("target", target.URL).Str("check", target.HealthCheck).Msg("Upstream became unhealthy")
 		}
 	}
 }
@@ -196,7 +234,9 @@ func (w *Worker) checkHTTP(rawURL string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	// Drain small responses for connection reuse, but never let a health
+	// endpoint stream an unbounded body into the probe cycle.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxProbeResponseDrainSize+1))
 
 	return resp.StatusCode < 500
 }
