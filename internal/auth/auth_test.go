@@ -146,13 +146,36 @@ func TestCheckWithBasicAuth(t *testing.T) {
 			if result.ZeroTrustReq != tt.wantZeroTrust {
 				t.Errorf("ZeroTrustReq = %v, want %v", result.ZeroTrustReq, tt.wantZeroTrust)
 			}
-			if tt.wantAuth && result.SessionToken == "" {
-				t.Error("SessionToken should be set for authenticated user")
-			}
-			if !tt.wantAuth && result.SessionToken != "" {
-				t.Error("SessionToken should be empty for unauthenticated user")
+			if result.SessionToken != "" {
+				t.Error("Basic authentication should not create a cookie session")
 			}
 		})
+	}
+}
+
+func TestCheckWithBasicAuthDoesNotPersistSessions(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	insertTestUser(t, db, "apiuser", "correct-password", 0)
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetBasicAuth("apiuser", "correct-password")
+		result := Check(req, db)
+		if !result.Authenticated {
+			t.Fatalf("request %d was not authenticated", i)
+		}
+		if result.SessionToken != "" {
+			t.Fatalf("request %d returned an unreachable session token", i)
+		}
+	}
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM user_sessions").Scan(&count); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Basic authentication persisted %d sessions, want 0", count)
 	}
 }
 
@@ -536,6 +559,37 @@ func TestCreateSession(t *testing.T) {
 	}
 	if expiresAt == "" {
 		t.Error("Expiration should be set")
+	}
+}
+
+func TestCreateSessionPrunesExpiredSessions(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	insertTestUser(t, db, "cleanup-user", "pass", 0)
+	var userID int
+	if err := db.QueryRow("SELECT id FROM users WHERE username = ?", "cleanup-user").Scan(&userID); err != nil {
+		t.Fatalf("get user ID: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO user_sessions (user_id, token, expires_at) VALUES (?, ?, datetime('now', '-1 hour'))`,
+		userID, "expired-before-login",
+	); err != nil {
+		t.Fatalf("insert expired session: %v", err)
+	}
+
+	if token := createSession(db, "cleanup-user"); token == "" {
+		t.Fatal("createSession returned an empty token")
+	}
+
+	var expired int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM user_sessions WHERE expires_at <= CURRENT_TIMESTAMP",
+	).Scan(&expired); err != nil {
+		t.Fatalf("count expired sessions: %v", err)
+	}
+	if expired != 0 {
+		t.Fatalf("expired sessions remaining = %d, want 0", expired)
 	}
 }
 

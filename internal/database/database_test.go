@@ -2,13 +2,17 @@ package database
 
 import (
 	"database/sql"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
+	t.Setenv(bootstrapUsernameEnv, "")
+	t.Setenv(bootstrapPasswordEnv, "")
 
 	db, err := Init(":memory:")
 	if err != nil {
@@ -17,6 +21,159 @@ func newTestDB(t *testing.T) *sql.DB {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+func TestInitDoesNotCreateDefaultAdmin(t *testing.T) {
+	db := newTestDB(t)
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("fresh database contains %d users, want 0", count)
+	}
+}
+
+func TestInitCreatesExplicitBootstrapUser(t *testing.T) {
+	t.Setenv(bootstrapUsernameEnv, "first-admin")
+	t.Setenv(bootstrapPasswordEnv, "a-long-bootstrap-password")
+
+	db, err := Init(filepath.Join(t.TempDir(), "proxy.db"))
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var username, hash string
+	var zeroTrust int
+	if err := db.QueryRow(
+		"SELECT username, password_hash, zero_trust_enabled FROM users",
+	).Scan(&username, &hash, &zeroTrust); err != nil {
+		t.Fatalf("query bootstrap user: %v", err)
+	}
+	if username != "first-admin" {
+		t.Fatalf("username = %q, want %q", username, "first-admin")
+	}
+	if hash == "a-long-bootstrap-password" {
+		t.Fatal("bootstrap password was stored in plaintext")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("a-long-bootstrap-password")); err != nil {
+		t.Fatalf("bootstrap password hash does not verify: %v", err)
+	}
+	if zeroTrust != 1 {
+		t.Fatalf("zero_trust_enabled = %d, want 1", zeroTrust)
+	}
+}
+
+func TestInitDoesNotReplaceExistingUsers(t *testing.T) {
+	t.Setenv(bootstrapUsernameEnv, "")
+	t.Setenv(bootstrapPasswordEnv, "")
+	databasePath := filepath.Join(t.TempDir(), "proxy.db")
+
+	db, err := Init(databasePath)
+	if err != nil {
+		t.Fatalf("initial Init failed: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO users (username, password_hash) VALUES (?, ?)`,
+		"existing-user", "existing-hash",
+	); err != nil {
+		_ = db.Close()
+		t.Fatalf("insert existing user: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close initial database: %v", err)
+	}
+
+	t.Setenv(bootstrapUsernameEnv, "replacement-admin")
+	t.Setenv(bootstrapPasswordEnv, "a-long-bootstrap-password")
+	db, err = Init(databasePath)
+	if err != nil {
+		t.Fatalf("second Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("user count = %d, want 1", count)
+	}
+	var username string
+	if err := db.QueryRow("SELECT username FROM users").Scan(&username); err != nil {
+		t.Fatalf("query existing user: %v", err)
+	}
+	if username != "existing-user" {
+		t.Fatalf("username = %q, want existing-user", username)
+	}
+}
+
+func TestInitRejectsIncompleteOrWeakBootstrapCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		username string
+		password string
+		want     string
+	}{
+		{"missing password", "admin", "", "both NETGOAT_BOOTSTRAP_USERNAME and NETGOAT_BOOTSTRAP_PASSWORD"},
+		{"missing username", "", "a-long-bootstrap-password", "both NETGOAT_BOOTSTRAP_USERNAME and NETGOAT_BOOTSTRAP_PASSWORD"},
+		{"weak password", "admin", "short", "at least 12 characters"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(bootstrapUsernameEnv, tt.username)
+			t.Setenv(bootstrapPasswordEnv, tt.password)
+			db, err := Init(filepath.Join(t.TempDir(), "proxy.db"))
+			if db != nil {
+				_ = db.Close()
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Init error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestPruneExpiredSessions(t *testing.T) {
+	db := newTestDB(t)
+
+	if _, err := db.Exec(
+		`INSERT INTO users (username, password_hash) VALUES (?, ?)`,
+		"session-user", "unused-test-hash",
+	); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	var userID int
+	if err := db.QueryRow("SELECT id FROM users WHERE username = ?", "session-user").Scan(&userID); err != nil {
+		t.Fatalf("get user ID: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO user_sessions (user_id, token, expires_at) VALUES
+			(?, 'expired', datetime('now', '-1 hour')),
+			(?, 'active', datetime('now', '+1 hour'))`,
+		userID, userID,
+	); err != nil {
+		t.Fatalf("insert sessions: %v", err)
+	}
+
+	removed, err := PruneExpiredSessions(db)
+	if err != nil {
+		t.Fatalf("PruneExpiredSessions failed: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed sessions = %d, want 1", removed)
+	}
+
+	var token string
+	if err := db.QueryRow("SELECT token FROM user_sessions").Scan(&token); err != nil {
+		t.Fatalf("query remaining session: %v", err)
+	}
+	if token != "active" {
+		t.Fatalf("remaining token = %q, want active", token)
+	}
 }
 
 func insertRoute(t *testing.T, db *sql.DB, routeType, domain, target string) {
