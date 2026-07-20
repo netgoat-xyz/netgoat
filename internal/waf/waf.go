@@ -105,7 +105,7 @@ func (e *Engine) Check(r *http.Request, debugLogs bool) (bool, string) {
 	}
 	env := WAFContext{
 		IP:       ip,
-		Host:     r.Host,
+		Host:     normalizedHost(r.Host),
 		Method:   r.Method,
 		Path:     r.URL.Path,
 		Query:    r.URL.Query(),
@@ -138,6 +138,16 @@ func (e *Engine) Check(r *http.Request, debugLogs bool) (bool, string) {
 		}
 	}
 	return false, ""
+}
+
+func normalizedHost(hostport string) string {
+	host := strings.TrimSpace(hostport)
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		host = parsed
+	} else {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	return strings.ToLower(strings.TrimSuffix(host, "."))
 }
 
 // Check is retained for callers that have not yet adopted a long-lived Engine.
