@@ -1,6 +1,7 @@
 package traffic
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"sync"
@@ -17,10 +18,17 @@ type RateLimiter struct {
 	mu         sync.Mutex
 	rate       float64
 	burst      float64
-	buckets    map[string]*bucket
+	buckets    map[string]*rateBucket
+	recency    list.List
 	maxBuckets int
 	ttl        time.Duration
 	lastPrune  time.Time
+}
+
+type rateBucket struct {
+	tokens      float64
+	last        time.Time
+	rateElement *list.Element
 }
 
 type bucket struct {
@@ -43,7 +51,7 @@ func NewRateLimiter(requestsPerMinute, burst int) *RateLimiter {
 	return &RateLimiter{
 		rate:       float64(requestsPerMinute) / 60,
 		burst:      float64(burst),
-		buckets:    make(map[string]*bucket),
+		buckets:    make(map[string]*rateBucket),
 		maxBuckets: defaultLimiterMaxBuckets,
 		ttl:        defaultLimiterBucketTTL,
 	}
@@ -65,9 +73,12 @@ func (l *RateLimiter) allowAt(key string, now time.Time) bool {
 	b, ok := l.buckets[key]
 	if !ok {
 		l.ensureCapacityLocked(now)
-		l.buckets[key] = &bucket{tokens: l.burst - 1, last: now}
+		b = &rateBucket{tokens: l.burst - 1, last: now}
+		b.rateElement = l.recency.PushFront(key)
+		l.buckets[key] = b
 		return true
 	}
+	l.recency.MoveToFront(b.rateElement)
 
 	elapsed := now.Sub(b.last).Seconds()
 	if elapsed > 0 {
@@ -90,7 +101,7 @@ func (l *RateLimiter) pruneLocked(now time.Time) {
 	}
 	for key, b := range l.buckets {
 		if now.Sub(b.last) > l.ttl {
-			delete(l.buckets, key)
+			l.removeBucketLocked(key, b)
 		}
 	}
 	l.lastPrune = now
@@ -100,18 +111,20 @@ func (l *RateLimiter) ensureCapacityLocked(now time.Time) {
 	if l.maxBuckets <= 0 || len(l.buckets) < l.maxBuckets {
 		return
 	}
-	var oldestKey string
-	var oldestTime time.Time
-	for key, b := range l.buckets {
-		if oldestKey == "" || b.last.Before(oldestTime) {
-			oldestKey = key
-			oldestTime = b.last
-		}
-	}
-	if oldestKey != "" {
-		delete(l.buckets, oldestKey)
+	oldest := l.recency.Back()
+	if oldest != nil {
+		key := oldest.Value.(string)
+		l.removeBucketLocked(key, l.buckets[key])
 	}
 	l.lastPrune = now
+}
+
+func (l *RateLimiter) removeBucketLocked(key string, b *rateBucket) {
+	delete(l.buckets, key)
+	if b != nil && b.rateElement != nil {
+		l.recency.Remove(b.rateElement)
+		b.rateElement = nil
+	}
 }
 
 type Queue struct {

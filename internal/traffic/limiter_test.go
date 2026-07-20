@@ -3,6 +3,8 @@ package traffic
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -50,13 +52,16 @@ func TestRateLimiterPrunesIdleBuckets(t *testing.T) {
 	}
 
 	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	if _, ok := limiter.buckets["old"]; ok {
+	_, oldExists := limiter.buckets["old"]
+	_, newExists := limiter.buckets["new"]
+	limiter.mu.Unlock()
+	if oldExists {
 		t.Fatal("old bucket should be pruned")
 	}
-	if _, ok := limiter.buckets["new"]; !ok {
+	if !newExists {
 		t.Fatal("new bucket should remain")
 	}
+	assertRateLimiterIndexConsistent(t, limiter, 1)
 }
 
 func TestRateLimiterCapsBucketCount(t *testing.T) {
@@ -78,6 +83,116 @@ func TestRateLimiterCapsBucketCount(t *testing.T) {
 	}
 	if _, ok := limiter.buckets["second"]; !ok {
 		t.Fatal("newest bucket should be retained")
+	}
+	if got := limiter.recency.Len(); got != 1 {
+		t.Fatalf("recency entries = %d, want 1", got)
+	}
+}
+
+func TestRateLimiterRefreshesLeastRecentlyUsedBucket(t *testing.T) {
+	limiter := NewRateLimiter(1, 1)
+	limiter.maxBuckets = 2
+	now := time.Unix(100, 0)
+
+	if !limiter.allowAt("active", now) {
+		t.Fatal("active initial request should pass")
+	}
+	if !limiter.allowAt("idle", now.Add(time.Second)) {
+		t.Fatal("idle initial request should pass")
+	}
+	if limiter.allowAt("active", now.Add(2*time.Second)) {
+		t.Fatal("active refresh should remain rate limited")
+	}
+	if !limiter.allowAt("new", now.Add(3*time.Second)) {
+		t.Fatal("new request should pass")
+	}
+
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+	if _, ok := limiter.buckets["idle"]; ok {
+		t.Fatal("least recently used bucket should be evicted")
+	}
+	if _, ok := limiter.buckets["active"]; !ok {
+		t.Fatal("recently refreshed bucket should be retained")
+	}
+	if _, ok := limiter.buckets["new"]; !ok {
+		t.Fatal("new bucket should be retained")
+	}
+}
+
+func TestRateLimiterBoundsAttackerControlledKeys(t *testing.T) {
+	limiter := NewRateLimiter(60, 1)
+	limiter.maxBuckets = 32
+	now := time.Unix(100, 0)
+
+	for i := 0; i < 10_000; i++ {
+		if !limiter.allowAt(fmt.Sprintf("attacker-%d", i), now.Add(time.Duration(i))) {
+			t.Fatalf("new key %d should receive its initial token", i)
+		}
+	}
+
+	assertRateLimiterIndexConsistent(t, limiter, 32)
+}
+
+func TestRateLimiterConcurrentCapacityChurn(t *testing.T) {
+	limiter := NewRateLimiter(6000, 10)
+	limiter.maxBuckets = 64
+
+	const (
+		goroutines = 32
+		iterations = 500
+	)
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	workers.Add(goroutines)
+	for workerID := range goroutines {
+		go func() {
+			defer workers.Done()
+			<-start
+			for i := range iterations {
+				limiter.Allow(fmt.Sprintf("client-%d", (workerID*iterations+i)%256))
+			}
+		}()
+	}
+	close(start)
+	workers.Wait()
+
+	assertRateLimiterIndexConsistent(t, limiter, limiter.maxBuckets)
+}
+
+func assertRateLimiterIndexConsistent(t *testing.T, limiter *RateLimiter, want int) {
+	t.Helper()
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+
+	if got := len(limiter.buckets); got != want {
+		t.Fatalf("bucket count = %d, want %d", got, want)
+	}
+	if got := limiter.recency.Len(); got != len(limiter.buckets) {
+		t.Fatalf("recency entries = %d, want %d", got, len(limiter.buckets))
+	}
+	for key, b := range limiter.buckets {
+		if b.rateElement == nil {
+			t.Fatalf("bucket %q has no recency entry", key)
+		}
+		if got, ok := b.rateElement.Value.(string); !ok || got != key {
+			t.Fatalf("bucket %q recency value = %#v", key, b.rateElement.Value)
+		}
+	}
+}
+
+func BenchmarkRateLimiterCapacityChurn(b *testing.B) {
+	limiter := NewRateLimiter(60, 1)
+	limiter.maxBuckets = defaultLimiterMaxBuckets
+	limiter.ttl = 0
+	now := time.Unix(100, 0)
+	for i := 0; i < limiter.maxBuckets; i++ {
+		limiter.allowAt(fmt.Sprintf("initial-%d", i), now.Add(time.Duration(i)))
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		limiter.allowAt(fmt.Sprintf("attacker-%d", i), now.Add(time.Hour+time.Duration(i)))
 	}
 }
 
