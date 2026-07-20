@@ -1,9 +1,11 @@
-debug_logs: true
-debug_overlay: true  # Show live AI analysis overlay on pages
+debug_logs: false
+debug_overlay: false  # Enable only while diagnosing HTML responses.
 honeypot: true
+# Only these direct proxy IPs/CIDRs may supply client forwarding headers.
+# trusted_proxies: ["127.0.0.1", "10.0.0.0/8"]
+trusted_proxies: []
 auth:
-  enabled: true
-  session_secret: "change-this-to-a-random-string"
+  enabled: false
 ssl:
   enabled: false
   cert_file: "cert.pem"
@@ -60,8 +62,8 @@ metrics:
 # The agent will automatically fall back to cached local configuration
 # if the API is unreachable or MongoDB is down
 api:
-  url: "http://localhost:8787"
-  key: "change-this-api-key"
+  url: "" # Set to the companion stream-server URL to enable remote updates.
+  key: ""
   # Connection settings
   poll_interval: 5              # Seconds between snapshot polls
   connection_timeout: 10        # Seconds to wait for API responses
@@ -113,8 +115,8 @@ routes:
       - url: "http://127.0.0.1:8002"
         health_check: "http"
 health:
-  interval_seconds: 2
-  timeout_seconds: 1
+  interval_seconds: 10
+  timeout_seconds: 3
   path: "/"
 
 # Opt-in operational telemetry. Disabled by default. When enabled, this sends

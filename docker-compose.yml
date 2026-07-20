@@ -1,0 +1,27 @@
+# Optional development MongoDB for the companion stream-server. NetGoat's Go
+# agent itself stores runtime state in SQLite and does not require this service.
+services:
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME
+      - MONGO_INITDB_ROOT_PASSWORD
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --username "$$MONGO_INITDB_ROOT_USERNAME"
+          --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin
+          --eval "quit(db.adminCommand('ping').ok ? 0 : 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
