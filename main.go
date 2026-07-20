@@ -1117,11 +1117,13 @@ type subdomainRecord struct {
 }
 
 type wafRuleRecord struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Expression string `json:"expression"`
-	Action     string `json:"action"`
-	Priority   int    `json:"priority"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Expression    string   `json:"expression"`
+	Action        string   `json:"action"`
+	Priority      int      `json:"priority"`
+	ProxyConfigID string   `json:"proxy_config_id"`
+	Hosts         []string `json:"hosts"`
 }
 
 func streamSettingsFromConfig(cfg *config.Config) streamPollSettings {
@@ -1287,19 +1289,64 @@ func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapsh
 		}
 	}
 
+	usedRuleNames := make(map[string]int, len(payload.WAFRules))
 	for _, rule := range payload.WAFRules {
 		name := ifEmpty(strings.TrimSpace(rule.Name), strings.TrimSpace(rule.ID))
 		if name == "" || strings.TrimSpace(rule.Expression) == "" {
 			continue
 		}
-		snapshot.WAFRules[name] = streaming.WAFRuleData{
+		if rule.ProxyConfigID != "" && len(rule.Hosts) == 0 {
+			// Older or inconsistent control planes did not publish enough data to
+			// enforce a route scope. Skipping is safer than broadening to global.
+			continue
+		}
+		expression, hosts := scopedWAFExpression(rule.Expression, rule.Hosts)
+		if len(hosts) > 0 {
+			name += " [" + strings.Join(hosts, ",") + "]"
+		}
+		usedRuleNames[name]++
+		if usedRuleNames[name] > 1 {
+			name += " #" + strconv.Itoa(usedRuleNames[name])
+		}
+		key := ifEmpty(strings.TrimSpace(rule.ID), name)
+		for suffix := 2; ; suffix++ {
+			if _, exists := snapshot.WAFRules[key]; !exists {
+				break
+			}
+			key = ifEmpty(strings.TrimSpace(rule.ID), name) + "#" + strconv.Itoa(suffix)
+		}
+		snapshot.WAFRules[key] = streaming.WAFRuleData{
 			Name:       name,
-			Expression: rule.Expression,
+			Expression: expression,
 			Action:     ifEmpty(rule.Action, "BLOCK"),
 			Priority:   rule.Priority,
 		}
 	}
 	return snapshot
+}
+
+func scopedWAFExpression(expression string, rawHosts []string) (string, []string) {
+	seen := make(map[string]struct{}, len(rawHosts))
+	hosts := make([]string, 0, len(rawHosts))
+	for _, rawHost := range rawHosts {
+		host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(rawHost), "."))
+		if host == "" {
+			continue
+		}
+		if _, exists := seen[host]; exists {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+	if len(hosts) == 0 {
+		return expression, nil
+	}
+	conditions := make([]string, len(hosts))
+	for index, host := range hosts {
+		conditions[index] = "Host == " + strconv.Quote(host)
+	}
+	return "(" + strings.Join(conditions, " || ") + ") && (" + expression + ")", hosts
 }
 
 func apiRecordActive(value any) bool {

@@ -160,3 +160,15 @@ func TestEngineReloadsRulesAtomicallyAndHonorsAllow(t *testing.T) {
 		t.Fatalf("failed reload replaced live rules: %v/%q", blocked, rule)
 	}
 }
+
+func TestNormalizedHost(t *testing.T) {
+	for input, want := range map[string]string{
+		"API.Example.Test.:8443": "api.example.test",
+		"[2001:db8::1]:443":      "2001:db8::1",
+		"Example.Test.":          "example.test",
+	} {
+		if got := normalizedHost(input); got != want {
+			t.Errorf("normalizedHost(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
