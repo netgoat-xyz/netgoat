@@ -288,12 +288,12 @@ func TestStoreVerifyWrongIP(t *testing.T) {
 }
 
 func TestStoreVerifyExpired(t *testing.T) {
-	store := NewStore()
+	currentTime := time.Date(2026, time.July, 20, 0, 0, 0, 0, time.UTC)
+	store := newStore(storeConfig{now: func() time.Time { return currentTime }})
 
 	ch := store.Create("192.168.1.1", "Bot", 60, ChallengeText)
 
-	// Manually expire the challenge
-	ch.ExpiresAt = time.Now().Add(-1 * time.Hour)
+	currentTime = currentTime.Add(defaultChallengeTTL)
 
 	verified := store.Verify(ch.ID, ch.Answer, "192.168.1.1")
 
@@ -384,12 +384,15 @@ func TestGenerateClickAnswer(t *testing.T) {
 
 		// Verify format (comma-separated numbers)
 		parts := strings.Split(answer, ",")
-		for _, part := range parts {
+		for partIndex, part := range parts {
 			if len(part) != 1 {
 				t.Errorf("Click answer part should be single digit, got %s", part)
 			}
 			if part < "0" || part > "8" {
 				t.Errorf("Click answer should be in range 0-8, got %s", part)
+			}
+			if partIndex > 0 && parts[partIndex-1] >= part {
+				t.Errorf("Click answer should be sorted and unique: %q", answer)
 			}
 		}
 
@@ -490,14 +493,15 @@ func TestStoreMultipleChallenges(t *testing.T) {
 }
 
 func TestStoreIsVerifiedExpiration(t *testing.T) {
-	store := NewStore()
-
+	currentTime := time.Date(2026, time.July, 20, 0, 0, 0, 0, time.UTC)
+	store := newStore(storeConfig{now: func() time.Time { return currentTime }})
 	ip := "192.168.1.1"
 
-	// Manually add verified IP with old timestamp
-	store.mu.Lock()
-	store.verified[ip] = time.Now().Add(-2 * time.Hour)
-	store.mu.Unlock()
+	challenge := store.Create(ip, "Bot", 60, ChallengeText)
+	if !store.Verify(challenge.ID, challenge.Answer, ip) {
+		t.Fatal("verification should succeed")
+	}
+	currentTime = currentTime.Add(defaultVerificationTTL)
 
 	// Should not be verified (expired)
 	if store.IsVerified(ip) {
