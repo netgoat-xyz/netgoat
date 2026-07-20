@@ -110,6 +110,10 @@ func main() {
 		}
 		applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
 	}
+	routeResolver := database.NewRouteResolver()
+	if err := routeResolver.Reload(db); err != nil {
+		log.Fatal().Err(err).Msg("Failed to load initial route snapshot")
+	}
 	wafEngine := waf.NewEngine()
 	if err := wafEngine.Reload(db); err != nil {
 		log.Error().Err(err).Msg("Failed to compile initial WAF rules")
@@ -159,7 +163,7 @@ func main() {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
 
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -573,7 +577,7 @@ func main() {
 		}
 		log.Debug().Str("host", host).Str("method", r.Method).Str("path", r.URL.Path).Msg("Processing request")
 
-		routeMatch, err := database.GetRouteTargets(db, host, r.URL.Path)
+		routeMatch, err := routeResolver.Resolve(host, r.URL.Path)
 		if err != nil {
 			log.Warn().Err(err).Str("host", host).Str("path", r.URL.Path).Msg("No route found for domain or path")
 			writeError(w, pages, challengeStore, r, http.StatusNotFound, "No route found")
@@ -1652,7 +1656,7 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1663,6 +1667,10 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 		}
 		if err := applySnapshotToDB(db, mergeConfigSnapshots(local, snap)); err != nil {
 			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to apply config snapshot atomically")
+			continue
+		}
+		if err := routeResolver.Reload(db); err != nil {
+			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload route snapshot; retaining last known-good routes")
 			continue
 		}
 		if err := wafEngine.Reload(db); err != nil {
