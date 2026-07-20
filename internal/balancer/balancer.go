@@ -86,7 +86,7 @@ func (p *ProxyHandler) Serve(w http.ResponseWriter, r *http.Request, routeKey st
 		return ErrNoHealthyTargets
 	}
 
-	retryOnFailure := isFailoverSafeMethod(r.Method)
+	retryOnFailure := isFailoverSafeMethod(r.Method) && !requestHasBody(r)
 	tried := make(map[string]struct{}, len(targets))
 	var lastErr error
 
@@ -177,6 +177,13 @@ func isFailoverSafeMethod(method string) bool {
 	default:
 		return false
 	}
+}
+
+func requestHasBody(r *http.Request) bool {
+	if r == nil || r.Body == nil || r.Body == http.NoBody {
+		return false
+	}
+	return r.ContentLength != 0 || len(r.TransferEncoding) > 0
 }
 
 func (p *ProxyHandler) proxyFor(targetURL string) (*httputil.ReverseProxy, *url.URL, error) {
