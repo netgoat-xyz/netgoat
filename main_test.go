@@ -249,6 +249,26 @@ func TestZeroTrustChallengeBindingSeparatesUsersBehindNAT(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpointPathRejectsMuxPatternsAndReservedRoutes(t *testing.T) {
+	for _, candidate := range []string{"metrics", "/", "//host/path", "/login", "/__netgoat/verify", "/metrics/", "/{wildcard}", "/metrics?secret=x"} {
+		if got, ok := metricsEndpointPath(candidate); ok || got != "/__netgoat/metrics" {
+			t.Errorf("metricsEndpointPath(%q) = %q/%v", candidate, got, ok)
+		}
+	}
+	for _, candidate := range []string{"", "/metrics", "/internal/netgoat_metrics"} {
+		if got, ok := metricsEndpointPath(candidate); !ok || got == "" {
+			t.Errorf("metricsEndpointPath(%q) = %q/%v", candidate, got, ok)
+		}
+	}
+}
+
+func TestNewProxyHTTPServerHasDefensiveTimeouts(t *testing.T) {
+	server := newProxyHTTPServer()
+	if server.ReadHeaderTimeout <= 0 || server.IdleTimeout <= 0 || server.MaxHeaderBytes != 64<<10 {
+		t.Fatalf("unsafe server settings: %+v", server)
+	}
+}
+
 func TestLocalConfigSnapshotAppliesDocumentedRoutes(t *testing.T) {
 	db, err := database.Init(":memory:")
 	if err != nil {

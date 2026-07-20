@@ -15,10 +15,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -191,7 +192,10 @@ func main() {
 	var metricsRecorder *metrics.Recorder
 	if cfg.Metrics.Enabled {
 		metricsRecorder = metrics.NewRecorder()
-		metricsPath := ifEmpty(cfg.Metrics.Path, "/__netgoat/metrics")
+		metricsPath, valid := metricsEndpointPath(cfg.Metrics.Path)
+		if !valid {
+			log.Warn().Str("configured_path", cfg.Metrics.Path).Str("fallback_path", metricsPath).Msg("Invalid or reserved metrics path; using safe default")
+		}
 		http.HandleFunc(metricsPath, metricsRecorder.ServeJSON)
 		http.HandleFunc(metricsPath+".prom", metricsRecorder.ServePrometheus)
 		log.Info().Str("path", metricsPath).Str("prometheus_path", metricsPath+".prom").Msg("Metrics endpoint enabled")
@@ -676,12 +680,19 @@ func main() {
 		}
 	})
 
-	server := &http.Server{
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       90 * time.Second,
-		Handler:           nil,
-	}
+	server := newProxyHTTPServer()
+	shutdownSignal, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	go func() {
+		<-shutdownSignal.Done()
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownContext); err != nil {
+			log.Error().Err(err).Msg("Graceful HTTP shutdown failed")
+		}
+	}()
 
+	var serveErr error
 	if cfg.SSL.Enabled {
 		port := cfg.SSL.Port
 		if port == "" {
@@ -689,17 +700,52 @@ func main() {
 		}
 		server.Addr = port
 		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTPS)")
-		if err := server.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile); err != nil {
-			log.Fatal().Err(err).Msg("Server failed")
-		}
+		serveErr = server.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile)
 	} else {
 		port := ":8080"
 		server.Addr = port
 		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTP)")
-		if err := server.ListenAndServe(); err != nil {
-			log.Fatal().Err(err).Msg("Server failed")
+		serveErr = server.ListenAndServe()
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		log.Fatal().Err(serveErr).Msg("Server failed")
+	}
+}
+
+func newProxyHTTPServer() *http.Server {
+	return &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       90 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+		Handler:           nil,
+	}
+}
+
+func metricsEndpointPath(configured string) (string, bool) {
+	const fallback = "/__netgoat/metrics"
+	path := strings.TrimSpace(configured)
+	if path == "" {
+		return fallback, true
+	}
+	if len(path) > 128 || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.HasSuffix(path, "/") {
+		return fallback, false
+	}
+	switch path {
+	case "/", "/login", "/__netgoat/verify":
+		return fallback, false
+	}
+	for _, char := range path {
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' {
+			continue
+		}
+		switch char {
+		case '/', '-', '_', '.', '~':
+			continue
+		default:
+			return fallback, false
 		}
 	}
+	return path, true
 }
 
 func setupLogger(service string) {
