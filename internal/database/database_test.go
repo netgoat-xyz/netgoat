@@ -1,10 +1,12 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -18,9 +20,203 @@ func newTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
-	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+func TestInitConfiguresEveryFileDatabaseConnection(t *testing.T) {
+	t.Setenv(bootstrapUsernameEnv, "")
+	t.Setenv(bootstrapPasswordEnv, "")
+	databasePath := filepath.Join(t.TempDir(), "proxy.db") +
+		"?_timeout=1&_fk=off&_journal=DELETE&_sync=OFF"
+	db, err := Init(databasePath)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if got := db.Stats().MaxOpenConnections; got != fileMaxOpenConns {
+		t.Fatalf("MaxOpenConnections = %d, want %d", got, fileMaxOpenConns)
+	}
+
+	ctx := context.Background()
+	connections := make([]*sql.Conn, 3)
+	for i := range connections {
+		connections[i], err = db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("open connection %d: %v", i, err)
+		}
+		defer connections[i].Close()
+
+		assertPragmaInt(t, connections[i], "busy_timeout", int(sqliteBusyTimeout.Milliseconds()))
+		assertPragmaInt(t, connections[i], "foreign_keys", 1)
+		assertPragmaInt(t, connections[i], "synchronous", 1)
+		assertPragmaText(t, connections[i], "journal_mode", "wal")
+	}
+
+	if _, err := connections[0].ExecContext(ctx, `
+		INSERT INTO route_targets (route_id, target_url) VALUES (-1, 'http://invalid.test')`); err == nil {
+		t.Fatal("foreign key violation succeeded, want constraint error")
+	}
+}
+
+func TestInitValidatesConnectivity(t *testing.T) {
+	t.Setenv(bootstrapUsernameEnv, "")
+	t.Setenv(bootstrapPasswordEnv, "")
+	db, err := Init(filepath.Join(t.TempDir(), "missing", "proxy.db"))
+	if db != nil {
+		_ = db.Close()
+		t.Fatal("Init returned a database for an unreachable path")
+	}
+	if err == nil || !strings.Contains(err.Error(), "connect sqlite database") {
+		t.Fatalf("Init error = %v, want connectivity error", err)
+	}
+}
+
+func TestInitPreservesPrivateMemoryDatabase(t *testing.T) {
+	t.Setenv(bootstrapUsernameEnv, "")
+	t.Setenv(bootstrapPasswordEnv, "")
+	db, err := Init(":memory:")
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if got := db.Stats().MaxOpenConnections; got != 1 {
+		t.Fatalf("MaxOpenConnections = %d, want 1", got)
+	}
+	assertPragmaInt(t, db, "busy_timeout", int(sqliteBusyTimeout.Milliseconds()))
+	assertPragmaInt(t, db, "foreign_keys", 1)
+	assertPragmaText(t, db, "journal_mode", "memory")
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'routes'`).Scan(&count); err != nil {
+		t.Fatalf("query in-memory schema: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("routes table count = %d, want 1", count)
+	}
+}
+
+func TestFileDatabaseSupportsConcurrentReadersAndSerializedWriters(t *testing.T) {
+	t.Setenv(bootstrapUsernameEnv, "")
+	t.Setenv(bootstrapPasswordEnv, "")
+	db, err := Init(filepath.Join(t.TempDir(), "proxy.db"))
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	reader, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatalf("begin read transaction: %v", err)
+	}
+	defer reader.Rollback()
+	var initialCount int
+	if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM zero_trust_settings`).Scan(&initialCount); err != nil {
+		t.Fatalf("establish read snapshot: %v", err)
+	}
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO zero_trust_settings (key, value) VALUES ('concurrent-write', 'complete')`)
+		writeDone <- err
+	}()
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("write while read transaction was open: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("write blocked behind reader; WAL read/write concurrency is not active")
+	}
+	var snapshotCount int
+	if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM zero_trust_settings`).Scan(&snapshotCount); err != nil {
+		t.Fatalf("query stable read snapshot: %v", err)
+	}
+	if snapshotCount != initialCount {
+		t.Fatalf("read snapshot count changed from %d to %d", initialCount, snapshotCount)
+	}
+	if err := reader.Rollback(); err != nil {
+		t.Fatalf("end read transaction: %v", err)
+	}
+
+	firstWriter, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin first write transaction: %v", err)
+	}
+	defer firstWriter.Rollback()
+	if _, err := firstWriter.ExecContext(ctx, `
+		INSERT INTO zero_trust_settings (key, value) VALUES ('held-write', 'first')`); err != nil {
+		t.Fatalf("acquire first write lock: %v", err)
+	}
+
+	secondWriteStarted := make(chan struct{})
+	secondWriteDone := make(chan error, 1)
+	go func() {
+		close(secondWriteStarted)
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO zero_trust_settings (key, value) VALUES ('retried-write', 'second')`)
+		secondWriteDone <- err
+	}()
+	<-secondWriteStarted
+	select {
+	case err := <-secondWriteDone:
+		t.Fatalf("second writer completed before the lock was released: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if err := firstWriter.Commit(); err != nil {
+		t.Fatalf("commit first writer: %v", err)
+	}
+	select {
+	case err := <-secondWriteDone:
+		if err != nil {
+			t.Fatalf("second writer did not retry after lock release: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second writer did not complete after lock release")
+	}
+
+	var completed int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM zero_trust_settings
+		WHERE key IN ('concurrent-write', 'held-write', 'retried-write')`).Scan(&completed); err != nil {
+		t.Fatalf("verify concurrent writes: %v", err)
+	}
+	if completed != 3 {
+		t.Fatalf("completed write count = %d, want 3", completed)
+	}
+}
+
+type pragmaQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func assertPragmaInt(t *testing.T, db pragmaQuerier, name string, want int) {
+	t.Helper()
+	var got int
+	if err := db.QueryRowContext(context.Background(), "PRAGMA "+name).Scan(&got); err != nil {
+		t.Fatalf("query PRAGMA %s: %v", name, err)
+	}
+	if got != want {
+		t.Fatalf("PRAGMA %s = %d, want %d", name, got, want)
+	}
+}
+
+func assertPragmaText(t *testing.T, db pragmaQuerier, name, want string) {
+	t.Helper()
+	var got string
+	if err := db.QueryRowContext(context.Background(), "PRAGMA "+name).Scan(&got); err != nil {
+		t.Fatalf("query PRAGMA %s: %v", name, err)
+	}
+	if !strings.EqualFold(got, want) {
+		t.Fatalf("PRAGMA %s = %q, want %q", name, got, want)
+	}
 }
 
 func TestInitDoesNotCreateDefaultAdmin(t *testing.T) {

@@ -1,11 +1,14 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,15 +17,34 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	sqliteBusyTimeout = 5 * time.Second
+	fileMaxOpenConns  = 8
+	fileMaxIdleConns  = 4
+)
+
 func Init(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", path)
+	dsn, inMemory, err := sqliteDSN(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configure sqlite database: %w", err)
+	}
+
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite database: %w", err)
+	}
+	configureConnectionPool(db, inMemory)
+
+	ctx, cancel := context.WithTimeout(context.Background(), sqliteBusyTimeout)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("connect sqlite database: %w", err)
 	}
 
 	if err := createTables(db); err != nil {
 		_ = db.Close()
-		return nil, err
+		return nil, fmt.Errorf("initialize sqlite database: %w", err)
 	}
 
 	if err := createTables(db); err != nil {
@@ -40,196 +62,55 @@ func Init(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-func isMemoryPath(path string) bool {
-	return path == ":memory:" || strings.Contains(path, "mode=memory")
-}
-
-func configureDB(db *sql.DB, path string) error {
-	if isMemoryPath(path) {
-		_, err := db.Exec(`PRAGMA foreign_keys=ON`)
-		return err
-	}
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
-		return fmt.Errorf("enable WAL: %w", err)
-	}
-	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
-		return fmt.Errorf("set busy_timeout: %w", err)
-	}
-	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
-		return fmt.Errorf("enable foreign_keys: %w", err)
-	}
-	return nil
-}
-
-func validateIntegrity(db *sql.DB) error {
-	var result string
-	if err := db.QueryRow(`PRAGMA integrity_check`).Scan(&result); err != nil {
-		return fmt.Errorf("integrity_check: %w", err)
-	}
-	if !strings.EqualFold(result, "ok") {
-		return fmt.Errorf("integrity_check failed: %s", result)
-	}
-	return nil
-}
-
-// OpenWithFailover opens the primary database. If that fails, it promotes the
-// standby copy to primary. If both are unusable, it recreates an empty primary
-// so callers can rehydrate from the config snapshot.
-func OpenWithFailover(primary, standby string) (*sql.DB, bool, error) {
-	db, err := Init(primary)
-	if err == nil {
-		return db, false, nil
-	}
-	log.Warn().Err(err).Str("path", primary).Msg("Primary database open failed; attempting standby failover")
-
-	if standby != "" {
-		if _, statErr := os.Stat(standby); statErr == nil {
-			if promoteErr := promoteStandby(standby, primary); promoteErr != nil {
-				log.Warn().Err(promoteErr).Str("standby", standby).Msg("Failed to promote standby database")
-			} else if db, err = Init(primary); err == nil {
-				log.Info().Str("primary", primary).Str("standby", standby).Msg("Promoted standby database to primary")
-				return db, true, nil
-			} else {
-				log.Warn().Err(err).Msg("Promoted standby database is still unusable")
-			}
-		} else {
-			log.Warn().Err(statErr).Str("standby", standby).Msg("Standby database unavailable")
+func sqliteDSN(path string) (string, bool, error) {
+	filename, rawQuery, hasQuery := strings.Cut(path, "?")
+	params := make(url.Values)
+	if hasQuery {
+		var err error
+		params, err = url.ParseQuery(rawQuery)
+		if err != nil {
+			return "", false, fmt.Errorf("parse sqlite DSN options: %w", err)
 		}
 	}
 
-	if err := removeDBFiles(primary); err != nil {
-		log.Warn().Err(err).Str("path", primary).Msg("Failed to remove corrupt primary before recreate")
+	inMemory := filename == ":memory:" || filename == "file::memory:" ||
+		strings.EqualFold(params.Get("mode"), "memory")
+	// go-sqlite3 accepts aliases for these options and gives some aliases
+	// precedence. Remove them so callers cannot accidentally defeat the
+	// connection-wide policy with a conflicting duplicate.
+	params.Del("_timeout")
+	params.Del("_fk")
+	params.Set("_busy_timeout", strconv.FormatInt(sqliteBusyTimeout.Milliseconds(), 10))
+	params.Set("_foreign_keys", "on")
+	if !inMemory {
+		params.Del("_journal")
+		params.Del("_sync")
+		params.Set("_journal_mode", "WAL")
+		params.Set("_synchronous", "NORMAL")
+	} else {
+		params.Del("_journal")
+		params.Del("_journal_mode")
+		params.Del("_sync")
+		params.Del("_synchronous")
 	}
-	db, err = Init(primary)
-	if err != nil {
-		return nil, false, err
-	}
-	log.Warn().Str("path", primary).Msg("Recreated empty primary database; apply config snapshot to rehydrate")
-	return db, false, nil
+
+	return filename + "?" + params.Encode(), inMemory, nil
 }
 
-func promoteStandby(standby, primary string) error {
-	if err := os.MkdirAll(filepath.Dir(primary), 0755); err != nil {
-		return err
-	}
-	if err := quarantineFile(primary); err != nil {
-		return fmt.Errorf("quarantine primary: %w", err)
-	}
-	_ = os.Remove(primary + "-wal")
-	_ = os.Remove(primary + "-shm")
-	if err := copyFile(standby, primary); err != nil {
-		return fmt.Errorf("copy standby to primary: %w", err)
-	}
-	return nil
-}
-
-func quarantineFile(path string) error {
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	quarantine := fmt.Sprintf("%s.corrupt.%d", path, time.Now().Unix())
-	if err := os.Rename(path, quarantine); err != nil {
-		if remErr := os.Remove(path); remErr != nil {
-			return err
-		}
-		log.Warn().Str("path", path).Msg("Removed corrupt primary database after quarantine rename failed")
-		return nil
-	}
-	log.Warn().Str("quarantine", quarantine).Msg("Quarantined corrupt primary database")
-	return nil
-}
-
-func removeDBFiles(path string) error {
-	var firstErr error
-	for _, p := range []string{path, path + "-wal", path + "-shm"} {
-		if err := os.Remove(p); err != nil && !os.IsNotExist(err) && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
-func copyFile(src, dst string) (err error) {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if cerr := in.Close(); err == nil && cerr != nil {
-			err = cerr
-		}
-	}()
-
-	tmp := fmt.Sprintf("%s.promote.%d.tmp", dst, time.Now().UnixNano())
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := replaceFile(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
-}
-
-// replaceFile moves src onto dest, replacing dest if it already exists.
-// Plain os.Rename cannot overwrite on Windows, which would break periodic backups.
-func replaceFile(src, dest string) error {
-	if err := os.Rename(src, dest); err == nil {
-		return nil
-	} else if _, statErr := os.Stat(dest); statErr != nil {
-		// Dest does not exist (or is unreadable); surface the original rename error.
-		return err
-	}
-	if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove existing dest: %w", err)
-	}
-	if err := os.Rename(src, dest); err != nil {
-		return fmt.Errorf("replace after remove: %w", err)
-	}
-	return nil
-}
-
-// BackupTo writes a consistent copy of db to destPath using an atomic temp+rename.
-// Callers that may run concurrently for the same destPath must serialize externally.
-func BackupTo(db *sql.DB, destPath string) error {
-	if db == nil {
-		return fmt.Errorf("nil database")
-	}
-	if destPath == "" {
-		return fmt.Errorf("empty standby path")
-	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return err
+func configureConnectionPool(db *sql.DB, inMemory bool) {
+	if inMemory {
+		// Private in-memory databases are scoped to a single SQLite connection.
+		// Keeping that connection idle also prevents the database from vanishing.
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+		return
 	}
 
-	// Best-effort checkpoint so on-disk WAL state is tidy; VACUUM INTO is still consistent.
-	_, _ = db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
-
-	// Unique staging path avoids collisions if multiple BackupTo calls overlap.
-	tmp := filepath.Join(filepath.Dir(destPath), fmt.Sprintf(".%s.%d.tmp", filepath.Base(destPath), time.Now().UnixNano()))
-	quoted := strings.ReplaceAll(tmp, "'", "''")
-	if _, err := db.Exec(fmt.Sprintf(`VACUUM INTO '%s'`, quoted)); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("vacuum into standby: %w", err)
-	}
-	if err := replaceFile(tmp, destPath); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	// WAL permits concurrent readers but SQLite still serializes writers. A
+	// modest bound retains read concurrency without creating excessive lock
+	// contention or an unbounded number of file descriptors under load.
+	db.SetMaxOpenConns(fileMaxOpenConns)
+	db.SetMaxIdleConns(fileMaxIdleConns)
 }
 
 func createTables(db *sql.DB) error {
