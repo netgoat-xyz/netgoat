@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -333,11 +332,6 @@ func collectSysInfo(dataDir string) SysInfo {
 			info.Kernel = parts[2]
 		}
 	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dataDir, &stat); err == nil {
-		blockSize := int64(stat.Bsize)
-		info.DiskTotalMB = (int64(stat.Blocks) * blockSize) / (1024 * 1024)
-		info.DiskFreeMB = (int64(stat.Bavail) * blockSize) / (1024 * 1024)
-	}
+	info.DiskTotalMB, info.DiskFreeMB = diskUsageMB(dataDir)
 	return info
 }

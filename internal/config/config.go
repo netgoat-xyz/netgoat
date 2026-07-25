@@ -120,6 +120,14 @@ type Config struct {
 		IntervalSeconds int    `yaml:"interval_seconds"`
 	} `yaml:"telemetry"`
 
+	// Database controls the SQLite primary/standby files. Empty values retain
+	// the historical defaults used by DatabasePath and DatabaseStandbyPath.
+	Database struct {
+		Path                  string `yaml:"path"`
+		StandbyPath           string `yaml:"standby_path"`
+		BackupIntervalSeconds int    `yaml:"backup_interval_seconds"`
+	} `yaml:"database"`
+
 	// Routes are local fallback routes keyed by domain, wildcard/regex pattern,
 	// or path prefix. Streamed routes with the same key take precedence.
 	Routes map[string]Route `yaml:"routes"`

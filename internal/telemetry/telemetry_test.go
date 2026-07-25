@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -65,7 +66,8 @@ func TestClientPersistsPrivateValidatedID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		got := info.Mode().Perm()
 		t.Fatalf("ID permissions = %o, want 600", got)
 	}
 

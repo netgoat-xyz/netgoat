@@ -7,20 +7,23 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 )
 
 const (
 	sqliteBusyTimeout = 5 * time.Second
 	fileMaxOpenConns  = 8
 	fileMaxIdleConns  = 4
+	backupTimeout     = 30 * time.Second
+	sqliteDriverName  = "sqlite"
 )
 
 func Init(path string) (*sql.DB, error) {
@@ -29,7 +32,7 @@ func Init(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("configure sqlite database: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dsn)
+	db, err := sql.Open(sqliteDriverName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
@@ -47,11 +50,6 @@ func Init(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("initialize sqlite database: %w", err)
 	}
 
-	if err := createTables(db); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-
 	if !isMemoryPath(path) {
 		if err := validateIntegrity(db); err != nil {
 			_ = db.Close()
@@ -60,6 +58,320 @@ func Init(path string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// isMemoryPath reports whether a SQLite DSN points at an in-memory database.
+// It intentionally accepts the common URI form used for shared test databases.
+func isMemoryPath(path string) bool {
+	filename, rawQuery, hasQuery := strings.Cut(path, "?")
+	if filename == ":memory:" || filename == "file::memory:" {
+		return true
+	}
+	if !hasQuery {
+		return false
+	}
+	params, err := url.ParseQuery(rawQuery)
+	return err == nil && strings.EqualFold(params.Get("mode"), "memory")
+}
+
+// validateIntegrity rejects databases that SQLite can open but whose on-disk
+// contents fail its integrity verification.
+func validateIntegrity(db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("integrity check: nil database")
+	}
+	rows, err := db.Query("PRAGMA quick_check")
+	if err != nil {
+		return fmt.Errorf("run sqlite integrity check: %w", err)
+	}
+	defer rows.Close()
+
+	checked := false
+	for rows.Next() {
+		var result string
+		if err := rows.Scan(&result); err != nil {
+			return fmt.Errorf("read sqlite integrity check: %w", err)
+		}
+		checked = true
+		if !strings.EqualFold(strings.TrimSpace(result), "ok") {
+			return fmt.Errorf("sqlite integrity check failed: %s", result)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate sqlite integrity check: %w", err)
+	}
+	if !checked {
+		return fmt.Errorf("sqlite integrity check returned no result")
+	}
+	return nil
+}
+
+// OpenWithFailover opens the primary database. If an existing primary is
+// corrupt, it promotes a validated standby copy; if neither copy is usable it
+// preserves the corrupt primary under a timestamped name and creates a fresh
+// database. A valid primary that merely fails application initialization is not
+// replaced.
+func OpenWithFailover(primaryPath, standbyPath string) (*sql.DB, bool, error) {
+	if isMemoryPath(primaryPath) {
+		db, err := Init(primaryPath)
+		return db, false, err
+	}
+
+	primaryFile := databaseFilename(primaryPath)
+	primaryExists, err := databaseFileExists(primaryFile)
+	if err != nil {
+		return nil, false, err
+	}
+
+	db, err := Init(primaryPath)
+	if err == nil {
+		return db, false, nil
+	}
+	primaryErr := err
+	if !primaryExists {
+		return nil, false, primaryErr
+	}
+
+	// Do not replace a sound database because, for example, bootstrap
+	// credentials or a migration configuration is invalid.
+	if existing, existingErr := openValidatedExistingDatabase(primaryPath); existingErr == nil {
+		_ = existing.Close()
+		return nil, false, primaryErr
+	}
+
+	if strings.TrimSpace(standbyPath) != "" {
+		if standby, standbyErr := openValidatedExistingDatabase(standbyPath); standbyErr == nil {
+			backupErr := BackupTo(standby, primaryPath)
+			closeErr := standby.Close()
+			if backupErr == nil && closeErr == nil {
+				recovered, openErr := Init(primaryPath)
+				if openErr != nil {
+					return nil, false, fmt.Errorf("open promoted standby: %w", openErr)
+				}
+				return recovered, true, nil
+			}
+		}
+	}
+
+	if err := quarantineDatabase(primaryFile); err != nil {
+		return nil, false, fmt.Errorf("preserve unusable primary database: %w", err)
+	}
+	recreated, err := Init(primaryPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("recreate primary database after %v: %w", primaryErr, err)
+	}
+	return recreated, false, nil
+}
+
+// BackupTo writes a consistent SQLite backup to standbyPath. It uses SQLite's
+// VACUUM INTO operation rather than copying a WAL-mode database file directly.
+func BackupTo(source *sql.DB, standbyPath string) error {
+	if source == nil {
+		return fmt.Errorf("backup sqlite database: nil source")
+	}
+	destination := databaseFilename(standbyPath)
+	if destination == "" || isMemoryPath(standbyPath) {
+		return fmt.Errorf("backup sqlite database: standby path must be a file")
+	}
+
+	directory := filepath.Dir(destination)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return fmt.Errorf("create standby database directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(directory, "."+filepath.Base(destination)+".backup-*")
+	if err != nil {
+		return fmt.Errorf("create temporary standby database: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf("close temporary standby database: %w", err)
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		return fmt.Errorf("prepare temporary standby database: %w", err)
+	}
+	defer func() {
+		_ = os.Remove(temporaryPath)
+		_ = removeSQLiteSidecars(temporaryPath)
+	}()
+
+	if err := copySQLiteDatabase(source, temporaryPath); err != nil {
+		return err
+	}
+	validated, err := openValidatedExistingDatabase(temporaryPath)
+	if err != nil {
+		return fmt.Errorf("validate standby database: %w", err)
+	}
+	if err := validated.Close(); err != nil {
+		return fmt.Errorf("close validated standby database: %w", err)
+	}
+	if err := os.Chmod(temporaryPath, 0600); err != nil {
+		return fmt.Errorf("secure standby database: %w", err)
+	}
+	if err := replaceFile(temporaryPath, destination); err != nil {
+		return fmt.Errorf("replace standby database: %w", err)
+	}
+	if err := removeSQLiteSidecars(destination); err != nil {
+		return fmt.Errorf("remove stale standby journal files: %w", err)
+	}
+	return nil
+}
+
+func databaseFilename(path string) string {
+	filename, _, _ := strings.Cut(strings.TrimSpace(path), "?")
+	return filename
+}
+
+func databaseFileExists(path string) (bool, error) {
+	if path == "" {
+		return false, fmt.Errorf("database path cannot be empty")
+	}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat database %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return false, fmt.Errorf("database path %q is a directory", path)
+	}
+	return true, nil
+}
+
+func openValidatedExistingDatabase(path string) (*sql.DB, error) {
+	filename := databaseFilename(path)
+	if filename == "" || isMemoryPath(path) {
+		return nil, fmt.Errorf("database path must reference an existing file")
+	}
+	if exists, err := databaseFileExists(filename); err != nil {
+		return nil, err
+	} else if !exists {
+		return nil, fmt.Errorf("database %q does not exist", filename)
+	}
+
+	dsn, inMemory, err := sqliteDSN(path)
+	if err != nil {
+		return nil, err
+	}
+	if inMemory {
+		return nil, fmt.Errorf("database path must not be in-memory")
+	}
+	db, err := sql.Open(sqliteDriverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	configureConnectionPool(db, false)
+	failed := true
+	defer func() {
+		if failed {
+			_ = db.Close()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), sqliteBusyTimeout)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateIntegrity(db); err != nil {
+		return nil, err
+	}
+	var routeTableCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'routes'`).Scan(&routeTableCount); err != nil {
+		return nil, err
+	}
+	if routeTableCount != 1 {
+		return nil, fmt.Errorf("database is missing routes table")
+	}
+	failed = false
+	return db, nil
+}
+
+func copySQLiteDatabase(source *sql.DB, destination string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
+	defer cancel()
+	// VACUUM INTO asks SQLite to create a transactionally consistent standalone
+	// database, including commits still held in the primary's WAL. It is
+	// available in the SQLite version bundled by the driver and avoids relying
+	// on an optional go-sqlite3 backup build tag.
+	quotedDestination := "'" + strings.ReplaceAll(destination, "'", "''") + "'"
+	if _, err := source.ExecContext(ctx, "VACUUM INTO "+quotedDestination); err != nil {
+		return fmt.Errorf("create sqlite backup: %w", err)
+	}
+	return nil
+}
+
+func quarantineDatabase(path string) error {
+	if exists, err := databaseFileExists(path); err != nil || !exists {
+		return err
+	}
+	quarantine := fmt.Sprintf("%s.corrupt-%d", path, time.Now().UTC().UnixNano())
+	if err := os.Rename(path, quarantine); err != nil {
+		return fmt.Errorf("move %q to %q: %w", path, quarantine, err)
+	}
+	return removeSQLiteSidecars(path)
+}
+
+func removeSQLiteSidecars(path string) error {
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if err := os.Remove(path + suffix); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// replaceFile replaces destination with source on platforms where os.Rename
+// cannot overwrite an existing file (notably Windows), while retaining a
+// recoverable old copy until the new rename succeeds.
+func replaceFile(source, destination string) error {
+	if _, err := os.Stat(source); err != nil {
+		return fmt.Errorf("stat replacement source: %w", err)
+	}
+	if err := os.Rename(source, destination); err == nil {
+		return nil
+	}
+
+	info, err := os.Stat(destination)
+	if os.IsNotExist(err) {
+		return os.Rename(source, destination)
+	}
+	if err != nil {
+		return fmt.Errorf("stat replacement destination: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("replacement destination %q is a directory", destination)
+	}
+
+	directory := filepath.Dir(destination)
+	backup, err := os.CreateTemp(directory, "."+filepath.Base(destination)+".replace-*")
+	if err != nil {
+		return err
+	}
+	backupPath := backup.Name()
+	if err := backup.Close(); err != nil {
+		_ = os.Remove(backupPath)
+		return err
+	}
+	if err := os.Remove(backupPath); err != nil {
+		return err
+	}
+
+	if err := os.Rename(destination, backupPath); err != nil {
+		return fmt.Errorf("stage replacement destination: %w", err)
+	}
+	if err := os.Rename(source, destination); err != nil {
+		restoreErr := os.Rename(backupPath, destination)
+		if restoreErr != nil {
+			return fmt.Errorf("replace destination: %w (and restore old destination: %v)", err, restoreErr)
+		}
+		return fmt.Errorf("replace destination: %w", err)
+	}
+	if err := os.Remove(backupPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove staged replacement destination: %w", err)
+	}
+	return nil
 }
 
 func sqliteDSN(path string) (string, bool, error) {
@@ -73,20 +385,24 @@ func sqliteDSN(path string) (string, bool, error) {
 		}
 	}
 
-	inMemory := filename == ":memory:" || filename == "file::memory:" ||
-		strings.EqualFold(params.Get("mode"), "memory")
-	// go-sqlite3 accepts aliases for these options and gives some aliases
-	// precedence. Remove them so callers cannot accidentally defeat the
-	// connection-wide policy with a conflicting duplicate.
+	inMemory := isMemoryPath(path)
+	// Modernc's driver applies every _pragma value to each newly opened
+	// connection. Remove caller-provided driver aliases and pragmas first so
+	// configuration cannot accidentally weaken the connection-wide policy.
 	params.Del("_timeout")
+	params.Del("_busy_timeout")
 	params.Del("_fk")
-	params.Set("_busy_timeout", strconv.FormatInt(sqliteBusyTimeout.Milliseconds(), 10))
-	params.Set("_foreign_keys", "on")
+	params.Del("_foreign_keys")
+	params.Del("_pragma")
+	params.Add("_pragma", "busy_timeout("+strconv.FormatInt(sqliteBusyTimeout.Milliseconds(), 10)+")")
+	params.Add("_pragma", "foreign_keys(1)")
 	if !inMemory {
 		params.Del("_journal")
+		params.Del("_journal_mode")
 		params.Del("_sync")
-		params.Set("_journal_mode", "WAL")
-		params.Set("_synchronous", "NORMAL")
+		params.Del("_synchronous")
+		params.Add("_pragma", "journal_mode(WAL)")
+		params.Add("_pragma", "synchronous(NORMAL)")
 	} else {
 		params.Del("_journal")
 		params.Del("_journal_mode")
