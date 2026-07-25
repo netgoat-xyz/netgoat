@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"netgoat.xyz/agent/internal/config"
 	"netgoat.xyz/agent/internal/database"
 	"netgoat.xyz/agent/internal/debugoverlay"
+	"netgoat.xyz/agent/internal/dynamicrules"
 	"netgoat.xyz/agent/internal/health"
 	"netgoat.xyz/agent/internal/honeypot"
 	"netgoat.xyz/agent/internal/koda2"
@@ -121,6 +123,10 @@ func main() {
 	if err := wafEngine.Reload(db); err != nil {
 		log.Error().Err(err).Msg("Failed to compile initial WAF rules")
 	}
+	dynamicRuntime, err := newDynamicRulesRuntime(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to configure dynamic rules")
+	}
 	tlsManager, acmeHTTPAddr, err := configureTLSManager(cfg, routeResolver)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to configure TLS")
@@ -196,7 +202,7 @@ func main() {
 	// are live runtime settings. This avoids unsafe ServeMux mutations after
 	// the server has started.
 	metricsRecorder := metrics.NewRecorder()
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver, tlsManager, cfg, trafficRuntime)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver, tlsManager, dynamicRuntime, cfg, trafficRuntime)
 
 	var detector *anomaly.LocalDetector
 	featureHeader := "X-GoatAI-Features"
@@ -480,6 +486,30 @@ func main() {
 				return
 			}
 			defer release()
+		}
+
+		if dynamicRulesEngine := dynamicRuntime.Load(); dynamicRulesEngine != nil {
+			decision, ruleErr := evaluateDynamicRules(r, dynamicRulesEngine, getClientIP(r))
+			if ruleErr != nil || decision.Action == dynamicrules.ActionBlock {
+				analysisInfo.RequestAllowed = false
+				if decision.Rule != "" {
+					analysisInfo.BlockReason = "dynamic rule: " + decision.Rule
+				} else {
+					analysisInfo.BlockReason = "dynamic rule evaluation failed"
+				}
+				reason := "dynamic-rule"
+				if decision.Rule != "" {
+					reason += ":" + decision.Rule
+				}
+				recordBlocked(metricsRecorder, reason)
+				if ruleErr != nil {
+					log.Warn().Err(ruleErr).Str("rule", decision.Rule).Str("host", r.Host).Str("path", r.URL.Path).Msg("Dynamic rule evaluation failed closed")
+				} else {
+					log.Warn().Str("rule", decision.Rule).Str("reason", decision.Reason).Str("host", r.Host).Str("path", r.URL.Path).Msg("Request blocked by dynamic rule")
+				}
+				writeError(w, pages, challengeStore, r, http.StatusForbidden, "Forbidden")
+				return
+			}
 		}
 
 		if kodaWafDetector != nil {
@@ -863,6 +893,133 @@ func configureTLSManager(cfg *config.Config, resolver *database.RouteResolver) (
 		return nil, "", fmt.Errorf("configure ACME: %w", err)
 	}
 	return manager, httpPort, nil
+}
+
+// dynamicRulesRuntime atomically publishes a complete compiled rule engine.
+// A failed control-plane update leaves the previous verified engine active.
+type dynamicRulesRuntime struct {
+	engine atomic.Pointer[dynamicrules.Engine]
+}
+
+func newDynamicRulesRuntime(cfg *config.Config) (*dynamicRulesRuntime, error) {
+	runtime := &dynamicRulesRuntime{}
+	if err := runtime.Update(cfg); err != nil {
+		return nil, err
+	}
+	return runtime, nil
+}
+
+func (r *dynamicRulesRuntime) Load() *dynamicrules.Engine {
+	if r == nil {
+		return nil
+	}
+	return r.engine.Load()
+}
+
+func (r *dynamicRulesRuntime) Update(cfg *config.Config) error {
+	if r == nil {
+		return errors.New("dynamic rules runtime is nil")
+	}
+	engine, err := configureDynamicRules(cfg)
+	if err != nil {
+		return err
+	}
+	r.engine.Store(engine)
+	return nil
+}
+
+// configureDynamicRules compiles all enabled local rules before the proxy
+// starts. Reload is all-or-nothing inside the engine, so a configuration error
+// never leaves a partially active rule set.
+func configureDynamicRules(cfg *config.Config) (*dynamicrules.Engine, error) {
+	if cfg == nil || !cfg.DynamicRules.Enabled {
+		return nil, nil
+	}
+	limits := dynamicrules.Limits{
+		MaxRules:         cfg.DynamicRules.MaxRules,
+		MaxSourceBytes:   cfg.DynamicRules.MaxSourceBytes,
+		MaxCompiledBytes: cfg.DynamicRules.MaxCompiledBytes,
+		MaxInputBytes:    cfg.DynamicRules.MaxInputBytes,
+		MaxResultBytes:   cfg.DynamicRules.MaxResultBytes,
+	}
+	if cfg.DynamicRules.MaxExecutionMilliseconds != 0 {
+		limits.MaxExecutionDuration = time.Duration(cfg.DynamicRules.MaxExecutionMilliseconds) * time.Millisecond
+	}
+	engine, err := dynamicrules.NewEngine(limits)
+	if err != nil {
+		return nil, err
+	}
+	rules := make([]dynamicrules.Rule, 0, len(cfg.DynamicRules.Rules))
+	for _, rule := range cfg.DynamicRules.Rules {
+		if !rule.IsEnabled() {
+			continue
+		}
+		rules = append(rules, dynamicrules.Rule{
+			Name:     rule.Name,
+			Language: dynamicrules.Language(rule.Language),
+			Source:   rule.Source,
+		})
+	}
+	if len(rules) == 0 {
+		log.Warn().Msg("Dynamic rules are enabled but no rules are active")
+		return nil, nil
+	}
+	if err := engine.Reload(rules); err != nil {
+		return nil, err
+	}
+	log.Info().Int("rules", len(rules)).Dur("max_execution", engine.Limits().MaxExecutionDuration).Msg("Dynamic rules configured")
+	return engine, nil
+}
+
+// evaluateDynamicRules copies at most the configured input limit from the
+// request body and restores it before proxying. A too-large or unreadable body
+// is a rule-evaluation error and therefore blocks the request fail-closed.
+func evaluateDynamicRules(request *http.Request, engine *dynamicrules.Engine, clientIP string) (dynamicrules.Decision, error) {
+	if request == nil || engine == nil {
+		return dynamicrules.Decision{Action: dynamicrules.ActionAllow}, nil
+	}
+	maxBodyBytes := engine.Limits().MaxInputBytes
+	body, err := copyRequestBodyForDynamicRules(request, maxBodyBytes)
+	if err != nil {
+		return dynamicrules.Decision{Action: dynamicrules.ActionBlock, Reason: "request body unavailable"}, err
+	}
+	ruleRequest, err := dynamicrules.RequestFromHTTP(request, body)
+	if err != nil {
+		return dynamicrules.Decision{Action: dynamicrules.ActionBlock, Reason: "request unavailable"}, err
+	}
+	ruleRequest.ClientIP = clientIP
+	return engine.Evaluate(request.Context(), ruleRequest)
+}
+
+func copyRequestBodyForDynamicRules(request *http.Request, maxBytes int) ([]byte, error) {
+	if request == nil || request.Body == nil || request.Body == http.NoBody {
+		return nil, nil
+	}
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("dynamic rules input limit must be positive")
+	}
+	if request.ContentLength > int64(maxBytes) {
+		return nil, fmt.Errorf("%w: request body exceeds %d bytes", dynamicrules.ErrLimitExceeded, maxBytes)
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, int64(maxBytes)+1))
+	closeErr := request.Body.Close()
+	request.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("read request body for dynamic rules: %w", err)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close request body for dynamic rules: %w", closeErr)
+	}
+	if len(body) > maxBytes {
+		return nil, fmt.Errorf("%w: request body exceeds %d bytes", dynamicrules.ErrLimitExceeded, maxBytes)
+	}
+	// ReverseProxy may call GetBody when a safe retry is configured. Preserve
+	// repeatability after replacing the original network stream.
+	bodyCopy := append([]byte(nil), body...)
+	request.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyCopy)), nil
+	}
+	return body, nil
 }
 
 func resolverCertificateRecords(resolver *database.RouteResolver) []tlsmanager.DomainCertificate {
@@ -1825,6 +1982,22 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 	cfg.Koda2.ScalerPath = agentConfig.Koda2.ScalerPath
 	cfg.Koda2.PythonScript = agentConfig.Koda2.PythonScript
 	cfg.Koda2.FeatureHeader = agentConfig.Koda2.FeatureHeader
+
+	cfg.DynamicRules.Enabled = agentConfig.DynamicRules.Enabled
+	cfg.DynamicRules.MaxRules = agentConfig.DynamicRules.MaxRules
+	cfg.DynamicRules.MaxSourceBytes = agentConfig.DynamicRules.MaxSourceBytes
+	cfg.DynamicRules.MaxCompiledBytes = agentConfig.DynamicRules.MaxCompiledBytes
+	cfg.DynamicRules.MaxInputBytes = agentConfig.DynamicRules.MaxInputBytes
+	cfg.DynamicRules.MaxResultBytes = agentConfig.DynamicRules.MaxResultBytes
+	cfg.DynamicRules.MaxExecutionMilliseconds = agentConfig.DynamicRules.MaxExecutionMilliseconds
+	cfg.DynamicRules.Rules = make([]config.DynamicRule, len(agentConfig.DynamicRules.Rules))
+	for index, rule := range agentConfig.DynamicRules.Rules {
+		cfg.DynamicRules.Rules[index] = config.DynamicRule{
+			Name:     rule.Name,
+			Language: rule.Language,
+			Source:   rule.Source,
+		}
+	}
 }
 
 // applyTrafficAgentConfigToConfig updates only fields that are read through an
@@ -1860,7 +2033,7 @@ func applyTrafficAgentConfigToConfig(cfg *config.Config, agentConfig streaming.A
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver, tlsManager *tlsmanager.Manager, cfg *config.Config, runtime *trafficRuntime) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver, tlsManager *tlsmanager.Manager, dynamicRuntime *dynamicRulesRuntime, cfg *config.Config, runtime *trafficRuntime) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1886,8 +2059,13 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload WAF rules")
 		}
 		if !snap.AgentConfig.IsZero() {
-			applyTrafficAgentConfigToConfig(cfg, snap.AgentConfig)
+			applyAgentConfigToConfig(cfg, snap.AgentConfig)
 			runtime.Update(cfg)
+			if dynamicRuntime != nil {
+				if err := dynamicRuntime.Update(cfg); err != nil {
+					log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload dynamic rules; retaining last known-good rules")
+				}
+			}
 			log.Info().Int64("version", snap.Version).Msg("Applied live traffic-control configuration")
 		}
 		if healthChecksEnabled {

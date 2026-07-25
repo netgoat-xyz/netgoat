@@ -30,6 +30,18 @@ ssl:
     cache_dir: "/var/lib/netgoat/acme"
     directory_url: "https://acme-staging.example.test/directory"
     http_port: ":8080"
+dynamic_rules:
+  enabled: true
+  max_rules: 8
+  max_execution_milliseconds: 20
+  rules:
+    - name: block-admin
+      language: typescript
+      source: "export function evaluate() { return { action: 'block' }; }"
+    - name: disabled-rule
+      language: javascript
+      enabled: false
+      source: "module.exports = () => null"
 custom_error_page: "/path/to/error.html"
 anomaly:
   enabled: true
@@ -133,6 +145,10 @@ api:
 		len(cfg.SSL.ACME.Domains) != 2 || cfg.SSL.ACME.CacheDir != "/var/lib/netgoat/acme" ||
 		cfg.SSL.ACME.DirectoryURL != "https://acme-staging.example.test/directory" || cfg.SSL.ACME.HTTPPort != ":8080" {
 		t.Errorf("SSL.ACME was not decoded: %+v", cfg.SSL.ACME)
+	}
+	if !cfg.DynamicRules.Enabled || cfg.DynamicRules.MaxRules != 8 || cfg.DynamicRules.MaxExecutionMilliseconds != 20 ||
+		len(cfg.DynamicRules.Rules) != 2 || !cfg.DynamicRules.Rules[0].IsEnabled() || cfg.DynamicRules.Rules[1].IsEnabled() {
+		t.Errorf("DynamicRules was not decoded: %+v", cfg.DynamicRules)
 	}
 
 	// Test custom error page

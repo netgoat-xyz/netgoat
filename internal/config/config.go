@@ -38,6 +38,19 @@ type Config struct {
 			HTTPPort     string   `yaml:"http_port"`
 		} `yaml:"acme"`
 	} `yaml:"ssl"`
+	DynamicRules struct {
+		// Enabled activates the bounded TypeScript/JavaScript rule runtime.
+		// Rules are administrator-managed source code and are evaluated before
+		// the WAF; evaluation failures block the request.
+		Enabled                  bool          `yaml:"enabled"`
+		Rules                    []DynamicRule `yaml:"rules"`
+		MaxRules                 int           `yaml:"max_rules"`
+		MaxSourceBytes           int           `yaml:"max_source_bytes"`
+		MaxCompiledBytes         int           `yaml:"max_compiled_bytes"`
+		MaxInputBytes            int           `yaml:"max_input_bytes"`
+		MaxResultBytes           int           `yaml:"max_result_bytes"`
+		MaxExecutionMilliseconds int           `yaml:"max_execution_milliseconds"`
+	} `yaml:"dynamic_rules"`
 	// Path to a static HTML file to serve for errors (e.g., 403/404/500)
 	CustomErrorPage string `yaml:"custom_error_page"`
 
@@ -154,6 +167,21 @@ type Route struct {
 	PrivateKeyPEM  string             `yaml:"private_key_pem"`
 	Policy         policy.RoutePolicy `yaml:"policy"`
 	Active         *bool              `yaml:"active"`
+}
+
+// DynamicRule is one ordered JavaScript or TypeScript source unit. An omitted
+// enabled flag defaults to true so operators can disable a rule explicitly
+// without changing its source.
+type DynamicRule struct {
+	Name     string `yaml:"name"`
+	Language string `yaml:"language"`
+	Source   string `yaml:"source"`
+	Enabled  *bool  `yaml:"enabled"`
+}
+
+// IsEnabled treats an omitted flag as enabled.
+func (r DynamicRule) IsEnabled() bool {
+	return r.Enabled == nil || *r.Enabled
 }
 
 type RouteTarget struct {

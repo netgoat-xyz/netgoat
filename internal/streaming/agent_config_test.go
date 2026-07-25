@@ -18,6 +18,14 @@ func TestConfigSnapshotCopyIncludesAgentConfig(t *testing.T) {
 				Enabled: true,
 				Key:     AgentKeyIP,
 			},
+			DynamicRules: AgentDynamicRulesConfig{
+				Enabled: true,
+				Rules: []AgentDynamicRuleData{{
+					Name:     "block-admin",
+					Language: "typescript",
+					Source:   "export function evaluate() { return null; }",
+				}},
+			},
 		},
 	}
 
@@ -28,5 +36,9 @@ func TestConfigSnapshotCopyIncludesAgentConfig(t *testing.T) {
 	}
 	if copied.AgentConfig.RateLimit.Key != AgentKeyIP {
 		t.Fatalf("agent rate limit config was not copied: %+v", copied.AgentConfig.RateLimit)
+	}
+	copied.AgentConfig.DynamicRules.Rules[0].Name = "mutated"
+	if snapshot.AgentConfig.DynamicRules.Rules[0].Name != "block-admin" {
+		t.Fatalf("agent dynamic rules were not independently copied: %+v", snapshot.AgentConfig.DynamicRules)
 	}
 }

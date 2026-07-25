@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -128,6 +129,26 @@ type AgentModelConfig struct {
 	FeatureHeader string  `json:"feature_header"`
 }
 
+// AgentDynamicRuleData is one ordered, administrator-managed JavaScript or
+// TypeScript rule. The agent compiles it into an isolated runtime before it is
+// published to requests.
+type AgentDynamicRuleData struct {
+	Name     string `json:"name"`
+	Language string `json:"language"`
+	Source   string `json:"source"`
+}
+
+type AgentDynamicRulesConfig struct {
+	Enabled                  bool                   `json:"enabled"`
+	Rules                    []AgentDynamicRuleData `json:"rules"`
+	MaxRules                 int                    `json:"max_rules"`
+	MaxSourceBytes           int                    `json:"max_source_bytes"`
+	MaxCompiledBytes         int                    `json:"max_compiled_bytes"`
+	MaxInputBytes            int                    `json:"max_input_bytes"`
+	MaxResultBytes           int                    `json:"max_result_bytes"`
+	MaxExecutionMilliseconds int                    `json:"max_execution_milliseconds"`
+}
+
 type AgentConfigData struct {
 	Cache        AgentCacheConfig        `json:"cache"`
 	RateLimit    AgentRateLimitConfig    `json:"rate_limit"`
@@ -136,11 +157,12 @@ type AgentConfigData struct {
 	Metrics      AgentMetricsConfig      `json:"metrics"`
 	KodaWaf      AgentModelConfig        `json:"koda_waf"`
 	Koda2        AgentModelConfig        `json:"koda_2"`
+	DynamicRules AgentDynamicRulesConfig `json:"dynamic_rules"`
 	present      bool
 }
 
 func (c AgentConfigData) IsZero() bool {
-	return !c.present && c == AgentConfigData{}
+	return !c.present && reflect.DeepEqual(c, AgentConfigData{})
 }
 
 func (c *AgentConfigData) UnmarshalJSON(data []byte) error {
@@ -298,6 +320,9 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 	userDomains := make([]UserDomainData, len(s.UserDomains))
 	copy(userDomains, s.UserDomains)
 
+	agentConfig := s.AgentConfig
+	agentConfig.DynamicRules.Rules = append([]AgentDynamicRuleData(nil), s.AgentConfig.DynamicRules.Rules...)
+
 	return &ConfigSnapshot{
 		Version:             s.Version,
 		Timestamp:           s.Timestamp,
@@ -309,7 +334,7 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 		UserDomains:         userDomains,
 		ZeroTrustEnabled:    s.ZeroTrustEnabled,
 		ZeroTrustConfigured: s.ZeroTrustConfigured,
-		AgentConfig:         s.AgentConfig,
+		AgentConfig:         agentConfig,
 	}
 }
 

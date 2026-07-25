@@ -23,6 +23,22 @@ ssl:
     directory_url: ""
     http_port: ":80"
 
+# Ordered administrator-managed TypeScript/JavaScript request rules. The
+# runtime has no filesystem, network, process, or Go-object bindings and fails
+# closed on invalid source, oversized inputs, and execution timeouts.
+dynamic_rules:
+  enabled: false
+  max_execution_milliseconds: 25
+  rules: []
+  # Example:
+  # - name: block-private-admin
+  #   language: typescript
+  #   source: |
+  #     export function evaluate(request) {
+  #       return request.path === "/admin" && request.clientIP.startsWith("10.")
+  #         ? { action: "block", reason: "private admin path" } : null;
+  #     }
+
 # Optional: custom error page served for 403/404/500
 custom_error_page: "public/error.html"
 

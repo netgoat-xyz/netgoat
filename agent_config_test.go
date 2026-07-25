@@ -54,6 +54,16 @@ func TestApplyAgentConfigToConfig(t *testing.T) {
 			PythonScript:  "models/koda2.py",
 			FeatureHeader: "X-Koda2",
 		},
+		DynamicRules: streaming.AgentDynamicRulesConfig{
+			Enabled:                  true,
+			MaxRules:                 8,
+			MaxExecutionMilliseconds: 20,
+			Rules: []streaming.AgentDynamicRuleData{{
+				Name:     "block-admin",
+				Language: "typescript",
+				Source:   "export function evaluate() { return null; }",
+			}},
+		},
 	})
 
 	if !cfg.Cache.Enabled || cfg.Cache.TTLSeconds != 90 || cfg.Cache.MaxEntries != 2048 {
@@ -76,6 +86,10 @@ func TestApplyAgentConfigToConfig(t *testing.T) {
 	}
 	if !cfg.Koda2.Enabled || cfg.Koda2.FeatureHeader != "X-Koda2" || cfg.Koda2.Threshold != 0.65 {
 		t.Fatalf("koda-2 config was not applied: %+v", cfg.Koda2)
+	}
+	if !cfg.DynamicRules.Enabled || cfg.DynamicRules.MaxRules != 8 || cfg.DynamicRules.MaxExecutionMilliseconds != 20 ||
+		len(cfg.DynamicRules.Rules) != 1 || cfg.DynamicRules.Rules[0].Name != "block-admin" {
+		t.Fatalf("dynamic rules config was not applied: %+v", cfg.DynamicRules)
 	}
 }
 
