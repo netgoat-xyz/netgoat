@@ -21,8 +21,16 @@ type ConfigSnapshot struct {
 	WAFRules           map[string]WAFRuleData `json:"waf_rules"`
 	WAFRulesConfigured bool                   `json:"waf_rules_configured,omitempty"`
 	Users              []UserData             `json:"users"`
-	UserDomains        []UserDomainData       `json:"user_domains"`
-	ZeroTrustEnabled   bool                   `json:"zero_trust_enabled"`
+	// UsersConfigured means the control plane explicitly supplied a complete
+	// users collection. A missing field (including snapshots from older control
+	// planes) remains non-authoritative so local users are never removed merely
+	// because a source does not publish users.
+	UsersConfigured bool             `json:"users_configured,omitempty"`
+	UserDomains     []UserDomainData `json:"user_domains"`
+	// UserDomainsConfigured has the same full-replacement semantics as
+	// UsersConfigured, but for user-owned proxy records.
+	UserDomainsConfigured bool `json:"user_domains_configured,omitempty"`
+	ZeroTrustEnabled      bool `json:"zero_trust_enabled"`
 	// ZeroTrustConfigured distinguishes an explicit false from a field omitted
 	// by older control planes or an empty local snapshot.
 	ZeroTrustConfigured bool            `json:"zero_trust_configured,omitempty"`
@@ -324,17 +332,19 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 	agentConfig.DynamicRules.Rules = append([]AgentDynamicRuleData(nil), s.AgentConfig.DynamicRules.Rules...)
 
 	return &ConfigSnapshot{
-		Version:             s.Version,
-		Timestamp:           s.Timestamp,
-		Routes:              routes,
-		RoutesConfigured:    s.RoutesConfigured,
-		WAFRules:            rules,
-		WAFRulesConfigured:  s.WAFRulesConfigured,
-		Users:               users,
-		UserDomains:         userDomains,
-		ZeroTrustEnabled:    s.ZeroTrustEnabled,
-		ZeroTrustConfigured: s.ZeroTrustConfigured,
-		AgentConfig:         agentConfig,
+		Version:               s.Version,
+		Timestamp:             s.Timestamp,
+		Routes:                routes,
+		RoutesConfigured:      s.RoutesConfigured,
+		WAFRules:              rules,
+		WAFRulesConfigured:    s.WAFRulesConfigured,
+		Users:                 users,
+		UsersConfigured:       s.UsersConfigured,
+		UserDomains:           userDomains,
+		UserDomainsConfigured: s.UserDomainsConfigured,
+		ZeroTrustEnabled:      s.ZeroTrustEnabled,
+		ZeroTrustConfigured:   s.ZeroTrustConfigured,
+		AgentConfig:           agentConfig,
 	}
 }
 

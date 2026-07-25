@@ -98,6 +98,130 @@ func TestApplySnapshotRollsBackInvalidReplacement(t *testing.T) {
 	}
 }
 
+func TestApplySnapshotReconcilesOnlyAuthoritativeUsersAndDomains(t *testing.T) {
+	db, err := database.Init(":memory:")
+	if err != nil {
+		t.Fatalf("database.Init: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	initial := &streaming.ConfigSnapshot{
+		UsersConfigured: true,
+		Users: []streaming.UserData{
+			{Username: "alice", PasswordHash: "alice-v1"},
+			{Username: "stale", PasswordHash: "stale-v1"},
+		},
+		UserDomainsConfigured: true,
+		UserDomains: []streaming.UserDomainData{
+			{Username: "alice", Domain: "alice.example.test", TargetURL: "http://alice", Active: true},
+			{Username: "stale", Domain: "stale.example.test", TargetURL: "http://stale", Active: true},
+		},
+	}
+	if err := applySnapshotToDB(db, initial); err != nil {
+		t.Fatalf("apply initial user snapshot: %v", err)
+	}
+
+	replacement := &streaming.ConfigSnapshot{
+		UsersConfigured: true,
+		Users: []streaming.UserData{
+			{Username: "alice", PasswordHash: "alice-v2", Email: "alice@example.test"},
+		},
+		UserDomainsConfigured: true,
+		UserDomains: []streaming.UserDomainData{
+			{Username: "alice", Domain: "new.example.test", TargetURL: "http://new", Active: true},
+		},
+	}
+	if err := applySnapshotToDB(db, replacement); err != nil {
+		t.Fatalf("apply replacement user snapshot: %v", err)
+	}
+
+	var users, domains int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&users); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM user_proxy_records`).Scan(&domains); err != nil {
+		t.Fatalf("count user domains: %v", err)
+	}
+	if users != 1 || domains != 1 {
+		t.Fatalf("authoritative replacement kept stale data: users=%d domains=%d", users, domains)
+	}
+	if _, err := database.GetUserID(db, "stale"); err != sql.ErrNoRows {
+		t.Fatalf("stale user lookup = %v, want sql.ErrNoRows", err)
+	}
+	var passwordHash, email string
+	if err := db.QueryRow(`SELECT password_hash, COALESCE(email, '') FROM users WHERE username = 'alice'`).Scan(&passwordHash, &email); err != nil {
+		t.Fatalf("load retained user: %v", err)
+	}
+	if passwordHash != "alice-v2" || email != "alice@example.test" {
+		t.Fatalf("retained user was not refreshed: hash=%q email=%q", passwordHash, email)
+	}
+}
+
+func TestApplySnapshotDoesNotReconcileUsersWithoutConfiguredSignal(t *testing.T) {
+	db, err := database.Init(":memory:")
+	if err != nil {
+		t.Fatalf("database.Init: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	seed := &streaming.ConfigSnapshot{
+		UsersConfigured:       true,
+		Users:                 []streaming.UserData{{Username: "local", PasswordHash: "local-hash"}},
+		UserDomainsConfigured: true,
+		UserDomains: []streaming.UserDomainData{{
+			Username: "local", Domain: "local.example.test", TargetURL: "http://local", Active: true,
+		}},
+	}
+	if err := applySnapshotToDB(db, seed); err != nil {
+		t.Fatalf("seed user snapshot: %v", err)
+	}
+
+	// This mirrors an older control plane: the lists are absent/empty, but it
+	// never claims ownership of either collection.
+	if err := applySnapshotToDB(db, &streaming.ConfigSnapshot{}); err != nil {
+		t.Fatalf("apply non-authoritative snapshot: %v", err)
+	}
+
+	var users, domains int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM users WHERE username = 'local'`).Scan(&users)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM user_proxy_records WHERE domain = 'local.example.test'`).Scan(&domains)
+	if users != 1 || domains != 1 {
+		t.Fatalf("non-authoritative snapshot removed local data: users=%d domains=%d", users, domains)
+	}
+}
+
+func TestApplySnapshotRollsBackConfiguredUserReconciliation(t *testing.T) {
+	db, err := database.Init(":memory:")
+	if err != nil {
+		t.Fatalf("database.Init: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	if err := applySnapshotToDB(db, &streaming.ConfigSnapshot{
+		UsersConfigured: true,
+		Users:           []streaming.UserData{{Username: "stable", PasswordHash: "hash"}},
+	}); err != nil {
+		t.Fatalf("seed stable user: %v", err)
+	}
+
+	err = applySnapshotToDB(db, &streaming.ConfigSnapshot{
+		UsersConfigured:       true,
+		UserDomainsConfigured: true,
+		UserDomains: []streaming.UserDomainData{{
+			Username: "missing", Domain: "broken.example.test", TargetURL: "http://broken", Active: true,
+		}},
+	})
+	if err == nil {
+		t.Fatal("invalid configured user-domain snapshot should fail")
+	}
+	if _, err := database.GetUserID(db, "stable"); err != nil {
+		t.Fatalf("rollback did not preserve stable user: %v", err)
+	}
+}
+
 func TestMergeConfigSnapshotsKeepsLocalFallbacks(t *testing.T) {
 	local := &streaming.ConfigSnapshot{RoutesConfigured: true, Routes: map[string]streaming.RouteData{
 		"local.example.test":  {Type: "domain", Target: "http://local"},

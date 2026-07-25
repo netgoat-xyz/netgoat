@@ -1467,10 +1467,14 @@ type domainPollState struct {
 }
 
 type domainsResponse struct {
-	Domains          []domainRecord            `json:"domains"`
-	WAFRules         []wafRuleRecord           `json:"waf_rules"`
-	ZeroTrustEnabled *bool                     `json:"zero_trust_enabled"`
-	AgentConfig      streaming.AgentConfigData `json:"agent_config"`
+	Domains               []domainRecord             `json:"domains"`
+	WAFRules              []wafRuleRecord            `json:"waf_rules"`
+	Users                 []streaming.UserData       `json:"users"`
+	UsersConfigured       bool                       `json:"users_configured"`
+	UserDomains           []streaming.UserDomainData `json:"user_domains"`
+	UserDomainsConfigured bool                       `json:"user_domains_configured"`
+	ZeroTrustEnabled      *bool                      `json:"zero_trust_enabled"`
+	AgentConfig           streaming.AgentConfigData  `json:"agent_config"`
 }
 
 type domainRecord struct {
@@ -1630,13 +1634,15 @@ func pollDomains(ctx context.Context, mgr *streaming.Manager, domainsURL, apiKey
 
 func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapshot {
 	snapshot := streaming.ConfigSnapshot{
-		Routes:             make(map[string]streaming.RouteData),
-		RoutesConfigured:   payload.Domains != nil,
-		WAFRules:           make(map[string]streaming.WAFRuleData),
-		WAFRulesConfigured: payload.WAFRules != nil,
-		Users:              []streaming.UserData{},
-		UserDomains:        []streaming.UserDomainData{},
-		AgentConfig:        payload.AgentConfig,
+		Routes:                make(map[string]streaming.RouteData),
+		RoutesConfigured:      payload.Domains != nil,
+		WAFRules:              make(map[string]streaming.WAFRuleData),
+		WAFRulesConfigured:    payload.WAFRules != nil,
+		Users:                 append([]streaming.UserData(nil), payload.Users...),
+		UsersConfigured:       payload.UsersConfigured,
+		UserDomains:           append([]streaming.UserDomainData(nil), payload.UserDomains...),
+		UserDomainsConfigured: payload.UserDomainsConfigured,
+		AgentConfig:           payload.AgentConfig,
 	}
 	if payload.ZeroTrustEnabled != nil {
 		snapshot.ZeroTrustEnabled = *payload.ZeroTrustEnabled
@@ -1817,8 +1823,10 @@ func snapshotHasContent(snapshot *streaming.ConfigSnapshot) bool {
 	if snapshot == nil {
 		return false
 	}
-	return snapshot.Version > 0 || snapshot.RoutesConfigured || snapshot.WAFRulesConfigured || len(snapshot.Routes) > 0 || len(snapshot.WAFRules) > 0 ||
-		len(snapshot.Users) > 0 || len(snapshot.UserDomains) > 0 || !snapshot.AgentConfig.IsZero()
+	return snapshot.Version > 0 || snapshot.RoutesConfigured || snapshot.WAFRulesConfigured ||
+		snapshot.UsersConfigured || snapshot.UserDomainsConfigured ||
+		len(snapshot.Routes) > 0 || len(snapshot.WAFRules) > 0 || len(snapshot.Users) > 0 ||
+		len(snapshot.UserDomains) > 0 || !snapshot.AgentConfig.IsZero()
 }
 
 func mergeConfigSnapshots(local, remote *streaming.ConfigSnapshot) *streaming.ConfigSnapshot {
@@ -1833,6 +1841,8 @@ func mergeConfigSnapshots(local, remote *streaming.ConfigSnapshot) *streaming.Co
 		for key, route := range local.Routes {
 			merged.Routes[key] = route
 		}
+		merged.Users = append(merged.Users, local.Users...)
+		merged.UserDomains = append(merged.UserDomains, local.UserDomains...)
 	}
 	if remote == nil {
 		return merged
@@ -1849,6 +1859,11 @@ func mergeConfigSnapshots(local, remote *streaming.ConfigSnapshot) *streaming.Co
 	}
 	merged.Users = append(merged.Users, remote.Users...)
 	merged.UserDomains = append(merged.UserDomains, remote.UserDomains...)
+	// Only an explicit remote signal may turn either collection into a
+	// full replacement. Older streams can still upsert non-empty entries, but
+	// never cause local/offline records to be removed.
+	merged.UsersConfigured = remote.UsersConfigured
+	merged.UserDomainsConfigured = remote.UserDomainsConfigured
 	merged.ZeroTrustEnabled = remote.ZeroTrustEnabled
 	merged.ZeroTrustConfigured = remote.ZeroTrustConfigured
 	merged.AgentConfig = remote.AgentConfig
@@ -2252,6 +2267,17 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
 		}
 		usersApplied++
 	}
+	if snap.UsersConfigured {
+		if err := reconcileConfiguredUsers(tx, snap.Users); err != nil {
+			return err
+		}
+	}
+
+	if snap.UserDomainsConfigured {
+		if _, err := tx.Exec(`DELETE FROM user_proxy_records`); err != nil {
+			return fmt.Errorf("clear stale user domains: %w", err)
+		}
+	}
 
 	userDomainsApplied := 0
 	for _, userDomain := range snap.UserDomains {
@@ -2281,7 +2307,48 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
 	}
 	log.Info().Int("routes_applied", routesApplied).Int("rules_applied", rulesApplied).
 		Int("users_applied", usersApplied).Int("user_domains_applied", userDomainsApplied).
+		Bool("users_configured", snap.UsersConfigured).Bool("user_domains_configured", snap.UserDomainsConfigured).
 		Int64("version", snap.Version).Msg("Snapshot applied atomically")
+	return nil
+}
+
+// reconcileConfiguredUsers removes users that are absent from an explicitly
+// authoritative snapshot. It only runs after every incoming user has been
+// upserted, and is part of the caller's transaction, so an invalid later
+// record cannot leave a partially reconciled account set behind.
+func reconcileConfiguredUsers(tx *sql.Tx, users []streaming.UserData) error {
+	if tx == nil {
+		return errors.New("user reconciliation requires a transaction")
+	}
+	if _, err := tx.Exec(`CREATE TEMP TABLE IF NOT EXISTS netgoat_snapshot_users (
+		username TEXT PRIMARY KEY
+	)`); err != nil {
+		return fmt.Errorf("create user reconciliation set: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM netgoat_snapshot_users`); err != nil {
+		return fmt.Errorf("reset user reconciliation set: %w", err)
+	}
+	for _, user := range users {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO netgoat_snapshot_users (username) VALUES (?)`, user.Username); err != nil {
+			return fmt.Errorf("stage user %q for reconciliation: %w", user.Username, err)
+		}
+	}
+
+	const staleUsers = `
+		SELECT id FROM users
+		WHERE NOT EXISTS (
+			SELECT 1 FROM netgoat_snapshot_users
+			WHERE netgoat_snapshot_users.username = users.username
+		)`
+	if _, err := tx.Exec(`DELETE FROM user_proxy_records WHERE user_id IN (` + staleUsers + `)`); err != nil {
+		return fmt.Errorf("delete stale user domains: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM user_sessions WHERE user_id IN (` + staleUsers + `)`); err != nil {
+		return fmt.Errorf("delete stale user sessions: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM users WHERE id IN (` + staleUsers + `)`); err != nil {
+		return fmt.Errorf("delete stale users: %w", err)
+	}
 	return nil
 }
 
