@@ -73,6 +73,11 @@ func TestWorkerRestartsAfterTimeoutWithoutStaleRead(t *testing.T) {
 		t.Fatalf("Request(hang) error = %v, want ErrRequestTimeout", err)
 	}
 
+	// The timeout above intentionally exercises cancellation. The recovery
+	// assertion is about a fresh worker and stale stdout, not whether a Python
+	// process can be scheduled inside the intentionally tiny cancellation
+	// window when the full suite is under load.
+	worker.config.RequestTimeout = time.Second
 	if err := worker.Request(context.Background(), "after-timeout", &response); err != nil {
 		t.Fatalf("Request(after-timeout) error = %v", err)
 	}
