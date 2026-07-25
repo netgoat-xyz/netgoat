@@ -168,6 +168,15 @@ func (client *APIClient) DeleteDNSRecord(ctx context.Context, zoneID, recordID s
 	return client.perform(ctx, http.MethodDelete, []string{"zones", zoneID, "dns_records", recordID}, nil)
 }
 
+// CreateTunnel creates a Cloudflare Tunnel under the configured account. The
+// desired payload must be an object accepted by Cloudflare's tunnel endpoint.
+func (client *APIClient) CreateTunnel(ctx context.Context, desired any) (APIResult, error) {
+	if client == nil || !validCloudflareHexID(client.config.AccountID) {
+		return APIResult{}, fmt.Errorf("%w: account ID", ErrInvalidIdentifier)
+	}
+	return client.perform(ctx, http.MethodPost, []string{"accounts", client.config.AccountID, "cfd_tunnel"}, desired)
+}
+
 // ReconcileTunnel updates an existing Cloudflare Tunnel. Tunnel operations
 // need the account ID configured on APIConfig as well as a validated tunnel ID.
 func (client *APIClient) ReconcileTunnel(ctx context.Context, tunnelID string, desired any) (APIResult, error) {
@@ -177,7 +186,7 @@ func (client *APIClient) ReconcileTunnel(ctx context.Context, tunnelID string, d
 	if !validTunnelID(tunnelID) {
 		return APIResult{}, fmt.Errorf("%w: tunnel ID", ErrInvalidIdentifier)
 	}
-	return client.perform(ctx, http.MethodPut, []string{"accounts", client.config.AccountID, "cfd_tunnel", tunnelID}, desired)
+	return client.perform(ctx, http.MethodPatch, []string{"accounts", client.config.AccountID, "cfd_tunnel", tunnelID}, desired)
 }
 
 // DeleteTunnel removes an explicitly identified Cloudflare Tunnel.

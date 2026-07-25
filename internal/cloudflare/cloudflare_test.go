@@ -234,6 +234,40 @@ func TestAPIClientAuthenticatesValidatedRequests(t *testing.T) {
 	}
 }
 
+func TestAPIClientUsesCurrentTunnelCreateAndUpdateMethods(t *testing.T) {
+	requests := make([]struct {
+		method string
+		path   string
+	}, 0, 2)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests = append(requests, struct {
+			method string
+			path   string
+		}{method: request.Method, path: request.URL.Path})
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"success":true,"result":{}}`))
+	}))
+	defer server.Close()
+
+	client := newTestAPIClient(t, server, false)
+	if _, err := client.CreateTunnel(context.Background(), map[string]any{"name": "new-tunnel", "config_src": "cloudflare"}); err != nil {
+		t.Fatalf("CreateTunnel() error = %v", err)
+	}
+	if _, err := client.ReconcileTunnel(context.Background(), testTunnel, map[string]any{"name": "renamed-tunnel"}); err != nil {
+		t.Fatalf("ReconcileTunnel() error = %v", err)
+	}
+
+	if len(requests) != 2 {
+		t.Fatalf("tunnel requests = %d, want 2", len(requests))
+	}
+	if requests[0].method != http.MethodPost || requests[0].path != "/client/v4/accounts/"+testAccount+"/cfd_tunnel" {
+		t.Fatalf("create request = %#v", requests[0])
+	}
+	if requests[1].method != http.MethodPatch || requests[1].path != "/client/v4/accounts/"+testAccount+"/cfd_tunnel/"+testTunnel {
+		t.Fatalf("update request = %#v", requests[1])
+	}
+}
+
 func TestAPIClientRejectsDisabledAndInvalidIdentifiersBeforeNetworkIO(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

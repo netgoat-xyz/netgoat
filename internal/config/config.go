@@ -225,8 +225,9 @@ type CloudflareDNSRecord struct {
 	Record   map[string]any `yaml:"record"`
 }
 
-// CloudflareTunnel updates an existing tunnel by ID. Delete must be explicit.
-// Tunnel is a bounded JSON object accepted by Cloudflare's tunnel endpoint.
+// CloudflareTunnel creates a tunnel when TunnelID is omitted and updates one
+// when it is set. Delete must be explicit and requires TunnelID. Tunnel is a
+// bounded JSON object accepted by Cloudflare's tunnel endpoint.
 type CloudflareTunnel struct {
 	TunnelID string         `yaml:"tunnel_id"`
 	Delete   bool           `yaml:"delete"`

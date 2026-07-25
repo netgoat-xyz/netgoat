@@ -85,13 +85,21 @@ func TestReconcileCloudflareMapsBoundedDryRunPlan(t *testing.T) {
 			Delete:   true,
 		},
 	}
-	cfg.Cloudflare.Reconciliation.Tunnels = []config.CloudflareTunnel{{
-		TunnelID: "01234567-89ab-cdef-0123-456789abcdef",
-		Tunnel: map[string]any{
-			"name":       "netgoat",
-			"config_src": "cloudflare",
+	cfg.Cloudflare.Reconciliation.Tunnels = []config.CloudflareTunnel{
+		{
+			Tunnel: map[string]any{
+				"name":       "new-netgoat",
+				"config_src": "cloudflare",
+			},
 		},
-	}}
+		{
+			TunnelID: "01234567-89ab-cdef-0123-456789abcdef",
+			Tunnel: map[string]any{
+				"name":       "netgoat",
+				"config_src": "cloudflare",
+			},
+		},
+	}
 	t.Setenv(cloudflareAPITokenEnvironment, "test-api-token")
 
 	fake := &recordingCloudflareClient{}
@@ -110,8 +118,8 @@ func TestReconcileCloudflareMapsBoundedDryRunPlan(t *testing.T) {
 	if !received.Enabled || !received.DryRun || received.APIToken != "test-api-token" || received.AccountID != cfg.Cloudflare.Reconciliation.AccountID {
 		t.Fatalf("unexpected Cloudflare API settings: %+v", received)
 	}
-	if len(results) != 3 || len(fake.calls) != 3 {
-		t.Fatalf("reconciliation calls/results = %d/%d, want 3/3", len(fake.calls), len(results))
+	if len(results) != 4 || len(fake.calls) != 4 {
+		t.Fatalf("reconciliation calls/results = %d/%d, want 4/4", len(fake.calls), len(results))
 	}
 	if fake.calls[0].kind != "dns-upsert" || fake.calls[0].desired["name"] != "app.example.test" {
 		t.Fatalf("DNS creation was not mapped correctly: %+v", fake.calls[0])
@@ -119,8 +127,11 @@ func TestReconcileCloudflareMapsBoundedDryRunPlan(t *testing.T) {
 	if fake.calls[1].kind != "dns-delete" || fake.calls[1].id != "fedcba9876543210fedcba9876543210" {
 		t.Fatalf("DNS deletion was not mapped correctly: %+v", fake.calls[1])
 	}
-	if fake.calls[2].kind != "tunnel-upsert" || fake.calls[2].desired["config_src"] != "cloudflare" {
-		t.Fatalf("tunnel update was not mapped correctly: %+v", fake.calls[2])
+	if fake.calls[2].kind != "tunnel-create" || fake.calls[2].desired["name"] != "new-netgoat" {
+		t.Fatalf("tunnel creation was not mapped correctly: %+v", fake.calls[2])
+	}
+	if fake.calls[3].kind != "tunnel-update" || fake.calls[3].desired["config_src"] != "cloudflare" {
+		t.Fatalf("tunnel update was not mapped correctly: %+v", fake.calls[3])
 	}
 }
 
@@ -134,6 +145,18 @@ func TestCloudflareReconciliationRequiresEnvironmentCredential(t *testing.T) {
 	t.Setenv(cloudflareAPITokenEnvironment, "")
 	if _, err := cloudflareReconciliationPlanFromConfig(cfg); err == nil || !strings.Contains(err.Error(), cloudflareAPITokenEnvironment) {
 		t.Fatalf("missing token error = %v", err)
+	}
+}
+
+func TestCloudflareReconciliationRequiresTunnelIDForDeletion(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Cloudflare.Reconciliation.Enabled = true
+	cfg.Cloudflare.Reconciliation.AccountID = "0123456789abcdef0123456789abcdef"
+	cfg.Cloudflare.Reconciliation.Tunnels = []config.CloudflareTunnel{{Delete: true}}
+	t.Setenv(cloudflareAPITokenEnvironment, "test-api-token")
+
+	if _, err := cloudflareReconciliationPlanFromConfig(cfg); err == nil || !strings.Contains(err.Error(), "deletion requires tunnel_id") {
+		t.Fatalf("missing tunnel ID deletion error = %v", err)
 	}
 }
 
@@ -172,10 +195,16 @@ func (client *recordingCloudflareClient) DeleteDNSRecord(_ context.Context, zone
 	return cloudflare.APIResult{DryRun: true, Method: http.MethodDelete, Path: "/dns"}, nil
 }
 
+func (client *recordingCloudflareClient) CreateTunnel(_ context.Context, desired any) (cloudflare.APIResult, error) {
+	object, _ := desired.(map[string]any)
+	client.calls = append(client.calls, recordingCloudflareCall{kind: "tunnel-create", desired: object})
+	return cloudflare.APIResult{DryRun: true, Method: http.MethodPost, Path: "/tunnel"}, nil
+}
+
 func (client *recordingCloudflareClient) ReconcileTunnel(_ context.Context, tunnelID string, desired any) (cloudflare.APIResult, error) {
 	object, _ := desired.(map[string]any)
-	client.calls = append(client.calls, recordingCloudflareCall{kind: "tunnel-upsert", id: tunnelID, desired: object})
-	return cloudflare.APIResult{DryRun: true, Method: http.MethodPut, Path: "/tunnel"}, nil
+	client.calls = append(client.calls, recordingCloudflareCall{kind: "tunnel-update", id: tunnelID, desired: object})
+	return cloudflare.APIResult{DryRun: true, Method: http.MethodPatch, Path: "/tunnel"}, nil
 }
 
 func (client *recordingCloudflareClient) DeleteTunnel(_ context.Context, tunnelID string) (cloudflare.APIResult, error) {

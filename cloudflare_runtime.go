@@ -27,6 +27,7 @@ const (
 type cloudflareReconciliationClient interface {
 	ReconcileDNSRecord(context.Context, string, string, any) (cloudflare.APIResult, error)
 	DeleteDNSRecord(context.Context, string, string) (cloudflare.APIResult, error)
+	CreateTunnel(context.Context, any) (cloudflare.APIResult, error)
 	ReconcileTunnel(context.Context, string, any) (cloudflare.APIResult, error)
 	DeleteTunnel(context.Context, string) (cloudflare.APIResult, error)
 }
@@ -185,10 +186,10 @@ func cloudflareReconciliationPlanFromConfig(cfg *config.Config) (*cloudflareReco
 	}
 	for index, tunnel := range reconciliation.Tunnels {
 		tunnelID := strings.TrimSpace(tunnel.TunnelID)
-		if tunnelID == "" {
-			return nil, fmt.Errorf("cloudflare tunnel %d is missing tunnel_id", index+1)
-		}
 		if tunnel.Delete {
+			if tunnelID == "" {
+				return nil, fmt.Errorf("cloudflare tunnel %d deletion requires tunnel_id", index+1)
+			}
 			if len(tunnel.Tunnel) != 0 {
 				return nil, fmt.Errorf("cloudflare tunnel %d cannot set tunnel when delete is true", index+1)
 			}
@@ -252,6 +253,8 @@ func validateCloudflareReconciliationPlan(plan *cloudflareReconciliationPlan) er
 	for index, operation := range plan.tunnels {
 		if operation.delete {
 			_, err = client.DeleteTunnel(context.Background(), operation.tunnelID)
+		} else if operation.tunnelID == "" {
+			_, err = client.CreateTunnel(context.Background(), operation.desired)
 		} else {
 			_, err = client.ReconcileTunnel(context.Background(), operation.tunnelID, operation.desired)
 		}
@@ -295,6 +298,8 @@ func reconcileCloudflare(ctx context.Context, cfg *config.Config) ([]cloudflare.
 		var result cloudflare.APIResult
 		if operation.delete {
 			result, err = client.DeleteTunnel(ctx, operation.tunnelID)
+		} else if operation.tunnelID == "" {
+			result, err = client.CreateTunnel(ctx, operation.desired)
 		} else {
 			result, err = client.ReconcileTunnel(ctx, operation.tunnelID, operation.desired)
 		}
