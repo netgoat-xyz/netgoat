@@ -11,6 +11,17 @@ ssl:
   cert_file: "cert.pem"
   key_file: "key.pem"
   port: ":8443"
+  # Automatic issuance requires an explicit DNS allow-list, accepted CA terms,
+  # and NETGOAT_ACME_CACHE_KEY (a base64-encoded 32-byte key) in the environment.
+  acme:
+    enabled: false
+    accept_tos: false
+    email: ""
+    domains: []
+    cache_dir: "./database/acme"
+    # Set a staging directory URL before using a production ACME CA.
+    directory_url: ""
+    http_port: ":80"
 
 # Optional: custom error page served for 403/404/500
 custom_error_page: "public/error.html"

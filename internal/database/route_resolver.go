@@ -25,6 +25,16 @@ type routeSnapshot struct {
 	exactDomains map[string]*cachedRoute
 	patterns     []*cachedRoute
 	paths        []*cachedRoute
+	certificates []CertificateRecord
+}
+
+// CertificateRecord is the certificate material associated with a routable
+// DNS name. It is returned as a copy from RouteResolver so TLS serving can
+// reload independently of the request routing hot path.
+type CertificateRecord struct {
+	Domain         string
+	CertificatePEM string
+	PrivateKeyPEM  string
 }
 
 type cachedRoute struct {
@@ -130,6 +140,24 @@ func (r *RouteResolver) Resolve(domain, path string) (*RouteMatch, error) {
 	return nil, sql.ErrNoRows
 }
 
+// Certificates returns the current domain and wildcard certificate records.
+// Path and regex routes deliberately do not participate in SNI selection.
+func (r *RouteResolver) Certificates() []CertificateRecord {
+	if r == nil {
+		return nil
+	}
+	snapshot := r.snapshot.Load()
+	if snapshot == nil {
+		return nil
+	}
+	if len(snapshot.certificates) == 0 {
+		return nil
+	}
+	records := make([]CertificateRecord, len(snapshot.certificates))
+	copy(records, snapshot.certificates)
+	return records
+}
+
 func loadRouteSnapshot(db *sql.DB) (*routeSnapshot, error) {
 	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -177,8 +205,16 @@ func loadRouteSnapshot(db *sql.DB) (*routeSnapshot, error) {
 			_ = rows.Close()
 			return nil, fmt.Errorf("validate route %d policy: %w", route.id, err)
 		}
-
 		route.routeType = strings.ToLower(strings.TrimSpace(route.routeType))
+		if (route.routeType == "domain" || route.routeType == "wildcard") && route.domain != "" &&
+			route.certificatePEM != "" && route.privateKeyPEM != "" {
+			snapshot.certificates = append(snapshot.certificates, CertificateRecord{
+				Domain:         route.domain,
+				CertificatePEM: route.certificatePEM,
+				PrivateKeyPEM:  route.privateKeyPEM,
+			})
+		}
+
 		if route.routeType != "path" {
 			route.normalizedHost = normalizeResolverDomain(route.domain)
 			route.exactRouteKey = "domain:" + route.normalizedHost

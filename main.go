@@ -43,6 +43,7 @@ import (
 	"netgoat.xyz/agent/internal/policy"
 	"netgoat.xyz/agent/internal/streaming"
 	"netgoat.xyz/agent/internal/telemetry"
+	"netgoat.xyz/agent/internal/tlsmanager"
 	"netgoat.xyz/agent/internal/traffic"
 	"netgoat.xyz/agent/internal/waf"
 )
@@ -120,6 +121,10 @@ func main() {
 	if err := wafEngine.Reload(db); err != nil {
 		log.Error().Err(err).Msg("Failed to compile initial WAF rules")
 	}
+	tlsManager, acmeHTTPAddr, err := configureTLSManager(cfg, routeResolver)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to configure TLS")
+	}
 
 	if backupEvery := cfg.DatabaseBackupIntervalSeconds(); backupEvery > 0 {
 		startDatabaseBackupLoop(db, standbyPath, time.Duration(backupEvery)*time.Second)
@@ -191,7 +196,7 @@ func main() {
 	// are live runtime settings. This avoids unsafe ServeMux mutations after
 	// the server has started.
 	metricsRecorder := metrics.NewRecorder()
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver, cfg, trafficRuntime)
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver, tlsManager, cfg, trafficRuntime)
 
 	var detector *anomaly.LocalDetector
 	featureHeader := "X-GoatAI-Features"
@@ -722,12 +727,39 @@ func main() {
 	})
 
 	server := newProxyHTTPServer()
+	var acmeServer *http.Server
+	if tlsManager != nil {
+		server.TLSConfig = tlsManager.TLSConfig()
+		if acmeHTTPAddr != "" {
+			acmeListener, err := net.Listen("tcp", acmeHTTPAddr)
+			if err != nil {
+				log.Fatal().Err(err).Str("addr", acmeHTTPAddr).Msg("Failed to listen for ACME HTTP-01 challenges")
+			}
+			acmeServer = &http.Server{
+				Handler:           tlsManager.HTTPHandler(http.NotFoundHandler()),
+				ReadHeaderTimeout: 10 * time.Second,
+				IdleTimeout:       30 * time.Second,
+				MaxHeaderBytes:    16 << 10,
+			}
+			go func() {
+				if err := acmeServer.Serve(acmeListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					log.Error().Err(err).Str("addr", acmeHTTPAddr).Msg("ACME HTTP-01 server stopped unexpectedly")
+				}
+			}()
+			log.Info().Str("port", acmeHTTPAddr).Msg("ACME HTTP-01 challenge listener enabled")
+		}
+	}
 	shutdownSignal, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	go func() {
 		<-shutdownSignal.Done()
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
+		if acmeServer != nil {
+			if err := acmeServer.Shutdown(shutdownContext); err != nil {
+				log.Error().Err(err).Msg("Graceful ACME HTTP shutdown failed")
+			}
+		}
 		if err := server.Shutdown(shutdownContext); err != nil {
 			log.Error().Err(err).Msg("Graceful HTTP shutdown failed")
 		}
@@ -741,7 +773,7 @@ func main() {
 		}
 		server.Addr = port
 		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTPS)")
-		serveErr = server.ListenAndServeTLS(cfg.SSL.CertFile, cfg.SSL.KeyFile)
+		serveErr = server.ListenAndServeTLS("", "")
 	} else {
 		port := ":8080"
 		server.Addr = port
@@ -760,6 +792,93 @@ func newProxyHTTPServer() *http.Server {
 		MaxHeaderBytes:    64 << 10,
 		Handler:           nil,
 	}
+}
+
+// configureTLSManager loads the optional static fallback and the certificates
+// attached to routable domain records. A manager is returned only when TLS is
+// enabled; its immutable callbacks make certificate reloads safe while the
+// HTTP server is accepting handshakes.
+func configureTLSManager(cfg *config.Config, resolver *database.RouteResolver) (*tlsmanager.Manager, string, error) {
+	if cfg == nil {
+		return nil, "", errors.New("TLS configuration is required")
+	}
+	if !cfg.SSL.Enabled {
+		if cfg.SSL.ACME.Enabled {
+			return nil, "", errors.New("ssl.acme.enabled requires ssl.enabled")
+		}
+		return nil, "", nil
+	}
+
+	certFile := strings.TrimSpace(cfg.SSL.CertFile)
+	keyFile := strings.TrimSpace(cfg.SSL.KeyFile)
+	if (certFile == "") != (keyFile == "") {
+		return nil, "", errors.New("ssl.cert_file and ssl.key_file must be set together")
+	}
+
+	var fallback *tls.Certificate
+	if certFile != "" {
+		certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, "", fmt.Errorf("load static TLS certificate: %w", err)
+		}
+		fallback = &certificate
+	}
+
+	manager := tlsmanager.New(fallback)
+	records := resolverCertificateRecords(resolver)
+	if err := manager.Reload(records); err != nil {
+		if fallback == nil && !cfg.SSL.ACME.Enabled {
+			return nil, "", fmt.Errorf("load per-domain TLS certificates: %w", err)
+		}
+		log.Warn().Err(err).Msg("Some per-domain TLS certificates were rejected; retaining last known-good certificates")
+	}
+
+	if !cfg.SSL.ACME.Enabled {
+		if fallback == nil && len(records) == 0 {
+			return nil, "", errors.New("TLS is enabled but no static or per-domain certificate is configured")
+		}
+		return manager, "", nil
+	}
+	if !cfg.SSL.ACME.AcceptTOS {
+		return nil, "", errors.New("ssl.acme.accept_tos must be true before automatic certificate issuance is enabled")
+	}
+	httpPort := strings.TrimSpace(cfg.SSL.ACME.HTTPPort)
+	if httpPort == "" {
+		httpPort = ":80"
+	}
+	if strings.TrimSpace(cfg.SSL.Port) != "" && strings.TrimSpace(cfg.SSL.Port) == httpPort {
+		return nil, "", errors.New("ssl.acme.http_port must differ from ssl.port")
+	}
+	cacheDir := strings.TrimSpace(cfg.SSL.ACME.CacheDir)
+	if cacheDir == "" {
+		cacheDir = "./database/acme"
+	}
+	if err := manager.EnableACME(tlsmanager.ACMEConfig{
+		CacheDir:     cacheDir,
+		Email:        strings.TrimSpace(cfg.SSL.ACME.Email),
+		Hosts:        cfg.SSL.ACME.Domains,
+		DirectoryURL: strings.TrimSpace(cfg.SSL.ACME.DirectoryURL),
+		Prompt:       func(string) bool { return true },
+	}); err != nil {
+		return nil, "", fmt.Errorf("configure ACME: %w", err)
+	}
+	return manager, httpPort, nil
+}
+
+func resolverCertificateRecords(resolver *database.RouteResolver) []tlsmanager.DomainCertificate {
+	if resolver == nil {
+		return nil
+	}
+	records := resolver.Certificates()
+	converted := make([]tlsmanager.DomainCertificate, 0, len(records))
+	for _, record := range records {
+		converted = append(converted, tlsmanager.DomainCertificate{
+			Domain:         record.Domain,
+			CertificatePEM: record.CertificatePEM,
+			PrivateKeyPEM:  record.PrivateKeyPEM,
+		})
+	}
+	return converted
 }
 
 func metricsEndpointPath(configured string) (string, bool) {
@@ -1741,7 +1860,7 @@ func applyTrafficAgentConfigToConfig(cfg *config.Config, agentConfig streaming.A
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver, cfg *config.Config, runtime *trafficRuntime) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver, tlsManager *tlsmanager.Manager, cfg *config.Config, runtime *trafficRuntime) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1757,6 +1876,11 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 		if err := routeResolver.Reload(db); err != nil {
 			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload route snapshot; retaining last known-good routes")
 			continue
+		}
+		if tlsManager != nil {
+			if err := tlsManager.Reload(resolverCertificateRecords(routeResolver)); err != nil {
+				log.Warn().Err(err).Int64("version", snap.Version).Msg("Some streamed TLS certificates were rejected; retaining last known-good certificates")
+			}
 		}
 		if err := wafEngine.Reload(db); err != nil {
 			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload WAF rules")

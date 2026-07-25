@@ -25,6 +25,18 @@ type Config struct {
 		CertFile string `yaml:"cert_file"`
 		KeyFile  string `yaml:"key_file"`
 		Port     string `yaml:"port"`
+		ACME     struct {
+			// Enabled opts into automatic ACME issuance and renewal. It requires
+			// an explicit domain allow-list, accepted CA terms, and the
+			// NETGOAT_ACME_CACHE_KEY environment variable.
+			Enabled      bool     `yaml:"enabled"`
+			AcceptTOS    bool     `yaml:"accept_tos"`
+			Email        string   `yaml:"email"`
+			Domains      []string `yaml:"domains"`
+			CacheDir     string   `yaml:"cache_dir"`
+			DirectoryURL string   `yaml:"directory_url"`
+			HTTPPort     string   `yaml:"http_port"`
+		} `yaml:"acme"`
 	} `yaml:"ssl"`
 	// Path to a static HTML file to serve for errors (e.g., 403/404/500)
 	CustomErrorPage string `yaml:"custom_error_page"`

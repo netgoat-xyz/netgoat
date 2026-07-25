@@ -238,6 +238,54 @@ func TestRouteResolverReturnsIndependentTargets(t *testing.T) {
 	}
 }
 
+func TestRouteResolverPublishesDomainCertificateRecords(t *testing.T) {
+	db := newResolverTestDB(t)
+	insertResolverRoute(t, db, resolverRouteSpec{
+		routeType: "domain",
+		domain:    "api.example.test",
+		targets:   []RouteTarget{{URL: "http://api", HealthCheck: "http"}},
+		cert:      "api-cert",
+		key:       "api-key",
+	})
+	insertResolverRoute(t, db, resolverRouteSpec{
+		routeType: "wildcard",
+		domain:    "*.example.test",
+		targets:   []RouteTarget{{URL: "http://wildcard", HealthCheck: "http"}},
+		cert:      "wildcard-cert",
+		key:       "wildcard-key",
+	})
+	insertResolverRoute(t, db, resolverRouteSpec{
+		routeType: "regex",
+		domain:    `^service\\.example\\.test$`,
+		targets:   []RouteTarget{{URL: "http://regex", HealthCheck: "http"}},
+		cert:      "regex-cert",
+		key:       "regex-key",
+	})
+	insertResolverRoute(t, db, resolverRouteSpec{
+		routeType: "domain",
+		domain:    "missing-key.example.test",
+		targets:   []RouteTarget{{URL: "http://missing", HealthCheck: "http"}},
+		cert:      "only-cert",
+	})
+
+	resolver := NewRouteResolver()
+	if err := resolver.Reload(db); err != nil {
+		t.Fatalf("Reload(): %v", err)
+	}
+	want := []CertificateRecord{
+		{Domain: "api.example.test", CertificatePEM: "api-cert", PrivateKeyPEM: "api-key"},
+		{Domain: "*.example.test", CertificatePEM: "wildcard-cert", PrivateKeyPEM: "wildcard-key"},
+	}
+	if got := resolver.Certificates(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Certificates() = %#v, want %#v", got, want)
+	}
+	first := resolver.Certificates()
+	first[0].Domain = "mutated.example.test"
+	if got := resolver.Certificates(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Certificates() returned mutable snapshot: %#v", got)
+	}
+}
+
 func TestRouteResolverPublishesValidatedRoutePolicyAtomically(t *testing.T) {
 	db := newResolverTestDB(t)
 	routeID := insertResolverRoute(t, db, resolverRouteSpec{

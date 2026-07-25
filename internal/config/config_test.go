@@ -22,6 +22,14 @@ ssl:
   cert_file: "/path/to/cert.pem"
   key_file: "/path/to/key.pem"
   port: ":8443"
+  acme:
+    enabled: true
+    accept_tos: true
+    email: "ops@example.test"
+    domains: ["example.test", "api.example.test"]
+    cache_dir: "/var/lib/netgoat/acme"
+    directory_url: "https://acme-staging.example.test/directory"
+    http_port: ":8080"
 custom_error_page: "/path/to/error.html"
 anomaly:
   enabled: true
@@ -120,6 +128,11 @@ api:
 	}
 	if cfg.SSL.Port != ":8443" {
 		t.Errorf("SSL.Port = %s, want :8443", cfg.SSL.Port)
+	}
+	if !cfg.SSL.ACME.Enabled || !cfg.SSL.ACME.AcceptTOS || cfg.SSL.ACME.Email != "ops@example.test" ||
+		len(cfg.SSL.ACME.Domains) != 2 || cfg.SSL.ACME.CacheDir != "/var/lib/netgoat/acme" ||
+		cfg.SSL.ACME.DirectoryURL != "https://acme-staging.example.test/directory" || cfg.SSL.ACME.HTTPPort != ":8080" {
+		t.Errorf("SSL.ACME was not decoded: %+v", cfg.SSL.ACME)
 	}
 
 	// Test custom error page
