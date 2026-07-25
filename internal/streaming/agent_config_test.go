@@ -1,6 +1,10 @@
 package streaming
 
-import "testing"
+import (
+	"testing"
+
+	"netgoat.xyz/agent/internal/config"
+)
 
 func TestConfigSnapshotCopyIncludesAgentConfig(t *testing.T) {
 	snapshot := &ConfigSnapshot{
@@ -27,6 +31,11 @@ func TestConfigSnapshotCopyIncludesAgentConfig(t *testing.T) {
 				}},
 			},
 		},
+		PluginsConfigured: true,
+		Plugins: config.PluginConfig{Installations: []config.PluginInstallation{{
+			PluginID: "example.test/plugin",
+			Config:   map[string]any{"nested": map[string]any{"mode": "observe"}},
+		}}},
 	}
 
 	copied := snapshot.copy()
@@ -40,5 +49,12 @@ func TestConfigSnapshotCopyIncludesAgentConfig(t *testing.T) {
 	copied.AgentConfig.DynamicRules.Rules[0].Name = "mutated"
 	if snapshot.AgentConfig.DynamicRules.Rules[0].Name != "block-admin" {
 		t.Fatalf("agent dynamic rules were not independently copied: %+v", snapshot.AgentConfig.DynamicRules)
+	}
+	if !copied.PluginsConfigured || len(copied.Plugins.Installations) != 1 {
+		t.Fatalf("plugin selection was not copied: %+v", copied.Plugins)
+	}
+	copied.Plugins.Installations[0].Config["nested"].(map[string]any)["mode"] = "mutated"
+	if snapshot.Plugins.Installations[0].Config["nested"].(map[string]any)["mode"] != "observe" {
+		t.Fatalf("plugin config was not independently copied: %+v", snapshot.Plugins)
 	}
 }

@@ -306,3 +306,24 @@ func TestEmptyRecoverySnapshotHasNoContent(t *testing.T) {
 		t.Fatal("zero-value snapshot should not override local state")
 	}
 }
+
+func TestPluginRecoverySnapshotHasContentAndRetainsSelection(t *testing.T) {
+	remote := &streaming.ConfigSnapshot{
+		PluginsConfigured: true,
+		Plugins: config.PluginConfig{Installations: []config.PluginInstallation{{
+			PluginID: "netgoat/noop",
+			Config:   map[string]any{"nested": map[string]any{"mode": "observe"}},
+		}}},
+	}
+	if !snapshotHasContent(remote) {
+		t.Fatal("explicit plugin selection should make a recovery snapshot meaningful")
+	}
+	merged := mergeConfigSnapshots(&streaming.ConfigSnapshot{}, remote)
+	if !merged.PluginsConfigured || len(merged.Plugins.Installations) != 1 {
+		t.Fatalf("plugin selection was not retained: %+v", merged.Plugins)
+	}
+	merged.Plugins.Installations[0].Config["nested"].(map[string]any)["mode"] = "mutated"
+	if remote.Plugins.Installations[0].Config["nested"].(map[string]any)["mode"] != "observe" {
+		t.Fatalf("merged plugin selection aliased remote snapshot: %+v", remote.Plugins)
+	}
+}

@@ -23,6 +23,9 @@ func TestSampleConfigUsesSafeOfflineDefaults(t *testing.T) {
 	if cfg.Cloudflare.Access.Enabled || cfg.Cloudflare.Reconciliation.Enabled {
 		t.Fatalf("sample enables Cloudflare integrations unexpectedly: %+v", cfg.Cloudflare)
 	}
+	if len(cfg.Plugins.Installations) != 0 {
+		t.Fatalf("sample should not select developer plugins: %+v", cfg.Plugins)
+	}
 	if cfg.Cloudflare.Reconciliation.DryRun == nil || !*cfg.Cloudflare.Reconciliation.DryRun {
 		t.Fatalf("sample Cloudflare reconciliation must remain dry-run by default: %+v", cfg.Cloudflare.Reconciliation)
 	}

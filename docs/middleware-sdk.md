@@ -5,6 +5,12 @@ binary**. It is not a loader for native shared objects and it is not a sandbox
 for tenant-supplied code. Use `dynamic_rules` for administrator-authored
 JavaScript or TypeScript request policy instead.
 
+The developer catalog can select a release only after its package, factory,
+version, descriptor fingerprint, API version, and capabilities match code
+compiled into the agent. It never fetches or executes a marketplace artifact;
+catalog changes are restart-only. See the [developer plugin catalog guide]
+(developer-plugins.md) for the selection contract and trust boundary.
+
 The v1 contract is `netgoat.dev/middleware/v1`. A plugin declares its name,
 version, API version, and the least set of capabilities it needs. The host must
 both allow and explicitly grant every requested capability before the plugin is

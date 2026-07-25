@@ -42,6 +42,16 @@ dynamic_rules:
       language: javascript
       enabled: false
       source: "module.exports = () => null"
+plugins:
+  installations:
+    - plugin_id: "example.test/observe"
+      factory_id: "example.observe"
+      version: "1.0.0"
+      sha256: "9d3f13a7c6dd51d28839668413755ae4fe5e18c38ba5dec988676eca328ab3ca"
+      api_version: "netgoat.dev/middleware/v1"
+      granted_capabilities: ["request.read"]
+      config:
+        mode: "observe"
 custom_error_page: "/path/to/error.html"
 anomaly:
   enabled: true
@@ -149,6 +159,10 @@ api:
 	if !cfg.DynamicRules.Enabled || cfg.DynamicRules.MaxRules != 8 || cfg.DynamicRules.MaxExecutionMilliseconds != 20 ||
 		len(cfg.DynamicRules.Rules) != 2 || !cfg.DynamicRules.Rules[0].IsEnabled() || cfg.DynamicRules.Rules[1].IsEnabled() {
 		t.Errorf("DynamicRules was not decoded: %+v", cfg.DynamicRules)
+	}
+	if len(cfg.Plugins.Installations) != 1 || cfg.Plugins.Installations[0].PluginID != "example.test/observe" ||
+		cfg.Plugins.Installations[0].Config["mode"] != "observe" {
+		t.Errorf("Plugins was not decoded: %+v", cfg.Plugins)
 	}
 
 	// Test custom error page

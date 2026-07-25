@@ -51,6 +51,10 @@ type Config struct {
 		MaxResultBytes           int           `yaml:"max_result_bytes"`
 		MaxExecutionMilliseconds int           `yaml:"max_execution_milliseconds"`
 	} `yaml:"dynamic_rules"`
+	// Plugins contains catalog selections for middleware that is already
+	// compiled into this agent binary. It is intentionally restart-only: the
+	// agent never downloads, evaluates, or hot-loads plugin code or artifacts.
+	Plugins PluginConfig `yaml:"plugins"`
 	// Cloudflare contains opt-in integrations. Access assertions are verified
 	// before the agent's HTTP handlers run, while reconciliation is performed
 	// once at startup from declarative records. API credentials are deliberately
@@ -185,6 +189,74 @@ type DynamicRule struct {
 	Language string `yaml:"language"`
 	Source   string `yaml:"source"`
 	Enabled  *bool  `yaml:"enabled"`
+}
+
+// PluginConfig is the serializable catalog selection document. A control-plane
+// snapshot uses an explicit plugins_configured flag to distinguish a requested
+// empty selection from an older control plane that does not publish plugins.
+//
+// Installations are metadata claims, not executable packages. The agent only
+// activates a selection after it exactly matches a descriptor compiled into
+// the running binary.
+type PluginConfig struct {
+	Installations []PluginInstallation `json:"installations" yaml:"installations"`
+}
+
+// PluginInstallation selects one catalog release that may be compiled into
+// the agent. Config is a JSON/YAML object passed only to the matched built-in
+// factory; it is never interpreted as source code by the catalog runtime.
+type PluginInstallation struct {
+	PluginID            string         `json:"plugin_id" yaml:"plugin_id"`
+	FactoryID           string         `json:"factory_id" yaml:"factory_id"`
+	Version             string         `json:"version" yaml:"version"`
+	SHA256              string         `json:"sha256" yaml:"sha256"`
+	APIVersion          string         `json:"api_version" yaml:"api_version"`
+	GrantedCapabilities []string       `json:"granted_capabilities" yaml:"granted_capabilities"`
+	Config              map[string]any `json:"config" yaml:"config"`
+}
+
+// Clone returns an independently mutable catalog selection. Snapshot copies
+// use it so a receiver cannot mutate the manager's remembered configuration.
+func (p PluginConfig) Clone() PluginConfig {
+	cloned := PluginConfig{Installations: make([]PluginInstallation, len(p.Installations))}
+	for index, installation := range p.Installations {
+		cloned.Installations[index] = PluginInstallation{
+			PluginID:            installation.PluginID,
+			FactoryID:           installation.FactoryID,
+			Version:             installation.Version,
+			SHA256:              installation.SHA256,
+			APIVersion:          installation.APIVersion,
+			GrantedCapabilities: append([]string(nil), installation.GrantedCapabilities...),
+			Config:              clonePluginConfigMap(installation.Config),
+		}
+	}
+	return cloned
+}
+
+func clonePluginConfigMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(input))
+	for key, value := range input {
+		cloned[key] = clonePluginConfigValue(value)
+	}
+	return cloned
+}
+
+func clonePluginConfigValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return clonePluginConfigMap(typed)
+	case []any:
+		cloned := make([]any, len(typed))
+		for index, item := range typed {
+			cloned[index] = clonePluginConfigValue(item)
+		}
+		return cloned
+	default:
+		return value
+	}
 }
 
 // CloudflareAccessConfig is the YAML-safe representation of a Cloudflare

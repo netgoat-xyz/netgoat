@@ -25,7 +25,7 @@ NetGoat is a self-hosted reverse proxy and traffic-policy agent written in Go. I
 | Operational telemetry | Optional | Explicitly opt-in delivery to the companion telemetry server, with endpoint and ingestion-key configuration. |
 | Automatic certificate issuance/renewal | Available (opt-in) | Explicit ACME allow-list, HTTP-01 handler, encrypted persistent cache, and last-known-good certificate retention. |
 | JavaScript/TypeScript dynamic rules | Available (opt-in) | Isolated, bounded JS/TS request decisions with atomic last-known-good reload and fail-closed evaluation. |
-| Plugin/middleware SDK | Available | Versioned v1 contract for trusted compiled-in extensions, capability grants, lifecycle isolation, and conformance tests. |
+| Developer plugin catalog and middleware SDK | Available | Restart-only selections for exact compiled descriptors; v1 capability grants, lifecycle isolation, and no remote code/artifact loading. |
 | Cloudflare Access, DNS, and tunnel management | Available (opt-in) | Fail-closed Access JWT/JWKS verification plus bounded, dry-run-by-default startup reconciliation using an environment-only token. |
 | Per-route cache/bandwidth policies | Available | Route policies inherit global defaults, isolate cache/bandwidth state, and support explicit per-route overrides. |
 
@@ -87,13 +87,14 @@ Then set `auth.enabled: true`. Bootstrap credentials are used only when the user
 - `metrics`: enables JSON at the configured path and Prometheus at `<path>.prom`.
 - `ssl`: static fallback TLS, per-domain certificate selection, and optional ACME issuance/renewal.
 - `dynamic_rules`: bounded administrator-managed TypeScript/JavaScript request decisions.
+- `plugins`: restart-only catalog selections for middleware compiled into this exact agent build; `sha256` is the release descriptor fingerprint, not a downloaded artifact hash.
 - `cloudflare`: optional Access JWT enforcement and explicit DNS/tunnel startup reconciliation. Reconciliation defaults to dry-run.
 - `telemetry`: disabled by default; endpoint, shared ingestion key, and heartbeat interval.
 - `anomaly`, `koda_waf`, `koda_2`: optional local inference workers.
 
 Secrets may also be supplied through the environment. `API_STREAM_KEY` overrides the YAML control-plane key, `NETGOAT_ACME_CACHE_KEY` encrypts ACME state, and `CLOUDFLARE_API_TOKEN` is required for Cloudflare reconciliation. Do not commit `.env`, private keys, model files, databases, recovery snapshots, or telemetry identifiers.
 
-See the [operations guide](docs/operations.md) for policy precedence, ACME setup, and dynamic-rule safety boundaries, and the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions.
+See the [operations guide](docs/operations.md) for policy precedence, ACME setup, and dynamic-rule safety boundaries; the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions; and the [developer plugin catalog guide](docs/developer-plugins.md) for the restart-time selection and publisher trust boundary.
 
 ## Architecture
 
@@ -105,7 +106,7 @@ client -> NetGoat agent -> healthy upstream pool
               +------> telemetry-server (optional, opt-in)
 ```
 
-The agent's hot request path optionally verifies Cloudflare Access, applies authentication and traffic controls, resolves a route, evaluates dynamic rules and precompiled WAF rules, optionally runs enabled local classifiers, and proxies the request. Health checks and control-plane polling run in bounded background workers.
+The agent's hot request path optionally verifies Cloudflare Access, applies authentication and traffic controls, resolves a route, evaluates dynamic rules, precompiled WAF rules, and any selected compiled middleware, optionally runs enabled local classifiers, and proxies the request. Health checks and control-plane polling run in bounded background workers.
 
 The optional `docker-compose.yml` starts only a loopback-bound development MongoDB for `stream-server`; the Go agent itself does not require it. Export `MONGO_INITDB_ROOT_USERNAME` and `MONGO_INITDB_ROOT_PASSWORD` before running Compose so development credentials stay outside the repository.
 

@@ -28,7 +28,12 @@ func TestStreamSettingsFromConfig(t *testing.T) {
 func TestSnapshotFromDomainsResponseHonorsActiveFlags(t *testing.T) {
 	disabled := false
 	payload := domainsResponse{
-		ZeroTrustEnabled: &disabled,
+		ZeroTrustEnabled:  &disabled,
+		PluginsConfigured: true,
+		Plugins: config.PluginConfig{Installations: []config.PluginInstallation{{
+			PluginID: "netgoat/noop",
+			Config:   map[string]any{"mode": "observe"},
+		}}},
 		Domains: []domainRecord{
 			{Domain: "enabled.example.test", TargetURL: "http://enabled"},
 			{Domain: "disabled.example.test", TargetURL: "http://disabled", Active: false},
@@ -64,6 +69,14 @@ func TestSnapshotFromDomainsResponseHonorsActiveFlags(t *testing.T) {
 	}
 	if !snapshot.ZeroTrustConfigured || snapshot.ZeroTrustEnabled {
 		t.Fatalf("explicit false zero trust was not preserved: %+v", snapshot)
+	}
+	if !snapshot.PluginsConfigured || len(snapshot.Plugins.Installations) != 1 ||
+		snapshot.Plugins.Installations[0].PluginID != "netgoat/noop" {
+		t.Fatalf("plugin selection was not preserved: %+v", snapshot.Plugins)
+	}
+	payload.Plugins.Installations[0].Config["mode"] = "mutated"
+	if snapshot.Plugins.Installations[0].Config["mode"] != "observe" {
+		t.Fatalf("plugin selection was not cloned: %+v", snapshot.Plugins)
 	}
 }
 

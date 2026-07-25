@@ -41,6 +41,7 @@ import (
 	"netgoat.xyz/agent/internal/koda2"
 	"netgoat.xyz/agent/internal/koda_waf"
 	"netgoat.xyz/agent/internal/metrics"
+	"netgoat.xyz/agent/internal/middleware"
 	"netgoat.xyz/agent/internal/modeldl"
 	"netgoat.xyz/agent/internal/policy"
 	"netgoat.xyz/agent/internal/streaming"
@@ -114,6 +115,10 @@ func main() {
 			log.Error().Err(err).Msg("Failed to apply recovered configuration")
 		}
 		applyAgentConfigToConfig(cfg, initialSnap.AgentConfig)
+		if initialSnap.PluginsConfigured {
+			applyPluginConfigToConfig(cfg, initialSnap.Plugins)
+			log.Info().Int("installations", len(cfg.Plugins.Installations)).Msg("Loaded restart-time plugin catalog selection from recovery snapshot")
+		}
 	}
 	routeResolver := database.NewRouteResolver()
 	if err := routeResolver.Reload(db); err != nil {
@@ -195,6 +200,15 @@ func main() {
 	} else {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
+
+	developerPluginRuntime, err := newDeveloperPluginRuntime(cfg)
+	if err != nil {
+		log.Error().Err(err).Msg("Rejected developer plugin catalog selection; no developer plugins were activated")
+		developerPluginRuntime = nil
+	} else if developerPluginRuntime.ActiveCount() > 0 {
+		log.Info().Int("installations", developerPluginRuntime.ActiveCount()).Msg("Activated compiled developer plugins at startup")
+	}
+	defer closeDeveloperPluginRuntime(developerPluginRuntime)
 
 	pages := buildErrorPageStore(cfg)
 
@@ -661,6 +675,16 @@ func main() {
 			writeError(w, pages, challengeStore, r, http.StatusNotFound, "No route found")
 			return
 		}
+		if !developerPluginRuntime.Evaluate(w, r, middleware.RequestMetadata{
+			ClientIP: getClientIP(r),
+			RouteKey: routeMatch.RouteKey,
+		}) {
+			analysisInfo.RequestAllowed = false
+			analysisInfo.BlockReason = "developer plugin"
+			recordBlocked(metricsRecorder, "developer-plugin")
+			log.Warn().Str("route", routeMatch.RouteKey).Str("host", host).Str("path", r.URL.Path).Msg("Request stopped by developer plugin")
+			return
+		}
 
 		targetURLs := make([]string, 0, len(routeMatch.Targets))
 		for _, t := range routeMatch.Targets {
@@ -777,10 +801,12 @@ func main() {
 	})
 
 	server := newProxyHTTPServer()
+	var proxyRootHandler http.Handler = http.DefaultServeMux
 	if cloudflareAccess != nil {
-		server.Handler = cloudflareAccess.Middleware(http.DefaultServeMux)
+		proxyRootHandler = cloudflareAccess.Middleware(proxyRootHandler)
 		log.Info().Msg("Cloudflare Access JWT enforcement enabled")
 	}
+	server.Handler = proxyRootHandler
 	var acmeServer *http.Server
 	if tlsManager != nil {
 		server.TLSConfig = tlsManager.TLSConfig()
@@ -1475,6 +1501,8 @@ type domainsResponse struct {
 	UserDomainsConfigured bool                       `json:"user_domains_configured"`
 	ZeroTrustEnabled      *bool                      `json:"zero_trust_enabled"`
 	AgentConfig           streaming.AgentConfigData  `json:"agent_config"`
+	PluginsConfigured     bool                       `json:"plugins_configured"`
+	Plugins               config.PluginConfig        `json:"plugins"`
 }
 
 type domainRecord struct {
@@ -1643,6 +1671,8 @@ func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapsh
 		UserDomains:           append([]streaming.UserDomainData(nil), payload.UserDomains...),
 		UserDomainsConfigured: payload.UserDomainsConfigured,
 		AgentConfig:           payload.AgentConfig,
+		PluginsConfigured:     payload.PluginsConfigured,
+		Plugins:               payload.Plugins.Clone(),
 	}
 	if payload.ZeroTrustEnabled != nil {
 		snapshot.ZeroTrustEnabled = *payload.ZeroTrustEnabled
@@ -1824,7 +1854,7 @@ func snapshotHasContent(snapshot *streaming.ConfigSnapshot) bool {
 		return false
 	}
 	return snapshot.Version > 0 || snapshot.RoutesConfigured || snapshot.WAFRulesConfigured ||
-		snapshot.UsersConfigured || snapshot.UserDomainsConfigured ||
+		snapshot.UsersConfigured || snapshot.UserDomainsConfigured || snapshot.PluginsConfigured ||
 		len(snapshot.Routes) > 0 || len(snapshot.WAFRules) > 0 || len(snapshot.Users) > 0 ||
 		len(snapshot.UserDomains) > 0 || !snapshot.AgentConfig.IsZero()
 }
@@ -1867,6 +1897,10 @@ func mergeConfigSnapshots(local, remote *streaming.ConfigSnapshot) *streaming.Co
 	merged.ZeroTrustEnabled = remote.ZeroTrustEnabled
 	merged.ZeroTrustConfigured = remote.ZeroTrustConfigured
 	merged.AgentConfig = remote.AgentConfig
+	merged.PluginsConfigured = remote.PluginsConfigured
+	if remote.PluginsConfigured {
+		merged.Plugins = remote.Plugins.Clone()
+	}
 	return merged
 }
 
@@ -2039,6 +2073,17 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 	}
 }
 
+// applyPluginConfigToConfig is intentionally called only while the process is
+// starting from its recovery snapshot. Live catalog changes are retained by
+// the stream manager and reported as restart-required; they never alter a
+// serving middleware registry.
+func applyPluginConfigToConfig(cfg *config.Config, plugins config.PluginConfig) {
+	if cfg == nil {
+		return
+	}
+	cfg.Plugins = plugins.Clone()
+}
+
 // applyTrafficAgentConfigToConfig updates only fields that are read through an
 // atomic trafficRuntime after startup. Worker configuration remains immutable
 // until restart, preventing a live snapshot from racing detector goroutines.
@@ -2106,6 +2151,13 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 				}
 			}
 			log.Info().Int64("version", snap.Version).Msg("Applied live traffic-control configuration")
+		}
+		if snap.PluginsConfigured {
+			if err := validateDeveloperPluginSelection(snap.Plugins); err != nil {
+				log.Error().Err(err).Int64("version", snap.Version).Msg("Rejected restart-time plugin catalog selection; no code was loaded")
+			} else {
+				log.Warn().Int64("version", snap.Version).Int("installations", len(snap.Plugins.Installations)).Msg("Plugin catalog selection received and persisted; restart required before activation")
+			}
 		}
 		if healthChecksEnabled {
 			syncHealthTargets(db, healthWorker)

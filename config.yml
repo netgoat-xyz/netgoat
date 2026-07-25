@@ -82,6 +82,21 @@ dynamic_rules:
   #         ? { action: "block", reason: "private admin path" } : null;
   #     }
 
+# Catalog selections can activate only middleware compiled into this exact
+# agent binary. They never download or execute plugin source/artifacts, and a
+# stream update is staged until the next agent restart. `sha256` is the
+# immutable compiled descriptor fingerprint, not a marketplace manifest hash.
+plugins:
+  installations: []
+  # Reference descriptor shipped by this build (a harmless no-op):
+  # - plugin_id: "netgoat/noop"
+  #   factory_id: "builtin.noop"
+  #   version: "1.0.0"
+  #   sha256: "22d6f9898bf456265c2549c38ef185c11de1da1eeee944bb8e97470ed438d2c0"
+  #   api_version: "netgoat.dev/middleware/v1"
+  #   granted_capabilities: []
+  #   config: {}
+
 # Optional: custom error page served for 403/404/500
 custom_error_page: "public/error.html"
 

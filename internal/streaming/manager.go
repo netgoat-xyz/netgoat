@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"netgoat.xyz/agent/internal/config"
 	"netgoat.xyz/agent/internal/policy"
 )
 
@@ -35,6 +36,11 @@ type ConfigSnapshot struct {
 	// by older control planes or an empty local snapshot.
 	ZeroTrustConfigured bool            `json:"zero_trust_configured,omitempty"`
 	AgentConfig         AgentConfigData `json:"agent_config"`
+	// PluginsConfigured distinguishes an explicit, possibly empty catalog
+	// selection from a snapshot emitted by an older control plane. Plugin
+	// selections are retained for the next restart and are never hot-loaded.
+	PluginsConfigured bool                `json:"plugins_configured,omitempty"`
+	Plugins           config.PluginConfig `json:"plugins"`
 }
 
 type RouteTarget struct {
@@ -345,6 +351,8 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 		ZeroTrustEnabled:      s.ZeroTrustEnabled,
 		ZeroTrustConfigured:   s.ZeroTrustConfigured,
 		AgentConfig:           agentConfig,
+		PluginsConfigured:     s.PluginsConfigured,
+		Plugins:               s.Plugins.Clone(),
 	}
 }
 
