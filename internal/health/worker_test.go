@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -55,6 +56,34 @@ func TestNewWorker_NormalizesInvalidTiming(t *testing.T) {
 	}
 	if worker.path != "/" {
 		t.Fatalf("path = %q, want %q", worker.path, "/")
+	}
+}
+
+func TestTCPAddressHandlesIPv6AndDefaultPorts(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "http://[2001:db8::1]", want: "[2001:db8::1]:80"},
+		{raw: "https://[2001:db8::1]", want: "[2001:db8::1]:443"},
+		{raw: "tcp://[2001:db8::1]:8443", want: "[2001:db8::1]:8443"},
+		{raw: "example.test:8443", want: "example.test:8443"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.raw, func(t *testing.T) {
+			u, err := url.Parse(test.raw)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", test.raw, err)
+			}
+			got, err := tcpAddress(u)
+			if err != nil {
+				t.Fatalf("tcpAddress(%q): %v", test.raw, err)
+			}
+			if got != test.want {
+				t.Errorf("tcpAddress(%q) = %q, want %q", test.raw, got, test.want)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -247,17 +248,9 @@ func (w *Worker) checkTCP(rawURL string) bool {
 		return false
 	}
 
-	host := u.Host
-	if host == "" {
-		host = u.Path
-	}
-	if !strings.Contains(host, ":") {
-		switch strings.ToLower(u.Scheme) {
-		case "https":
-			host += ":443"
-		default:
-			host += ":80"
-		}
+	host, err := tcpAddress(u)
+	if err != nil {
+		return false
 	}
 
 	conn, err := net.DialTimeout("tcp", host, w.timeout)
@@ -266,4 +259,39 @@ func (w *Worker) checkTCP(rawURL string) bool {
 	}
 	conn.Close()
 	return true
+}
+
+// tcpAddress returns a dialable address without mistaking an IPv6 literal for
+// an address that already includes a port.
+func tcpAddress(u *url.URL) (string, error) {
+	defaultPort := "80"
+	if strings.EqualFold(u.Scheme, "https") {
+		defaultPort = "443"
+	}
+
+	if u.Host != "" {
+		host := u.Hostname()
+		if host == "" {
+			return "", fmt.Errorf("health check URL has no host")
+		}
+		port := u.Port()
+		if port == "" {
+			port = defaultPort
+		}
+		return net.JoinHostPort(host, port), nil
+	}
+
+	// A scheme-less target is permitted for TCP checks. SplitHostPort handles
+	// both normal hosts and bracketed IPv6 addresses with explicit ports.
+	host := strings.TrimSpace(u.Path)
+	if host == "" && u.Scheme != "" && u.Opaque != "" {
+		host = u.Scheme + ":" + u.Opaque
+	}
+	if host == "" {
+		return "", fmt.Errorf("health check URL has no host")
+	}
+	if parsedHost, port, err := net.SplitHostPort(host); err == nil {
+		return net.JoinHostPort(parsedHost, port), nil
+	}
+	return net.JoinHostPort(strings.Trim(host, "[]"), defaultPort), nil
 }
