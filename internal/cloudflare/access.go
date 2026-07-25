@@ -40,7 +40,10 @@ const (
 	defaultUnknownKeyRefreshCooldown = 5 * time.Second
 	maxJWTSize                       = 16 << 10
 	maxJWKSSize                      = 1 << 20
+	maxJWKSKeys                      = 64
 	maxKeyIDLength                   = 256
+	maxRSAModulusBits                = 8192
+	maxRSAExponent                   = 1<<31 - 1
 )
 
 // ErrAccessDenied is returned for malformed, expired, or untrusted Access
@@ -814,6 +817,9 @@ func parseJWKS(input []byte) (map[string]verificationKey, error) {
 	if err := decodeJSON(input, &document); err != nil || len(document.Keys) == 0 {
 		return nil, errors.New("JWKS does not contain keys")
 	}
+	if len(document.Keys) > maxJWKSKeys {
+		return nil, errors.New("JWKS contains too many keys")
+	}
 	keys := make(map[string]verificationKey, len(document.Keys))
 	seenKeyIDs := make(map[string]struct{}, len(document.Keys))
 	for _, raw := range document.Keys {
@@ -861,11 +867,11 @@ func parseJWK(value jwk) (verificationKey, error) {
 			return verificationKey{}, errors.New("invalid RSA exponent")
 		}
 		exponentBig := new(big.Int).SetBytes(exponentBytes)
-		if !exponentBig.IsInt64() || exponentBig.Sign() <= 0 || exponentBig.Int64() > int64(^uint(0)>>1) {
+		if !exponentBig.IsInt64() || exponentBig.Sign() <= 0 || exponentBig.Int64() > maxRSAExponent {
 			return verificationKey{}, errors.New("invalid RSA exponent")
 		}
 		key := &rsa.PublicKey{N: new(big.Int).SetBytes(modulus), E: int(exponentBig.Int64())}
-		if key.N.BitLen() < 2048 || key.E < 3 || key.E%2 == 0 {
+		if key.N.BitLen() < 2048 || key.N.BitLen() > maxRSAModulusBits || key.E < 3 || key.E%2 == 0 {
 			return verificationKey{}, errors.New("invalid RSA public key")
 		}
 		return verificationKey{algorithm: value.Algorithm, key: key}, nil

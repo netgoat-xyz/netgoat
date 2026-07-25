@@ -173,6 +173,16 @@ func TestAccessConfigRejectsInsecureOrAmbiguousSettings(t *testing.T) {
 	}
 }
 
+func TestParseJWKSBoundsUntrustedInput(t *testing.T) {
+	keys := make([]json.RawMessage, maxJWKSKeys+1)
+	for index := range keys {
+		keys[index] = json.RawMessage(`{}`)
+	}
+	if _, err := parseJWKS(mustJSON(t, map[string]any{"keys": keys})); err == nil {
+		t.Fatal("parseJWKS() accepted an oversized key set")
+	}
+}
+
 func TestAPIClientDryRunNeverPerformsNetworkIO(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
