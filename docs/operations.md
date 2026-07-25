@@ -96,6 +96,47 @@ successfully compiled configuration active after a live update. See
 [`internal/dynamicrules/README.md`](../internal/dynamicrules/README.md) for
 the remaining in-process runtime boundaries.
 
+## Cloudflare Access and reconciliation
+
+Cloudflare Access is disabled by default. When `cloudflare.access.enabled` is
+true, every request to the agent's main listener must carry a valid signed
+Access assertion for the configured HTTPS issuer and one configured audience.
+The JWKS cache is bounded and refreshes for normal key rotation; an invalid,
+missing, or unavailable assertion receives a 403 and never reaches a handler.
+Enable it only after the agent's own administrative endpoints are included in
+the Access application.
+
+Cloudflare DNS and tunnel changes are a separate startup-only reconciliation
+plan. It is bounded to 32 operations, validates all identifiers and payloads
+against a forced dry run before performing any real mutation, and defaults to
+`dry_run: true`. Set `dry_run: false` only after reviewing the plan. The token
+is read exclusively from `CLOUDFLARE_API_TOKEN`; do not put it in YAML.
+
+```yaml
+cloudflare:
+  reconciliation:
+    enabled: true
+    dry_run: true
+    account_id: "0123456789abcdef0123456789abcdef"
+    dns_records:
+      - zone_id: "abcdef0123456789abcdef0123456789"
+        record:
+          type: A
+          name: app.example.test
+          content: 203.0.113.10
+    tunnels:
+      - tunnel:
+          name: netgoat
+          config_src: cloudflare
+```
+
+Omit `record_id` or `tunnel_id` to create the corresponding resource; supply
+one to update it. Deletion requires both `delete: true` and an explicit ID.
+There is no background retry or autonomous discovery loop: a failed startup
+plan is logged while the proxy keeps serving, and a new run requires an
+intentional restart. Give the API token only the Cloudflare permissions needed
+by the declared operations.
+
 ## Middleware SDK
 
 See [`middleware-sdk.md`](middleware-sdk.md). The SDK is deliberately for
