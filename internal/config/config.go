@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"netgoat.xyz/agent/internal/policy"
 )
 
 type Config struct {
@@ -134,12 +135,13 @@ type Config struct {
 }
 
 type Route struct {
-	Type           string        `yaml:"type"`
-	Target         string        `yaml:"target"`
-	Targets        []RouteTarget `yaml:"targets"`
-	CertificatePEM string        `yaml:"certificate_pem"`
-	PrivateKeyPEM  string        `yaml:"private_key_pem"`
-	Active         *bool         `yaml:"active"`
+	Type           string             `yaml:"type"`
+	Target         string             `yaml:"target"`
+	Targets        []RouteTarget      `yaml:"targets"`
+	CertificatePEM string             `yaml:"certificate_pem"`
+	PrivateKeyPEM  string             `yaml:"private_key_pem"`
+	Policy         policy.RoutePolicy `yaml:"policy"`
+	Active         *bool              `yaml:"active"`
 }
 
 type RouteTarget struct {

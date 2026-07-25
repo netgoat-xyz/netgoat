@@ -62,13 +62,17 @@ func (e *Engine) Reload(db *sql.DB) error {
 		if err := rows.Scan(&name, &expression, &action); err != nil {
 			return err
 		}
+		action = strings.ToUpper(strings.TrimSpace(action))
+		if !ValidAction(action) {
+			return fmt.Errorf("compile WAF rule %q: unsupported action %q", name, action)
+		}
 		program, err := compileExpression(expression)
 		if err != nil {
 			return fmt.Errorf("compile WAF rule %q: %w", name, err)
 		}
 		next.items = append(next.items, compiledRule{
 			name:    name,
-			action:  strings.ToUpper(strings.TrimSpace(action)),
+			action:  action,
 			program: program,
 		})
 	}
@@ -77,6 +81,18 @@ func (e *Engine) Reload(db *sql.DB) error {
 	}
 	e.rules.Store(next)
 	return nil
+}
+
+// ValidAction reports whether action has a defined, fail-safe evaluation
+// behavior. Unknown values are rejected during snapshot/reload instead of
+// silently bypassing a matching rule.
+func ValidAction(action string) bool {
+	switch strings.ToUpper(strings.TrimSpace(action)) {
+	case "ALLOW", "BLOCK", "LOG":
+		return true
+	default:
+		return false
+	}
 }
 
 // ValidateExpression verifies that a rule is a boolean WAF expression.
@@ -91,6 +107,14 @@ func compileExpression(expression string) (*vm.Program, error) {
 
 // Check evaluates the current precompiled rule set for a request.
 func (e *Engine) Check(r *http.Request, debugLogs bool) (bool, string) {
+	return e.CheckWithClientIP(r, "", debugLogs)
+}
+
+// CheckWithClientIP evaluates the current rules with a trusted, resolved
+// client address. Callers behind a reverse proxy should provide the result of
+// their trusted-forwarded-header resolver instead of exposing the proxy's
+// socket address to IP-aware rules.
+func (e *Engine) CheckWithClientIP(r *http.Request, clientIP string, debugLogs bool) (bool, string) {
 	if e == nil || r == nil {
 		return false, ""
 	}
@@ -99,9 +123,12 @@ func (e *Engine) Check(r *http.Request, debugLogs bool) (bool, string) {
 		log.Warn().Err(err).Msg("Blocked request due to malformed URL encoding")
 		return true, "Block Malformed Encoding"
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	ip := strings.TrimSpace(clientIP)
 	if ip == "" {
-		ip = r.RemoteAddr
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
+		if ip == "" {
+			ip = r.RemoteAddr
+		}
 	}
 	env := WAFContext{
 		IP:       ip,
@@ -133,8 +160,10 @@ func (e *Engine) Check(r *http.Request, debugLogs bool) (bool, string) {
 		switch rule.action {
 		case "ALLOW":
 			return false, rule.name
-		case "", "BLOCK":
+		case "BLOCK":
 			return true, rule.name
+		case "LOG":
+			log.Info().Str("rule", rule.name).Str("ip", ip).Str("host", env.Host).Msg("WAF rule matched in log-only mode")
 		}
 	}
 	return false, ""

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"netgoat.xyz/agent/internal/policy"
 )
 
 type ConfigSnapshot struct {
@@ -33,11 +34,12 @@ type RouteTarget struct {
 }
 
 type RouteData struct {
-	Type           string        `json:"type"`
-	Target         string        `json:"target"` // legacy single target; use Targets when possible
-	Targets        []RouteTarget `json:"targets,omitempty"`
-	CertificatePEM string        `json:"certificate_pem,omitempty"`
-	PrivateKeyPEM  string        `json:"private_key_pem,omitempty"`
+	Type           string             `json:"type"`
+	Target         string             `json:"target"` // legacy single target; use Targets when possible
+	Targets        []RouteTarget      `json:"targets,omitempty"`
+	CertificatePEM string             `json:"certificate_pem,omitempty"`
+	PrivateKeyPEM  string             `json:"private_key_pem,omitempty"`
+	Policy         policy.RoutePolicy `json:"policy,omitempty"`
 }
 
 // AllTargets returns configured upstreams, falling back to the legacy Target field.
@@ -284,6 +286,7 @@ func (s *ConfigSnapshot) copy() *ConfigSnapshot {
 			Targets:        targets,
 			CertificatePEM: v.CertificatePEM,
 			PrivateKeyPEM:  v.PrivateKeyPEM,
+			Policy:         v.Policy.Clone(),
 		}
 	}
 	rules := make(map[string]WAFRuleData, len(s.WAFRules))

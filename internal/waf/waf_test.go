@@ -5,12 +5,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // setuptestDB creates an in-memory SQLite database and seeds it with mock rules for testing.
 func setupTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open in-memory db: %v", err)
 	}
@@ -170,5 +170,33 @@ func TestNormalizedHost(t *testing.T) {
 		if got := normalizedHost(input); got != want {
 			t.Errorf("normalizedHost(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestEngineUsesResolvedClientIPAndRejectsUnknownAction(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`DELETE FROM waf_rules`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO waf_rules (name, expression, action, priority) VALUES
+		('block resolved client', 'IP == "203.0.113.7"', 'BLOCK', 10)`); err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine()
+	if err := engine.Reload(db); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	request := httptest.NewRequest("GET", "http://example.test/", nil)
+	request.RemoteAddr = "10.0.0.1:1234"
+	if blocked, _ := engine.CheckWithClientIP(request, "203.0.113.7", false); !blocked {
+		t.Fatal("trusted client IP should be available to WAF rules")
+	}
+
+	if _, err := db.Exec(`UPDATE waf_rules SET action = 'SURPRISE'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Reload(db); err == nil {
+		t.Fatal("unknown WAF action should reject reload")
 	}
 }

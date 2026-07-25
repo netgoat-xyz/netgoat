@@ -588,6 +588,14 @@ func TestLoadParsesLocalRoutes(t *testing.T) {
         health_check: http
       - url: http://127.0.0.1:9002
         health_check: tcp
+    policy:
+      cache:
+        enabled: true
+        ttl_seconds: 45
+      bandwidth:
+        bytes_per_second: 4096
+        burst_bytes: 8192
+        key: ip
   /internal/:
     type: path
     target: http://127.0.0.1:9010
@@ -605,7 +613,40 @@ func TestLoadParsesLocalRoutes(t *testing.T) {
 	if !ok || len(route.Targets) != 2 || route.Targets[1].HealthCheck != "tcp" || !route.IsActive() {
 		t.Fatalf("domain route was not decoded: %+v", route)
 	}
+	if route.Policy.Cache == nil || route.Policy.Cache.Enabled == nil || !*route.Policy.Cache.Enabled ||
+		route.Policy.Cache.TTLSeconds == nil || *route.Policy.Cache.TTLSeconds != 45 {
+		t.Fatalf("cache policy was not decoded: %+v", route.Policy)
+	}
+	if route.Policy.Bandwidth == nil || route.Policy.Bandwidth.BytesPerSecond == nil || *route.Policy.Bandwidth.BytesPerSecond != 4096 {
+		t.Fatalf("bandwidth policy was not decoded: %+v", route.Policy)
+	}
 	if cfg.Routes["/internal/"].IsActive() {
 		t.Fatal("explicitly inactive route should remain inactive")
+	}
+}
+
+func TestDatabasePathsUseConfiguredValues(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.DatabasePath(); got != "./database/proxy.db" {
+		t.Fatalf("default database path = %q", got)
+	}
+	if got := cfg.DatabaseStandbyPath(); got != "./database/proxy.standby.db" {
+		t.Fatalf("default standby path = %q", got)
+	}
+
+	cfg.Database.Path = filepath.Join("custom", "agent.db")
+	if got := cfg.DatabaseStandbyPath(); got != filepath.Join("custom", "agent.standby.db") {
+		t.Fatalf("derived standby path = %q", got)
+	}
+	cfg.Database.StandbyPath = filepath.Join("backup", "agent.db")
+	cfg.Database.BackupIntervalSeconds = 30
+	if got := cfg.DatabasePath(); got != filepath.Join("custom", "agent.db") {
+		t.Fatalf("configured database path = %q", got)
+	}
+	if got := cfg.DatabaseStandbyPath(); got != filepath.Join("backup", "agent.db") {
+		t.Fatalf("configured standby path = %q", got)
+	}
+	if got := cfg.DatabaseBackupIntervalSeconds(); got != 30 {
+		t.Fatalf("backup interval = %d", got)
 	}
 }

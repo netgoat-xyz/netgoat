@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,6 +40,7 @@ import (
 	"netgoat.xyz/agent/internal/koda_waf"
 	"netgoat.xyz/agent/internal/metrics"
 	"netgoat.xyz/agent/internal/modeldl"
+	"netgoat.xyz/agent/internal/policy"
 	"netgoat.xyz/agent/internal/streaming"
 	"netgoat.xyz/agent/internal/telemetry"
 	"netgoat.xyz/agent/internal/traffic"
@@ -163,47 +165,33 @@ func main() {
 		log.Info().Msg("No API_STREAM_URL configured, running in offline mode with local configuration")
 	}
 
-	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver)
-
 	pages := buildErrorPageStore(cfg)
 
-	var cacheStore *cache.Store
-	if cfg.Cache.Enabled {
-		ttl := time.Duration(ifZeroInt(cfg.Cache.TTLSeconds, 60)) * time.Second
-		cacheStore = cache.NewStore(ttl, ifZeroInt(cfg.Cache.MaxEntries, 1024), ifZeroInt(cfg.Cache.MaxBodyBytes, 1<<20))
-		log.Info().Dur("ttl", ttl).Int("max_entries", ifZeroInt(cfg.Cache.MaxEntries, 1024)).Int("max_body_bytes", ifZeroInt(cfg.Cache.MaxBodyBytes, 1<<20)).Msg("Response cache enabled")
+	// The registries isolate cached data and bandwidth buckets by route. The
+	// atomically published settings below make control-plane traffic updates
+	// effective without rebuilding the HTTP server.
+	cacheStores := cache.NewRouteStores()
+	bandwidthLimiters := traffic.NewBandwidthLimiters()
+	trafficRuntime := newTrafficRuntime(cfg)
+	initialTraffic := trafficRuntime.Load()
+	if initialTraffic.cache.Enabled {
+		log.Info().Int("ttl_seconds", initialTraffic.cache.TTLSeconds).Int("max_entries", initialTraffic.cache.MaxEntries).Int("max_body_bytes", initialTraffic.cache.MaxBodyBytes).Msg("Response cache enabled")
+	}
+	if initialTraffic.rateLimiter != nil {
+		log.Info().Str("key", ifEmpty(initialTraffic.rateLimitKey, "ip")).Msg("Rate limiting enabled")
+	}
+	if initialTraffic.requestQueue != nil {
+		log.Info().Msg("Request queue enabled")
+	}
+	if initialTraffic.bandwidth.Enabled {
+		log.Info().Int("bytes_per_second", initialTraffic.bandwidth.BytesPerSecond).Int("burst_bytes", initialTraffic.bandwidth.BurstBytes).Str("key", string(initialTraffic.bandwidth.Key)).Msg("Bandwidth limiting enabled")
 	}
 
-	var rateLimiter *traffic.RateLimiter
-	if cfg.RateLimit.Enabled {
-		rateLimiter = traffic.NewRateLimiter(cfg.RateLimit.RequestsPerMinute, cfg.RateLimit.Burst)
-		log.Info().Int("requests_per_minute", ifZeroInt(cfg.RateLimit.RequestsPerMinute, 60)).Int("burst", ifZeroInt(cfg.RateLimit.Burst, cfg.RateLimit.RequestsPerMinute)).Str("key", ifEmpty(cfg.RateLimit.Key, "ip")).Msg("Rate limiting enabled")
-	}
-
-	var requestQueue *traffic.Queue
-	if cfg.RequestQueue.Enabled {
-		timeout := time.Duration(ifZeroInt(cfg.RequestQueue.TimeoutSeconds, 5)) * time.Second
-		requestQueue = traffic.NewQueue(cfg.RequestQueue.MaxConcurrent, cfg.RequestQueue.MaxQueued, timeout)
-		log.Info().Int("max_concurrent", ifZeroInt(cfg.RequestQueue.MaxConcurrent, 1)).Int("max_queued", cfg.RequestQueue.MaxQueued).Dur("timeout", timeout).Msg("Request queue enabled")
-	}
-
-	var bandwidthLimiter *traffic.BandwidthLimiter
-	if cfg.Bandwidth.Enabled {
-		bandwidthLimiter = traffic.NewBandwidthLimiter(cfg.Bandwidth.BytesPerSecond, cfg.Bandwidth.BurstBytes)
-		log.Info().Int("bytes_per_second", ifZeroInt(cfg.Bandwidth.BytesPerSecond, 1<<20)).Int("burst_bytes", ifZeroInt(cfg.Bandwidth.BurstBytes, cfg.Bandwidth.BytesPerSecond)).Str("key", ifEmpty(cfg.Bandwidth.Key, "ip")).Msg("Bandwidth limiting enabled")
-	}
-
-	var metricsRecorder *metrics.Recorder
-	if cfg.Metrics.Enabled {
-		metricsRecorder = metrics.NewRecorder()
-		metricsPath, valid := metricsEndpointPath(cfg.Metrics.Path)
-		if !valid {
-			log.Warn().Str("configured_path", cfg.Metrics.Path).Str("fallback_path", metricsPath).Msg("Invalid or reserved metrics path; using safe default")
-		}
-		http.HandleFunc(metricsPath, metricsRecorder.ServeJSON)
-		http.HandleFunc(metricsPath+".prom", metricsRecorder.ServePrometheus)
-		log.Info().Str("path", metricsPath).Str("prometheus_path", metricsPath+".prom").Msg("Metrics endpoint enabled")
-	}
+	// Always allocate the recorder; whether it records and where it is served
+	// are live runtime settings. This avoids unsafe ServeMux mutations after
+	// the server has started.
+	metricsRecorder := metrics.NewRecorder()
+	go applyConfigUpdates(db, streamMgr, healthWorker, healthChecksEnabled, localSnap, wafEngine, routeResolver, cfg, trafficRuntime)
 
 	var detector *anomaly.LocalDetector
 	featureHeader := "X-GoatAI-Features"
@@ -367,23 +355,56 @@ func main() {
 	})
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		runtime := trafficRuntime.Load()
+		if runtime.metricsOn {
+			started := time.Now()
+			metricWriter := metrics.WrapResponseWriter(w)
+			w = metricWriter
+			metricsRecorder.RecordRequest()
+			defer func() {
+				metricsRecorder.RecordResponse(metricWriter.Status(), metricWriter.BytesWritten(), time.Since(started))
+			}()
+		}
+		if runtime.rateLimiter != nil && !runtime.rateLimiter.Allow(rateLimitKey(r, runtime.rateLimitKey)+"|login") {
+			recordBlocked(metricsRecorder, "login-rate-limit")
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+		if runtime.requestQueue != nil {
+			release, err := runtime.requestQueue.Acquire(r.Context())
+			if err != nil {
+				status := http.StatusServiceUnavailable
+				if errors.Is(err, traffic.ErrQueueFull) {
+					status = http.StatusTooManyRequests
+				}
+				http.Error(w, http.StatusText(status), status)
+				return
+			}
+			defer release()
+		}
 		auth.HandleLogin(w, r, db)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		runtime := trafficRuntime.Load()
+		if runtime.metricsOn {
+			if r.URL.Path == runtime.metricsPath {
+				metricsRecorder.ServeJSON(w, r)
+				return
+			}
+			if r.URL.Path == runtime.metricsPath+".prom" {
+				metricsRecorder.ServePrometheus(w, r)
+				return
+			}
+		}
 		startTime := time.Now()
-		if metricsRecorder != nil {
+		if runtime.metricsOn {
 			metricsRecorder.RecordRequest()
 			metricWriter := metrics.WrapResponseWriter(w)
 			w = metricWriter
 			defer func() {
 				metricsRecorder.RecordResponse(metricWriter.Status(), metricWriter.BytesWritten(), time.Since(startTime))
 			}()
-		}
-		if bandwidthLimiter != nil {
-			key := rateLimitKey(r, cfg.Bandwidth.Key)
-			r.Body = traffic.WrapReadCloser(r.Body, bandwidthLimiter, key+":in", r.Context())
-			w = traffic.WrapResponseWriter(w, bandwidthLimiter, key+":out", r.Context())
 		}
 
 		analysisInfo := &debugoverlay.AnalysisInfo{
@@ -430,7 +451,7 @@ func main() {
 			}
 		}
 
-		if rateLimiter != nil && !rateLimiter.Allow(rateLimitKey(r, cfg.RateLimit.Key)) {
+		if runtime.rateLimiter != nil && !runtime.rateLimiter.Allow(rateLimitKey(r, runtime.rateLimitKey)) {
 			analysisInfo.RequestAllowed = false
 			analysisInfo.BlockReason = "rate limit exceeded"
 			recordBlocked(metricsRecorder, "rate-limit")
@@ -439,8 +460,8 @@ func main() {
 			return
 		}
 
-		if requestQueue != nil {
-			release, err := requestQueue.Acquire(r.Context())
+		if runtime.requestQueue != nil {
+			release, err := runtime.requestQueue.Acquire(r.Context())
 			if err != nil {
 				analysisInfo.RequestAllowed = false
 				analysisInfo.BlockReason = "request queue full"
@@ -559,7 +580,7 @@ func main() {
 		}
 
 		analysisInfo.WAFChecked = true
-		block, ruleName := wafEngine.Check(r, cfg.DebugLogs)
+		block, ruleName := wafEngine.CheckWithClientIP(r, getClientIP(r), cfg.DebugLogs)
 		if block {
 			analysisInfo.WAFBlocked = true
 			analysisInfo.WAFRuleName = ruleName
@@ -571,10 +592,7 @@ func main() {
 			return
 		}
 
-		host := r.Host
-		if idx := strings.LastIndex(host, ":"); idx > 0 {
-			host = host[:idx]
-		}
+		host := requestHost(r.Host)
 		log.Debug().Str("host", host).Str("method", r.Method).Str("path", r.URL.Path).Msg("Processing request")
 
 		routeMatch, err := routeResolver.Resolve(host, r.URL.Path)
@@ -598,6 +616,25 @@ func main() {
 		log.Info().Str("host", host).Str("path", r.URL.Path).Str("target", primaryTarget).Int("targets", len(targetURLs)).Str("method", r.Method).Msg("Route resolved")
 
 		analysisInfo.TargetURL = primaryTarget
+		routeCache, err := policy.ResolveCache(runtime.cache, routeMatch.Policy.Cache)
+		if err != nil {
+			log.Error().Err(err).Str("route", routeMatch.RouteKey).Msg("Invalid resolved cache policy")
+			writeError(w, pages, challengeStore, r, http.StatusInternalServerError, "Invalid route policy")
+			return
+		}
+		cacheStore := cacheStores.Store(routeMatch.RouteKey, routeCache)
+
+		routeBandwidth, err := policy.ResolveBandwidth(runtime.bandwidth, routeMatch.Policy.Bandwidth)
+		if err != nil {
+			log.Error().Err(err).Str("route", routeMatch.RouteKey).Msg("Invalid resolved bandwidth policy")
+			writeError(w, pages, challengeStore, r, http.StatusInternalServerError, "Invalid route policy")
+			return
+		}
+		if limiter := bandwidthLimiters.Limiter(routeMatch.RouteKey, routeBandwidth); limiter != nil {
+			key := routeBandwidthKey(routeMatch.RouteKey, r, routeBandwidth.Key)
+			r.Body = traffic.WrapReadCloser(r.Body, limiter, key+":in", r.Context())
+			w = traffic.WrapResponseWriter(w, limiter, key+":out", r.Context())
+		}
 
 		if r.Header.Get("Upgrade") == "websocket" {
 			log.Info().Str("client", r.RemoteAddr).Str("host", host).Msg("WebSocket upgrade detected")
@@ -606,7 +643,7 @@ func main() {
 		isCacheable := isRequestCacheableForSharedStore(cacheStore, r)
 		cacheKey := ""
 		if isCacheable {
-			cacheKey = cache.CacheKey(r)
+			cacheKey = cacheStores.Key(routeMatch.RouteKey, r)
 			if ent := cacheStore.Get(cacheKey); ent != nil {
 				analysisInfo.CacheHit = true
 				if metricsRecorder != nil {
@@ -948,6 +985,16 @@ func getClientIP(r *http.Request) string {
 	return clientAddressResolver.ClientIP(r)
 }
 
+func requestHost(hostport string) string {
+	host := strings.TrimSpace(hostport)
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		host = parsed
+	} else {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	return strings.ToLower(strings.TrimSuffix(host, "."))
+}
+
 func prepareForwardingHeaders(r *http.Request, resolvedClientIP string) {
 	if r == nil {
 		return
@@ -956,11 +1003,16 @@ func prepareForwardingHeaders(r *http.Request, resolvedClientIP string) {
 	r.Header.Del("Forwarded")
 	r.Header.Del("X-Forwarded-Host")
 	r.Header.Del("X-Forwarded-Proto")
+	// Never forward a client-supplied identity header. Upstreams often trust
+	// X-Real-IP independently of X-Forwarded-For, so leaving it intact would
+	// reintroduce spoofing even when forwarding chains are sanitized.
+	r.Header.Del("X-Real-IP")
 	if resolvedClientIP == "" || resolvedClientIP == directPeer {
 		r.Header.Del("X-Forwarded-For")
 		return
 	}
 	r.Header.Set("X-Forwarded-For", resolvedClientIP)
+	r.Header.Set("X-Real-IP", resolvedClientIP)
 }
 
 func safeLocalRedirect(raw, requestHost string) string {
@@ -988,6 +1040,24 @@ func rateLimitKey(r *http.Request, keyMode string) string {
 	default:
 		return getClientIP(r)
 	}
+}
+
+// routeBandwidthKey scopes every bucket to the resolved route, even when the
+// policy's selector is global. This prevents one route's clients from spending
+// the bandwidth allocation assigned to another route.
+func routeBandwidthKey(routeKey string, r *http.Request, keyMode policy.KeyMode) string {
+	selector := ""
+	switch keyMode {
+	case policy.KeyHost:
+		selector = strings.ToLower(strings.TrimSpace(r.Host))
+	case policy.KeyRoute:
+		selector = r.URL.EscapedPath()
+	case policy.KeyGlobal:
+		selector = "global"
+	default:
+		selector = getClientIP(r)
+	}
+	return routeKey + "|" + selector
 }
 
 func recordBlocked(rec *metrics.Recorder, reason string) {
@@ -1104,20 +1174,22 @@ type domainsResponse struct {
 }
 
 type domainRecord struct {
-	Domain         string            `json:"domain"`
-	TargetURL      string            `json:"target_url"`
-	TargetURLs     []string          `json:"target_urls"`
-	CertificatePEM string            `json:"certificate_pem"`
-	PrivateKeyPEM  string            `json:"private_key_pem"`
-	Active         any               `json:"active"`
-	Subdomains     []subdomainRecord `json:"subdomains"`
+	Domain         string             `json:"domain"`
+	TargetURL      string             `json:"target_url"`
+	TargetURLs     []string           `json:"target_urls"`
+	CertificatePEM string             `json:"certificate_pem"`
+	PrivateKeyPEM  string             `json:"private_key_pem"`
+	Policy         policy.RoutePolicy `json:"policy"`
+	Active         any                `json:"active"`
+	Subdomains     []subdomainRecord  `json:"subdomains"`
 }
 
 type subdomainRecord struct {
-	FullDomain string   `json:"full_domain"`
-	TargetURL  string   `json:"target_url"`
-	TargetURLs []string `json:"target_urls"`
-	Active     any      `json:"active"`
+	FullDomain string             `json:"full_domain"`
+	TargetURL  string             `json:"target_url"`
+	TargetURLs []string           `json:"target_urls"`
+	Policy     policy.RoutePolicy `json:"policy"`
+	Active     any                `json:"active"`
 }
 
 type wafRuleRecord struct {
@@ -1279,6 +1351,7 @@ func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapsh
 				Targets:        routeTargetsFromAPI(domain.TargetURL, domain.TargetURLs),
 				CertificatePEM: domain.CertificatePEM,
 				PrivateKeyPEM:  domain.PrivateKeyPEM,
+				Policy:         domain.Policy.Clone(),
 			}
 		}
 		for _, subdomain := range domain.Subdomains {
@@ -1289,6 +1362,7 @@ func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapsh
 				Type:    "domain",
 				Target:  subdomain.TargetURL,
 				Targets: routeTargetsFromAPI(subdomain.TargetURL, subdomain.TargetURLs),
+				Policy:  subdomain.Policy.Clone(),
 			}
 		}
 	}
@@ -1433,6 +1507,7 @@ func localConfigSnapshot(cfg *config.Config) *streaming.ConfigSnapshot {
 			Targets:        targets,
 			CertificatePEM: route.CertificatePEM,
 			PrivateKeyPEM:  route.PrivateKeyPEM,
+			Policy:         route.Policy.Clone(),
 		}
 	}
 	return snapshot
@@ -1616,6 +1691,30 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 	if cfg == nil || agentConfig.IsZero() {
 		return
 	}
+	applyTrafficAgentConfigToConfig(cfg, agentConfig)
+
+	cfg.KodaWaf.Enabled = agentConfig.KodaWaf.Enabled
+	cfg.KodaWaf.Threshold = agentConfig.KodaWaf.Threshold
+	cfg.KodaWaf.ModelPath = agentConfig.KodaWaf.ModelPath
+	cfg.KodaWaf.ScalerPath = agentConfig.KodaWaf.ScalerPath
+	cfg.KodaWaf.PythonScript = agentConfig.KodaWaf.PythonScript
+	cfg.KodaWaf.FeatureHeader = agentConfig.KodaWaf.FeatureHeader
+
+	cfg.Koda2.Enabled = agentConfig.Koda2.Enabled
+	cfg.Koda2.Threshold = agentConfig.Koda2.Threshold
+	cfg.Koda2.ModelPath = agentConfig.Koda2.ModelPath
+	cfg.Koda2.ScalerPath = agentConfig.Koda2.ScalerPath
+	cfg.Koda2.PythonScript = agentConfig.Koda2.PythonScript
+	cfg.Koda2.FeatureHeader = agentConfig.Koda2.FeatureHeader
+}
+
+// applyTrafficAgentConfigToConfig updates only fields that are read through an
+// atomic trafficRuntime after startup. Worker configuration remains immutable
+// until restart, preventing a live snapshot from racing detector goroutines.
+func applyTrafficAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentConfigData) {
+	if cfg == nil || agentConfig.IsZero() {
+		return
+	}
 
 	cfg.Cache.Enabled = agentConfig.Cache.Enabled
 	cfg.Cache.TTLSeconds = agentConfig.Cache.TTLSeconds
@@ -1639,24 +1738,10 @@ func applyAgentConfigToConfig(cfg *config.Config, agentConfig streaming.AgentCon
 
 	cfg.Metrics.Enabled = agentConfig.Metrics.Enabled
 	cfg.Metrics.Path = agentConfig.Metrics.Path
-
-	cfg.KodaWaf.Enabled = agentConfig.KodaWaf.Enabled
-	cfg.KodaWaf.Threshold = agentConfig.KodaWaf.Threshold
-	cfg.KodaWaf.ModelPath = agentConfig.KodaWaf.ModelPath
-	cfg.KodaWaf.ScalerPath = agentConfig.KodaWaf.ScalerPath
-	cfg.KodaWaf.PythonScript = agentConfig.KodaWaf.PythonScript
-	cfg.KodaWaf.FeatureHeader = agentConfig.KodaWaf.FeatureHeader
-
-	cfg.Koda2.Enabled = agentConfig.Koda2.Enabled
-	cfg.Koda2.Threshold = agentConfig.Koda2.Threshold
-	cfg.Koda2.ModelPath = agentConfig.Koda2.ModelPath
-	cfg.Koda2.ScalerPath = agentConfig.Koda2.ScalerPath
-	cfg.Koda2.PythonScript = agentConfig.Koda2.PythonScript
-	cfg.Koda2.FeatureHeader = agentConfig.Koda2.FeatureHeader
 }
 
 // applyConfigUpdates subscribes to config changes and applies them to the database.
-func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver) {
+func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health.Worker, healthChecksEnabled bool, local *streaming.ConfigSnapshot, wafEngine *waf.Engine, routeResolver *database.RouteResolver, cfg *config.Config, runtime *trafficRuntime) {
 	ch := mgr.Subscribe()
 	log.Info().Msg("Config update subscriber started")
 
@@ -1675,6 +1760,11 @@ func applyConfigUpdates(db *sql.DB, mgr *streaming.Manager, healthWorker *health
 		}
 		if err := wafEngine.Reload(db); err != nil {
 			log.Error().Err(err).Int64("version", snap.Version).Msg("Failed to reload WAF rules")
+		}
+		if !snap.AgentConfig.IsZero() {
+			applyTrafficAgentConfigToConfig(cfg, snap.AgentConfig)
+			runtime.Update(cfg)
+			log.Info().Int64("version", snap.Version).Msg("Applied live traffic-control configuration")
 		}
 		if healthChecksEnabled {
 			syncHealthTargets(db, healthWorker)
@@ -1767,6 +1857,9 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
 		if err != nil {
 			return fmt.Errorf("route %q: %w", routeKey, err)
 		}
+		if err := route.Policy.Validate(); err != nil {
+			return fmt.Errorf("route %q policy: %w", routeKey, err)
+		}
 		primaryTarget := targets[0].URL
 		if _, err := tx.Exec(
 			`INSERT INTO routes (route_type, domain, path_prefix, target_url, certificate_pem, private_key_pem, active) VALUES (?, ?, ?, ?, ?, ?, 1)
@@ -1781,6 +1874,9 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
 		}
 		if err := database.SetRouteTargetsTx(tx, routeID, targets); err != nil {
 			return fmt.Errorf("replace targets for route %q: %w", routeKey, err)
+		}
+		if err := database.SetRoutePolicyTx(tx, routeID, route.Policy); err != nil {
+			return fmt.Errorf("replace policy for route %q: %w", routeKey, err)
 		}
 		routesApplied++
 	}
@@ -1809,8 +1905,12 @@ func applySnapshotToDB(db *sql.DB, snap *streaming.ConfigSnapshot) error {
 		if err := waf.ValidateExpression(rule.Expression); err != nil {
 			return fmt.Errorf("validate WAF rule %q: %w", name, err)
 		}
+		action := ifEmpty(strings.ToUpper(strings.TrimSpace(rule.Action)), "BLOCK")
+		if !waf.ValidAction(action) {
+			return fmt.Errorf("validate WAF rule %q: unsupported action %q", name, rule.Action)
+		}
 		if _, err := tx.Exec(`INSERT INTO waf_rules (name, expression, action, priority) VALUES (?, ?, ?, ?)`,
-			name, rule.Expression, ifEmpty(strings.ToUpper(strings.TrimSpace(rule.Action)), "BLOCK"), rule.Priority); err != nil {
+			name, rule.Expression, action, rule.Priority); err != nil {
 			return fmt.Errorf("insert WAF rule %q: %w", name, err)
 		}
 		rulesApplied++

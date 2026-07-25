@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 	_ "modernc.org/sqlite"
+	"netgoat.xyz/agent/internal/policy"
 )
 
 const (
@@ -527,6 +529,15 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS route_policies (
+		route_id INTEGER PRIMARY KEY,
+		policy_json TEXT NOT NULL DEFAULT '{}',
+		FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
+	);`)
+	if err != nil {
+		return err
+	}
+
 	if err := seedDefaults(db); err != nil {
 		return err
 	}
@@ -668,6 +679,7 @@ type RouteMatch struct {
 	Targets        []RouteTarget
 	CertificatePEM string
 	PrivateKeyPEM  string
+	Policy         policy.RoutePolicy
 }
 
 func loadRouteTargets(db *sql.DB, routeID int) ([]RouteTarget, error) {
@@ -897,6 +909,29 @@ func SetRouteTargets(db *sql.DB, routeID int, targets []RouteTarget) error {
 // SetRouteTargetsTx replaces upstream targets inside an existing transaction.
 func SetRouteTargetsTx(tx *sql.Tx, routeID int, targets []RouteTarget) error {
 	return setRouteTargets(tx, routeID, targets)
+}
+
+// SetRoutePolicyTx replaces the route-scoped cache/bandwidth policy within an
+// existing snapshot transaction. The JSON representation is intentionally
+// opaque to SQLite so the route resolver can publish immutable, validated Go
+// values without a fragile column-per-policy migration for every option.
+func SetRoutePolicyTx(tx *sql.Tx, routeID int, value policy.RoutePolicy) error {
+	if tx == nil {
+		return fmt.Errorf("set route policy: nil transaction")
+	}
+	if err := value.Validate(); err != nil {
+		return fmt.Errorf("validate route policy: %w", err)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode route policy: %w", err)
+	}
+	_, err = tx.Exec(`INSERT INTO route_policies (route_id, policy_json) VALUES (?, ?)
+		ON CONFLICT(route_id) DO UPDATE SET policy_json=excluded.policy_json`, routeID, string(encoded))
+	if err != nil {
+		return fmt.Errorf("store route policy: %w", err)
+	}
+	return nil
 }
 
 type routeTargetExecer interface {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"netgoat.xyz/agent/internal/config"
+	"netgoat.xyz/agent/internal/policy"
 	"netgoat.xyz/agent/internal/streaming"
 )
 
@@ -102,5 +103,30 @@ func TestPollDomainsSkipsUnchangedSnapshots(t *testing.T) {
 	}
 	if got := mgr.GetSnapshot().Version; got != firstVersion {
 		t.Fatalf("unchanged poll advanced version from %d to %d", firstVersion, got)
+	}
+}
+
+func TestSnapshotFromDomainsResponsePreservesRoutePolicies(t *testing.T) {
+	enabled := true
+	ttl := 30
+	bytesPerSecond := 4096
+	payload := domainsResponse{Domains: []domainRecord{{
+		Domain:    "example.test",
+		TargetURL: "http://upstream",
+		Policy: policy.RoutePolicy{
+			Cache:     &policy.CacheOverride{Enabled: &enabled, TTLSeconds: &ttl},
+			Bandwidth: &policy.BandwidthOverride{BytesPerSecond: &bytesPerSecond},
+		},
+	}}}
+
+	snapshot := snapshotFromDomainsResponse(payload)
+	route := snapshot.Routes["example.test"]
+	if route.Policy.Cache == nil || route.Policy.Cache.Enabled == nil || !*route.Policy.Cache.Enabled ||
+		route.Policy.Cache.TTLSeconds == nil || *route.Policy.Cache.TTLSeconds != 30 {
+		t.Fatalf("cache policy was not preserved: %+v", route.Policy)
+	}
+	if route.Policy.Bandwidth == nil || route.Policy.Bandwidth.BytesPerSecond == nil ||
+		*route.Policy.Bandwidth.BytesPerSecond != 4096 {
+		t.Fatalf("bandwidth policy was not preserved: %+v", route.Policy)
 	}
 }

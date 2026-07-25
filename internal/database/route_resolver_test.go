@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"netgoat.xyz/agent/internal/policy"
 )
 
 func TestRouteResolverMatchesDatabaseResolution(t *testing.T) {
@@ -233,6 +235,63 @@ func TestRouteResolverReturnsIndependentTargets(t *testing.T) {
 	}
 	if !reflect.DeepEqual(second.Targets, want) {
 		t.Fatalf("second Resolve targets = %#v, want %#v", second.Targets, want)
+	}
+}
+
+func TestRouteResolverPublishesValidatedRoutePolicyAtomically(t *testing.T) {
+	db := newResolverTestDB(t)
+	routeID := insertResolverRoute(t, db, resolverRouteSpec{
+		routeType: "domain",
+		domain:    "policy.example.test",
+		targets:   []RouteTarget{{URL: "http://policy", HealthCheck: "http"}},
+	})
+	enabled := true
+	ttl := 30
+	bytesPerSecond := 4096
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetRoutePolicyTx(tx, int(routeID), policy.RoutePolicy{
+		Cache:     &policy.CacheOverride{Enabled: &enabled, TTLSeconds: &ttl},
+		Bandwidth: &policy.BandwidthOverride{BytesPerSecond: &bytesPerSecond},
+	}); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("SetRoutePolicyTx: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := NewRouteResolver()
+	if err := resolver.Reload(db); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	match, err := resolver.Resolve("policy.example.test", "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if match.Policy.Cache == nil || match.Policy.Cache.TTLSeconds == nil || *match.Policy.Cache.TTLSeconds != 30 {
+		t.Fatalf("cache policy = %+v", match.Policy)
+	}
+	if match.Policy.Bandwidth == nil || match.Policy.Bandwidth.BytesPerSecond == nil || *match.Policy.Bandwidth.BytesPerSecond != 4096 {
+		t.Fatalf("bandwidth policy = %+v", match.Policy)
+	}
+	*match.Policy.Cache.TTLSeconds = 1
+	second, err := resolver.Resolve("policy.example.test", "/")
+	if err != nil || second.Policy.Cache == nil || second.Policy.Cache.TTLSeconds == nil || *second.Policy.Cache.TTLSeconds != 30 {
+		t.Fatalf("route policy was not independently cloned: %+v, %v", second.Policy, err)
+	}
+
+	if _, err := db.Exec(`UPDATE route_policies SET policy_json = '{"cache":{"ttl_seconds":0}}' WHERE route_id = ?`, routeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := resolver.Reload(db); err == nil {
+		t.Fatal("invalid persisted policy should reject reload")
+	}
+	stable, err := resolver.Resolve("policy.example.test", "/")
+	if err != nil || stable.Policy.Cache == nil || stable.Policy.Cache.TTLSeconds == nil || *stable.Policy.Cache.TTLSeconds != 30 {
+		t.Fatalf("failed policy reload replaced last-known-good snapshot: %+v, %v", stable, err)
 	}
 }
 

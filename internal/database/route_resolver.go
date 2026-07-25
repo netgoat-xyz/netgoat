@@ -3,12 +3,15 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 	"sync/atomic"
 	"unicode/utf8"
+
+	"netgoat.xyz/agent/internal/policy"
 )
 
 // RouteResolver resolves requests from an immutable, preloaded route snapshot.
@@ -33,6 +36,7 @@ type cachedRoute struct {
 	targetURL       string
 	certificatePEM  string
 	privateKeyPEM   string
+	policy          policy.RoutePolicy
 	exactRouteKey   string
 	patternRouteKey string
 	pathRouteKey    string
@@ -138,17 +142,20 @@ func loadRouteSnapshot(db *sql.DB) (*routeSnapshot, error) {
 	routeOrder := make([]*cachedRoute, 0)
 
 	rows, err := tx.Query(`
-		SELECT id, route_type, COALESCE(domain, ''), COALESCE(path_prefix, ''),
-		       target_url, COALESCE(certificate_pem, ''), COALESCE(private_key_pem, '')
-		FROM routes
-		WHERE active = 1 AND route_type IN ('domain', 'wildcard', 'regex', 'path')
-		ORDER BY id ASC`)
+		SELECT r.id, r.route_type, COALESCE(r.domain, ''), COALESCE(r.path_prefix, ''),
+		       r.target_url, COALESCE(r.certificate_pem, ''), COALESCE(r.private_key_pem, ''),
+		       COALESCE(rp.policy_json, '{}')
+		FROM routes AS r
+		LEFT JOIN route_policies AS rp ON rp.route_id = r.id
+		WHERE r.active = 1 AND r.route_type IN ('domain', 'wildcard', 'regex', 'path')
+		ORDER BY r.id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("load active routes: %w", err)
 	}
 
 	for rows.Next() {
 		route := &cachedRoute{}
+		var policyJSON string
 		if err := rows.Scan(
 			&route.id,
 			&route.routeType,
@@ -157,9 +164,18 @@ func loadRouteSnapshot(db *sql.DB) (*routeSnapshot, error) {
 			&route.targetURL,
 			&route.certificatePEM,
 			&route.privateKeyPEM,
+			&policyJSON,
 		); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("scan active route: %w", err)
+		}
+		if err := json.Unmarshal([]byte(policyJSON), &route.policy); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("decode route %d policy: %w", route.id, err)
+		}
+		if err := route.policy.Validate(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("validate route %d policy: %w", route.id, err)
 		}
 
 		route.routeType = strings.ToLower(strings.TrimSpace(route.routeType))
@@ -331,6 +347,7 @@ func (r *cachedRoute) domainMatch(routeKey string) *RouteMatch {
 		Targets:        cloneRouteTargets(r.targets),
 		CertificatePEM: r.certificatePEM,
 		PrivateKeyPEM:  r.privateKeyPEM,
+		Policy:         r.policy.Clone(),
 	}
 }
 
@@ -338,6 +355,7 @@ func (r *cachedRoute) pathMatch() *RouteMatch {
 	return &RouteMatch{
 		RouteKey: r.pathRouteKey,
 		Targets:  cloneRouteTargets(r.targets),
+		Policy:   r.policy.Clone(),
 	}
 }
 
