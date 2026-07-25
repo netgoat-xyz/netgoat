@@ -51,6 +51,14 @@ type Config struct {
 		MaxResultBytes           int           `yaml:"max_result_bytes"`
 		MaxExecutionMilliseconds int           `yaml:"max_execution_milliseconds"`
 	} `yaml:"dynamic_rules"`
+	// Cloudflare contains opt-in integrations. Access assertions are verified
+	// before the agent's HTTP handlers run, while reconciliation is performed
+	// once at startup from declarative records. API credentials are deliberately
+	// not serializable and must be supplied through CLOUDFLARE_API_TOKEN.
+	Cloudflare struct {
+		Access         CloudflareAccessConfig         `yaml:"access"`
+		Reconciliation CloudflareReconciliationConfig `yaml:"reconciliation"`
+	} `yaml:"cloudflare"`
 	// Path to a static HTML file to serve for errors (e.g., 403/404/500)
 	CustomErrorPage string `yaml:"custom_error_page"`
 
@@ -177,6 +185,52 @@ type DynamicRule struct {
 	Language string `yaml:"language"`
 	Source   string `yaml:"source"`
 	Enabled  *bool  `yaml:"enabled"`
+}
+
+// CloudflareAccessConfig is the YAML-safe representation of a Cloudflare
+// Access JWT verifier. The numeric durations are kept in seconds so config
+// files remain portable and easy to review.
+type CloudflareAccessConfig struct {
+	Enabled             bool     `yaml:"enabled"`
+	Issuer              string   `yaml:"issuer"`
+	Audience            []string `yaml:"audience"`
+	JWKSURL             string   `yaml:"jwks_url"`
+	Header              string   `yaml:"header"`
+	Cookie              string   `yaml:"cookie"`
+	JWKSCacheSeconds    int      `yaml:"jwks_cache_seconds"`
+	ClockSkewSeconds    int      `yaml:"clock_skew_seconds"`
+	FetchTimeoutSeconds int      `yaml:"fetch_timeout_seconds"`
+}
+
+// CloudflareReconciliationConfig describes one bounded startup reconciliation
+// run. A missing dry_run value is intentionally treated as true by the agent;
+// API tokens are read only from CLOUDFLARE_API_TOKEN.
+type CloudflareReconciliationConfig struct {
+	Enabled               bool                  `yaml:"enabled"`
+	DryRun                *bool                 `yaml:"dry_run"`
+	AccountID             string                `yaml:"account_id"`
+	RequestTimeoutSeconds int                   `yaml:"request_timeout_seconds"`
+	DNSRecords            []CloudflareDNSRecord `yaml:"dns_records"`
+	Tunnels               []CloudflareTunnel    `yaml:"tunnels"`
+}
+
+// CloudflareDNSRecord creates a record when RecordID is omitted and updates
+// it when RecordID is present. Delete is intentionally a separate explicit
+// action and requires RecordID. Record is passed as a bounded JSON object to
+// the Cloudflare DNS API so supported record fields remain forward-compatible.
+type CloudflareDNSRecord struct {
+	ZoneID   string         `yaml:"zone_id"`
+	RecordID string         `yaml:"record_id"`
+	Delete   bool           `yaml:"delete"`
+	Record   map[string]any `yaml:"record"`
+}
+
+// CloudflareTunnel updates an existing tunnel by ID. Delete must be explicit.
+// Tunnel is a bounded JSON object accepted by Cloudflare's tunnel endpoint.
+type CloudflareTunnel struct {
+	TunnelID string         `yaml:"tunnel_id"`
+	Delete   bool           `yaml:"delete"`
+	Tunnel   map[string]any `yaml:"tunnel"`
 }
 
 // IsEnabled treats an omitted flag as enabled.

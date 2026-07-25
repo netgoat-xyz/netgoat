@@ -23,6 +23,45 @@ ssl:
     directory_url: ""
     http_port: ":80"
 
+# Cloudflare integrations are opt-in. Cloudflare Access verifies every
+# incoming request before it reaches the agent's handlers and fails closed
+# when the assertion or key set cannot be verified.
+cloudflare:
+  access:
+    enabled: false
+    issuer: "" # e.g. "https://team-name.cloudflareaccess.com"
+    audience: [] # Cloudflare Access application audience tags
+    jwks_url: "" # Empty derives <issuer>/cdn-cgi/access/certs.
+    header: "Cf-Access-Jwt-Assertion"
+    cookie: "CF_Authorization"
+    jwks_cache_seconds: 300
+    clock_skew_seconds: 60
+    fetch_timeout_seconds: 10
+  # This makes a bounded, one-time set of DNS/tunnel API calls during startup.
+  # It never writes by default: set enabled: true and dry_run: false only after
+  # reviewing the operations. Supply the credential through CLOUDFLARE_API_TOKEN;
+  # there is intentionally no token field in this file.
+  reconciliation:
+    enabled: false
+    dry_run: true
+    account_id: "" # Required only for tunnels.
+    request_timeout_seconds: 15
+    dns_records: []
+    tunnels: []
+    # Example DNS creation (record_id turns this into an update):
+    # - zone_id: "0123456789abcdef0123456789abcdef"
+    #   record:
+    #     type: "A"
+    #     name: "app.example.com"
+    #     content: "203.0.113.10"
+    #     proxied: true
+    #     ttl: 1
+    # Example tunnel update:
+    # - tunnel_id: "01234567-89ab-cdef-0123-456789abcdef"
+    #   tunnel:
+    #     name: "netgoat"
+    #     config_src: "cloudflare"
+
 # Ordered administrator-managed TypeScript/JavaScript request rules. The
 # runtime has no filesystem, network, process, or Go-object bindings and fails
 # closed on invalid source, oversized inputs, and execution timeouts.

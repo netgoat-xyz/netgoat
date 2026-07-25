@@ -20,4 +20,10 @@ func TestSampleConfigUsesSafeOfflineDefaults(t *testing.T) {
 	if len(cfg.TrustedProxies) != 0 {
 		t.Fatalf("sample trusts forwarding peers by default: %v", cfg.TrustedProxies)
 	}
+	if cfg.Cloudflare.Access.Enabled || cfg.Cloudflare.Reconciliation.Enabled {
+		t.Fatalf("sample enables Cloudflare integrations unexpectedly: %+v", cfg.Cloudflare)
+	}
+	if cfg.Cloudflare.Reconciliation.DryRun == nil || !*cfg.Cloudflare.Reconciliation.DryRun {
+		t.Fatalf("sample Cloudflare reconciliation must remain dry-run by default: %+v", cfg.Cloudflare.Reconciliation)
+	}
 }

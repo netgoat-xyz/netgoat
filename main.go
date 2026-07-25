@@ -131,6 +131,26 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to configure TLS")
 	}
+	cloudflareAccess, err := configureCloudflareAccess(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to configure Cloudflare Access")
+	}
+	if _, err := cloudflareReconciliationPlanFromConfig(cfg); err != nil {
+		log.Fatal().Err(err).Msg("Invalid Cloudflare reconciliation configuration")
+	}
+	if cfg.Cloudflare.Reconciliation.Enabled {
+		reconciliationContext, cancelReconciliation := context.WithTimeout(context.Background(), cloudflareReconciliationDeadline)
+		reconciliationResults, reconcileErr := reconcileCloudflare(reconciliationContext, cfg)
+		cancelReconciliation()
+		for _, result := range reconciliationResults {
+			log.Info().Bool("dry_run", result.DryRun).Str("method", result.Method).Str("path", result.Path).Int("status", result.StatusCode).Msg("Cloudflare reconciliation operation completed")
+		}
+		if reconcileErr != nil {
+			log.Error().Err(reconcileErr).Msg("Cloudflare startup reconciliation failed; proxy will continue serving")
+		} else {
+			log.Info().Int("operations", len(reconciliationResults)).Msg("Cloudflare startup reconciliation completed")
+		}
+	}
 
 	if backupEvery := cfg.DatabaseBackupIntervalSeconds(); backupEvery > 0 {
 		startDatabaseBackupLoop(db, standbyPath, time.Duration(backupEvery)*time.Second)
@@ -757,6 +777,10 @@ func main() {
 	})
 
 	server := newProxyHTTPServer()
+	if cloudflareAccess != nil {
+		server.Handler = cloudflareAccess.Middleware(http.DefaultServeMux)
+		log.Info().Msg("Cloudflare Access JWT enforcement enabled")
+	}
 	var acmeServer *http.Server
 	if tlsManager != nil {
 		server.TLSConfig = tlsManager.TLSConfig()
