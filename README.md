@@ -5,7 +5,10 @@
 NetGoat is a self-hosted reverse proxy and traffic-policy agent written in Go. It can run from a local YAML configuration, consume snapshots from the companion control plane, and continue serving the last known-good configuration during an outage.
 
 > [!WARNING]
-> NetGoat is active alpha software. Review the sample configuration, use strong bootstrap credentials, and place administrative services behind TLS before exposing a deployment to the internet.
+> NetGoat is active alpha software. The shipped configuration contains no
+> routes. Review every upstream, use strong bootstrap credentials, and place
+> administrative services behind authenticated TLS before exposing a
+> deployment to the internet.
 
 ## Feature status
 
@@ -38,7 +41,8 @@ Requirements:
 - Go 1.25 or newer
 - one or more reachable HTTP upstreams
 
-Clone the repository, edit the sample `routes` in `config.yml`, then run:
+Clone the repository, add the routes you intend to expose to `config.yml`,
+then run:
 
 ```sh
 go test ./...
@@ -64,6 +68,13 @@ Then send a request with the configured host:
 ```sh
 curl -H 'Host: app.localhost' http://127.0.0.1:8080/
 ```
+
+The listener accepts connections on all interfaces. A route to a loopback or
+private-network target makes that target reachable through NetGoat, so keep
+the listener behind an appropriate network boundary or enable authentication
+before adding such a route. The shipped `routes: {}` is intentionally empty:
+a fresh default deployment returns `404` for every Host instead of proxying to
+a local service.
 
 If the control plane is unavailable, NetGoat uses local routes and then the last valid recovery snapshot. Configure `api.url` as an empty string for a fully offline deployment.
 

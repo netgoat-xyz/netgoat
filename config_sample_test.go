@@ -20,6 +20,16 @@ func TestSampleConfigUsesSafeOfflineDefaults(t *testing.T) {
 	if len(cfg.TrustedProxies) != 0 {
 		t.Fatalf("sample trusts forwarding peers by default: %v", cfg.TrustedProxies)
 	}
+	if cfg.Routes == nil {
+		t.Fatal("sample must explicitly configure an empty route set")
+	}
+	if len(cfg.Routes) != 0 {
+		t.Fatalf("sample exposes upstream routes by default: %+v", cfg.Routes)
+	}
+	snapshot := localConfigSnapshot(cfg)
+	if !snapshot.RoutesConfigured || len(snapshot.Routes) != 0 {
+		t.Fatalf("sample must authoritatively clear persisted routes: %+v", snapshot)
+	}
 	if cfg.Cloudflare.Access.Enabled || cfg.Cloudflare.Reconciliation.Enabled {
 		t.Fatalf("sample enables Cloudflare integrations unexpectedly: %+v", cfg.Cloudflare)
 	}

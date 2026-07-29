@@ -191,14 +191,11 @@ koda_2:
 # - Connection attempts are retried with exponential backoff
 # - All route, WAF, and user configurations remain functional during outages
 
-routes:
-  localhost:
-    type: "domain"
-    targets:
-      - url: "http://127.0.0.1:8001"
-        health_check: "http"
-      - url: "http://127.0.0.1:8002"
-        health_check: "http"
+# No upstream is reachable from the shipped configuration. Add routes only
+# after deciding how clients will authenticate and which networks may reach
+# the :8080 listener. In particular, a route to 127.0.0.1 exposes that
+# loopback-only service to every client that can reach NetGoat.
+routes: {}
 health:
   interval_seconds: 10
   timeout_seconds: 3
