@@ -6,7 +6,7 @@ Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Report v
 
 ## Development setup
 
-1. Install Go 1.24 or newer and a C toolchain for the SQLite driver.
+1. Install Go 1.25 or newer and a C toolchain for the SQLite driver.
 2. Fork and clone the repository.
 3. Create a focused branch such as `fix/cache-revalidation` or `feat/routing-policy`.
 4. Keep secrets, generated databases, recovery snapshots, model files, and telemetry identifiers out of Git.
