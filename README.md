@@ -49,9 +49,11 @@ go test ./...
 go run .
 ```
 
-The default listener is `:8080`. A minimal local route looks like this:
+The sample listener is `127.0.0.1:8080` (plaintext HTTP on loopback). A
+minimal local route looks like this:
 
 ```yaml
+listen: "127.0.0.1:8080"
 auth:
   enabled: false
 
@@ -69,12 +71,14 @@ Then send a request with the configured host:
 curl -H 'Host: app.localhost' http://127.0.0.1:8080/
 ```
 
-The listener accepts connections on all interfaces. A route to a loopback or
-private-network target makes that target reachable through NetGoat, so keep
-the listener behind an appropriate network boundary or enable authentication
-before adding such a route. The shipped `routes: {}` is intentionally empty:
-a fresh default deployment returns `404` for every Host instead of proxying to
-a local service.
+A missing `config.yml` is fatal. Plaintext HTTP on a public address
+(`:8080`, `0.0.0.0`, `::`, or any non-loopback bind) is refused at startup
+unless `allow_insecure_public_http: true` is set. Enable TLS for public
+traffic. A route to a loopback or private-network target makes that target
+reachable through NetGoat, so keep a public listener behind TLS or enable
+authentication before adding such a route. The shipped `routes: {}` is
+intentionally empty: a fresh default deployment returns `404` for every Host
+instead of proxying to a local service.
 
 If the control plane is unavailable, NetGoat uses local routes and then the last valid recovery snapshot. Configure `api.url` as an empty string for a fully offline deployment.
 
@@ -96,6 +100,8 @@ Then set `auth.enabled: true`. Bootstrap credentials are used only when the user
 - `health`: probe enablement, interval, timeout, and default path.
 - `cache`, `rate_limit`, `request_queue`, `bandwidth`: bounded global traffic defaults; cache and bandwidth can be overridden per route.
 - `metrics`: enables JSON at the configured path and Prometheus at `<path>.prom`.
+- `listen`: plaintext HTTP bind address when TLS is off; the sample uses loopback.
+- `allow_insecure_public_http`: explicit opt-in for plaintext HTTP on a public address.
 - `ssl`: static fallback TLS, per-domain certificate selection, and optional ACME issuance/renewal.
 - `dynamic_rules`: bounded administrator-managed TypeScript/JavaScript request decisions.
 - `plugins`: restart-only catalog selections for middleware compiled into this exact agent build; `sha256` is the release descriptor fingerprint, not a downloaded artifact hash.

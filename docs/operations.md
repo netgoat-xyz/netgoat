@@ -33,6 +33,11 @@ freshness safeguards.
 
 ## TLS and ACME
 
+Plaintext HTTP is allowed only on loopback (`127.0.0.1`, `::1`, `localhost`)
+or when `allow_insecure_public_http: true` is set. A public bind without TLS
+is refused at startup. Set `listen` to the desired HTTP address; an omitted
+value still means `:8080` and therefore requires the insecure flag or TLS.
+
 When `ssl.enabled` is true, NetGoat selects certificates by SNI in this order:
 an exact streamed or local domain certificate, a one-label wildcard certificate,
 an explicitly configured ACME certificate, then the static certificate pair.

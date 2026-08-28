@@ -16,7 +16,14 @@ type Config struct {
 	// TrustedProxies contains only socket peers that may supply Forwarded or
 	// X-Forwarded-For client address chains. Empty is the secure default.
 	TrustedProxies []string `yaml:"trusted_proxies"`
-	Auth           struct {
+	// Listen is the plaintext HTTP bind address used when SSL is disabled.
+	// An empty value defaults to ":8080". Public (non-loopback) plaintext
+	// binds are rejected unless AllowInsecurePublicHTTP is set.
+	Listen string `yaml:"listen"`
+	// AllowInsecurePublicHTTP is the explicit operator opt-in for plaintext
+	// HTTP on a non-loopback address. It is never implied by other settings.
+	AllowInsecurePublicHTTP bool `yaml:"allow_insecure_public_http"`
+	Auth                    struct {
 		Enabled       bool   `yaml:"enabled"`
 		SessionSecret string `yaml:"session_secret"`
 	} `yaml:"auth"`

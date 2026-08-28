@@ -18,7 +18,8 @@ Reports about directly exploitable dependency behavior, unsafe defaults, authent
 
 ## Deployment guidance
 
-- Use TLS for public traffic and keep control-plane or telemetry administration on loopback or behind an authenticated TLS proxy.
+- A missing `config.yml` is fatal. Plaintext HTTP is limited to loopback unless `allow_insecure_public_http` is set; use TLS for public traffic.
+- Keep control-plane or telemetry administration on loopback or behind an authenticated TLS proxy.
 - Do not use placeholder secrets. Bootstrap users explicitly with a unique password of at least 12 characters.
 - Configure `trusted_proxies` narrowly; forwarding headers are ignored by default.
 - Keep SQLite databases, recovery snapshots, `.env`, private keys, telemetry IDs, and AI model artifacts out of source control.
