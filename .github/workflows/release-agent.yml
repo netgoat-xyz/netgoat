@@ -51,8 +51,11 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential
 
+      - name: Vet
+        run: go vet ./...
+
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
   build:
     name: Build ${{ matrix.target }}
