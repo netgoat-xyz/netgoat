@@ -567,6 +567,28 @@ api:
 	}
 }
 
+func TestLoadParsesListenAndInsecureFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yml")
+	configContent := `
+listen: "127.0.0.1:8080"
+allow_insecure_public_http: true
+`
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+	cfg, err := Load(configFile)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Listen != "127.0.0.1:8080" {
+		t.Fatalf("Listen = %q", cfg.Listen)
+	}
+	if !cfg.AllowInsecurePublicHTTP {
+		t.Fatal("AllowInsecurePublicHTTP should be true")
+	}
+}
+
 func TestConfigStruct(t *testing.T) {
 	cfg := &Config{}
 
@@ -584,6 +606,12 @@ func TestConfigStruct(t *testing.T) {
 	}
 	if cfg.SSL.Enabled {
 		t.Error("SSL.Enabled should default to false")
+	}
+	if cfg.AllowInsecurePublicHTTP {
+		t.Error("AllowInsecurePublicHTTP should default to false")
+	}
+	if cfg.Listen != "" {
+		t.Error("Listen should default to empty")
 	}
 }
 

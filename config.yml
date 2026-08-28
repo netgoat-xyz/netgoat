@@ -4,6 +4,11 @@ honeypot: true
 # Only these direct proxy IPs/CIDRs may supply client forwarding headers.
 # trusted_proxies: ["127.0.0.1", "10.0.0.0/8"]
 trusted_proxies: []
+# Plaintext HTTP is bound to loopback so copying this file cannot become a
+# public unauthenticated reverse proxy. A non-loopback address without TLS
+# is refused unless allow_insecure_public_http is set.
+listen: "127.0.0.1:8080"
+allow_insecure_public_http: false
 auth:
   enabled: false
 ssl:
@@ -193,7 +198,7 @@ koda_2:
 
 # No upstream is reachable from the shipped configuration. Add routes only
 # after deciding how clients will authenticate and which networks may reach
-# the :8080 listener. In particular, a route to 127.0.0.1 exposes that
+# the listen address. In particular, a route to 127.0.0.1 exposes that
 # loopback-only service to every client that can reach NetGoat.
 routes: {}
 health:

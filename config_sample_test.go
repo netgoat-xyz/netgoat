@@ -39,4 +39,16 @@ func TestSampleConfigUsesSafeOfflineDefaults(t *testing.T) {
 	if cfg.Cloudflare.Reconciliation.DryRun == nil || !*cfg.Cloudflare.Reconciliation.DryRun {
 		t.Fatalf("sample Cloudflare reconciliation must remain dry-run by default: %+v", cfg.Cloudflare.Reconciliation)
 	}
+	if cfg.AllowInsecurePublicHTTP {
+		t.Fatal("sample must not enable the public plaintext HTTP escape hatch")
+	}
+	if cfg.SSL.Enabled {
+		t.Fatal("sample should keep TLS off when binding loopback HTTP")
+	}
+	if got := cfg.HTTPListenAddr(); got != "127.0.0.1:8080" {
+		t.Fatalf("sample listen = %q, want loopback 127.0.0.1:8080", got)
+	}
+	if err := cfg.ValidateListenSafety(); err != nil {
+		t.Fatalf("sample must be safe to start: %v", err)
+	}
 }

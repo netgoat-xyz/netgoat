@@ -66,13 +66,11 @@ func main() {
 		log.Warn().Msg("DiamondKey not set in environment")
 	}
 
-	cfg, err := config.Load("config.yml")
+	cfg, err := loadRequiredConfig("config.yml")
 	if err != nil {
-		log.Warn().Err(err).Msg("Could not read config.yml, using defaults")
-		cfg = &config.Config{}
-	} else {
-		log.Info().Bool("debug_logs", cfg.DebugLogs).Bool("honeypot", cfg.Honeypot).Bool("auth_enabled", cfg.Auth.Enabled).Msg("Loaded configuration")
+		log.Fatal().Err(err).Msg("Failed to load startup configuration")
 	}
+	log.Info().Bool("debug_logs", cfg.DebugLogs).Bool("honeypot", cfg.Honeypot).Bool("auth_enabled", cfg.Auth.Enabled).Msg("Loaded configuration")
 	clientAddressResolver, err = clientip.New(cfg.TrustedProxies)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Invalid trusted proxy configuration")
@@ -855,14 +853,27 @@ func main() {
 		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTPS)")
 		serveErr = server.ListenAndServeTLS("", "")
 	} else {
-		port := ":8080"
-		server.Addr = port
-		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTP)")
+		addr := cfg.HTTPListenAddr()
+		server.Addr = addr
+		log.Info().Str("addr", addr).Msg("Reverse proxy listening (HTTP)")
 		serveErr = server.ListenAndServe()
 	}
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		log.Fatal().Err(serveErr).Msg("Server failed")
 	}
+}
+
+// loadRequiredConfig refuses to start without a readable config file and
+// rejects public plaintext HTTP unless the operator has opted in.
+func loadRequiredConfig(path string) (*config.Config, error) {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	if err := cfg.ValidateListenSafety(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func newProxyHTTPServer() *http.Server {
