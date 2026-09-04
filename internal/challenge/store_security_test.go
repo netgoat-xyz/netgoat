@@ -13,7 +13,7 @@ func TestStoreDoesNotStartPerStoreGoroutines(t *testing.T) {
 	before := runtime.NumGoroutine()
 	stores := make([]*Store, 512)
 	for i := range stores {
-		stores[i] = NewStore()
+		stores[i] = NewStore(WithSecret(testSecret), WithDifficulty(8, 8, 4))
 	}
 	runtime.Gosched()
 	after := runtime.NumGoroutine()
@@ -25,15 +25,10 @@ func TestStoreDoesNotStartPerStoreGoroutines(t *testing.T) {
 }
 
 func TestStoreBoundsOutstandingChallenges(t *testing.T) {
-	store := newStore(storeConfig{maxChallenges: 3})
+	store := testStore(storeConfig{maxChallenges: 3})
 	created := make([]*Challenge, 0, 4)
 	for i := 0; i < 4; i++ {
-		created = append(created, store.Create(
-			fmt.Sprintf("192.0.2.%d", i),
-			"test agent",
-			60,
-			ChallengeClick,
-		))
+		created = append(created, store.Create(terminated(fmt.Sprintf("session-%d", i))))
 	}
 
 	if got := challengeCount(store); got != 3 {
@@ -50,34 +45,34 @@ func TestStoreBoundsOutstandingChallenges(t *testing.T) {
 }
 
 func TestStoreBoundsVerifiedBindingsAndRefreshesRecency(t *testing.T) {
-	store := newStore(storeConfig{maxVerified: 2})
-	verifyBinding(t, store, "192.0.2.1")
-	verifyBinding(t, store, "192.0.2.2")
-	verifyBinding(t, store, "192.0.2.1")
-	verifyBinding(t, store, "192.0.2.3")
+	store := testStore(storeConfig{maxVerified: 2})
+	verifyBinding(t, store, "session-1")
+	verifyBinding(t, store, "session-2")
+	verifyBinding(t, store, "session-1")
+	verifyBinding(t, store, "session-3")
 
 	if got := verifiedCount(store); got != 2 {
 		t.Fatalf("verified count = %d, want 2", got)
 	}
-	if store.IsVerified("192.0.2.2") {
+	if store.IsVerified(terminated("session-2")) {
 		t.Fatal("least-recently verified binding survived capacity eviction")
 	}
-	if !store.IsVerified("192.0.2.1") || !store.IsVerified("192.0.2.3") {
+	if !store.IsVerified(terminated("session-1")) || !store.IsVerified(terminated("session-3")) {
 		t.Fatal("recently verified bindings were unexpectedly evicted")
 	}
 }
 
 func TestStoreCleansExpirationOpportunistically(t *testing.T) {
 	now := time.Date(2026, time.July, 20, 0, 0, 0, 0, time.UTC)
-	store := newStore(storeConfig{now: func() time.Time { return now }})
-	pending := store.Create("192.0.2.1", "test agent", 40, ChallengeText)
-	verifyBinding(t, store, "192.0.2.2")
+	store := testStore(storeConfig{now: func() time.Time { return now }})
+	pending := store.Create(terminated("session-1"))
+	verifyBinding(t, store, "session-2")
 
 	now = now.Add(defaultVerificationTTL)
 	if _, ok := store.Get(pending.ID); ok {
 		t.Fatal("expired challenge remained readable")
 	}
-	if store.IsVerified("192.0.2.2") {
+	if store.IsVerified(terminated("session-2")) {
 		t.Fatal("expired verification remained valid")
 	}
 	if got := challengeCount(store); got != 0 {
@@ -89,11 +84,12 @@ func TestStoreCleansExpirationOpportunistically(t *testing.T) {
 }
 
 func TestStoreLimitsFailedAttemptsForMatchingBinding(t *testing.T) {
-	store := newStore(storeConfig{maxFailedAttempts: 3})
-	challenge := store.Create("192.0.2.1", "test agent", 40, ChallengeText)
+	store := testStore(storeConfig{maxFailedAttempts: 3})
+	binding := terminated("session-1")
+	challenge := store.Create(binding)
 
 	for i := 0; i < 10; i++ {
-		if store.Verify(challenge.ID, "wrong", "192.0.2.99") {
+		if store.Verify(terminated("session-other"), challenge.ID, "1") {
 			t.Fatal("wrong binding verified challenge")
 		}
 	}
@@ -102,14 +98,14 @@ func TestStoreLimitsFailedAttemptsForMatchingBinding(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		if store.Verify(challenge.ID, "wrong", "192.0.2.1") {
-			t.Fatal("wrong answer verified challenge")
+		if store.Verify(binding, challenge.ID, "nope") {
+			t.Fatal("wrong counter verified challenge")
 		}
 		if _, ok := store.Get(challenge.ID); !ok {
 			t.Fatalf("challenge removed after only %d matching failures", i+1)
 		}
 	}
-	if store.Verify(challenge.ID, strings.Repeat("x", maxAnswerBytes+1), "192.0.2.1") {
+	if store.Verify(binding, challenge.ID, strings.Repeat("9", maxAnswerBytes+1)) {
 		t.Fatal("oversized answer verified challenge")
 	}
 	if _, ok := store.Get(challenge.ID); ok {
@@ -118,40 +114,35 @@ func TestStoreLimitsFailedAttemptsForMatchingBinding(t *testing.T) {
 }
 
 func TestStoreReturnsBoundedSnapshots(t *testing.T) {
-	store := NewStore()
-	binding := strings.Repeat("b", maxStoredBindingBytes*4)
-	userAgent := strings.Repeat("u", maxStoredUserAgentBytes*4)
-	challenge := store.Create(binding, userAgent, 40, ChallengeText)
+	store := testStore(storeConfig{})
+	binding := SessionBinding{
+		SessionID:  strings.Repeat("s", maxStoredBindingBytes*4),
+		Terminated: true,
+		Subject:    strings.Repeat("u", maxStoredSubjectBytes*4),
+	}
+	challenge := store.Create(binding)
 	originalID := challenge.ID
-	originalAnswer := challenge.Answer
+	originalMAC := challenge.MAC
 
-	if len(challenge.IP) != maxStoredBindingBytes {
-		t.Fatalf("stored binding length = %d, want %d", len(challenge.IP), maxStoredBindingBytes)
-	}
-	if len(challenge.UserAgent) != maxStoredUserAgentBytes {
-		t.Fatalf("stored user-agent length = %d, want %d", len(challenge.UserAgent), maxStoredUserAgentBytes)
-	}
-
-	challenge.Answer = "tampered"
+	challenge.MAC = "tampered"
 	challenge.ExpiresAt = time.Time{}
-	challenge.IP = "tampered"
+	challenge.Nonce = "tampered"
 	retrieved, ok := store.Get(originalID)
 	if !ok {
 		t.Fatal("mutating Create result changed stored challenge")
 	}
-	if retrieved.Answer != originalAnswer || retrieved.IP == "tampered" {
+	if retrieved.MAC != originalMAC || retrieved.Nonce == "tampered" {
 		t.Fatalf("stored challenge was mutated through Create result: %+v", retrieved)
 	}
 
-	retrieved.Answer = "tampered again"
-	if !store.Verify(originalID, originalAnswer, binding) {
-		t.Fatal("mutating Get result changed stored answer or full binding match")
+	retrieved.MAC = "tampered again"
+	fresh, ok := store.Get(originalID)
+	if !ok {
+		t.Fatal("Get after mutation lost the puzzle")
 	}
-
-	customType := ChallengeType(strings.Repeat("t", maxStoredChallengeTypeBytes*4))
-	custom := store.Create("192.0.2.1", "test agent", 0, customType)
-	if len(custom.Type) != maxStoredChallengeTypeBytes {
-		t.Fatalf("stored challenge type length = %d, want %d", len(custom.Type), maxStoredChallengeTypeBytes)
+	counter := solveChallenge(t, fresh)
+	if !store.Verify(binding, originalID, counter) {
+		t.Fatal("mutating Get result changed stored puzzle or session match")
 	}
 }
 
@@ -162,9 +153,11 @@ func TestStoreConcurrentOperationsRemainBounded(t *testing.T) {
 		workers       = 24
 		iterations    = 150
 	)
-	store := newStore(storeConfig{
-		maxChallenges: maxChallenges,
-		maxVerified:   maxVerified,
+	store := testStore(storeConfig{
+		maxChallenges:  maxChallenges,
+		maxVerified:    maxVerified,
+		baseDifficulty: 4,
+		maxDifficulty:  4,
 	})
 
 	var wg sync.WaitGroup
@@ -173,13 +166,16 @@ func TestStoreConcurrentOperationsRemainBounded(t *testing.T) {
 		go func(worker int) {
 			defer wg.Done()
 			for iteration := 0; iteration < iterations; iteration++ {
-				binding := fmt.Sprintf("198.51.%d.%d", worker, iteration)
-				challenge := store.Create(binding, "concurrent agent", 40, ChallengeText)
+				binding := terminated(fmt.Sprintf("session-%d-%d", worker, iteration))
+				challenge := store.Create(binding)
+				if challenge == nil {
+					continue
+				}
 				if iteration%3 == 0 {
 					_, _ = store.Get(challenge.ID)
-					_ = store.Verify(challenge.ID, "wrong", binding)
+					_ = store.Verify(binding, challenge.ID, "1")
 				} else {
-					_ = store.Verify(challenge.ID, challenge.Answer, binding)
+					_ = store.Verify(binding, challenge.ID, solveQuiet(challenge))
 					_ = store.IsVerified(binding)
 				}
 			}
@@ -203,12 +199,29 @@ func TestStoreConcurrentOperationsRemainBounded(t *testing.T) {
 	}
 }
 
-func verifyBinding(t *testing.T, store *Store, binding string) {
+func verifyBinding(t *testing.T, store *Store, sessionID string) {
 	t.Helper()
-	challenge := store.Create(binding, "test agent", 40, ChallengeText)
-	if !store.Verify(challenge.ID, challenge.Answer, binding) {
-		t.Fatalf("failed to verify binding %q", binding)
+	binding := terminated(sessionID)
+	challenge := store.Create(binding)
+	if challenge == nil {
+		t.Fatal("Create returned nil")
 	}
+	if !store.Verify(binding, challenge.ID, solveChallenge(t, challenge)) {
+		t.Fatalf("failed to verify session %q", sessionID)
+	}
+}
+
+func solveQuiet(ch *Challenge) string {
+	mac, ok := decodeMAC(ch.MAC)
+	if !ok {
+		return "0"
+	}
+	for counter := uint64(0); counter < 1<<20; counter++ {
+		if leadingZeroBits(powDigest(mac, counter)) >= ch.Difficulty {
+			return strconvFormat(counter)
+		}
+	}
+	return "0"
 }
 
 func challengeCount(store *Store) int {

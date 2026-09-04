@@ -26,10 +26,10 @@ returns `404` for every Host instead of proxying to a local service.
 | Domain and path routing | Available | Exact, wildcard, regex, and longest-prefix path routes; local routes can be overridden by streamed routes. |
 | Load balancing and failover | Available | Round-robin pools, bounded concurrent health checks, and safe-method retry/failover. |
 | WAF rules | Available | Precompiled expression rules with priorities, `BLOCK`/`ALLOW` actions, and request host/method/path/query/header context. |
-| Traffic controls | Available | Global rate limiting, request queueing, bandwidth throttling, honeypot handling, and dynamic challenges. Today's challenges are **text / click / slider** HTML puzzles in `internal/challenge`, scored in part from User-Agent and bound to IP — not PoW, not Web Bot Auth. |
+| Traffic controls | Available | Global rate limiting, request queueing, bandwidth throttling, honeypot handling, and session-bound PoW with pinned Web Bot Auth skip. Challenge is JSON (not text/click/slider). Difficulty from load + `stack_class` mismatch hook, not User-Agent. Verify is bound to the terminated TLS session, not IP. |
 | Shared response cache | Available | Bounded LRU/TTL cache for explicitly public responses, with HTTP freshness and revalidation safeguards. |
 | Local authentication | Available | Cookie or Basic authentication, per-user zero-trust challenge flags, and explicit secure bootstrap users. |
-| TLS termination | Available | Static fallback, streamed per-domain/wildcard certificates, and atomic SNI selection. Termination is required for the planned fingerprint and session-bound PoW; it does not emit JA4 today. |
+| TLS termination | Available | Static fallback, streamed per-domain/wildcard certificates, and atomic SNI selection. Termination is required for fingerprint v1 and for session-bound PoW. PoW is live when this agent terminates TLS; JA4 / [#113](https://github.com/netgoat-xyz/netgoat/issues/113) is not emitted. |
 | WebSocket proxying | Available | Upgrade connections are preserved by Go's reverse proxy. |
 | Metrics | Available | JSON and Prometheus endpoints for traffic, cache, block, latency, and proxy-error counters. |
 | AI request classifiers | Optional | Local GoatAI, Koda-WAF, and Koda-2 workers; model files and Python dependencies are required only when enabled. |
@@ -59,7 +59,6 @@ rows as implementation claims.
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Stack fingerprint v1 | Planned | JA4 + Akamai-style H2 `SETTINGS` / `WINDOW_UPDATE` / `PRIORITY` / pseudo-header order + ALPN order, **only when this agent terminates TLS**. Opaque `stack_class` for bot clustering — not a user, hardware ID, or canvas hash. No JA4H. HTTP/3 / QUIC is a documented hole. Spec: [#113](https://github.com/netgoat-xyz/netgoat/issues/113). |
-| Challenge replace | Planned | Delete text / click / slider. Skip = pinned `Signature-Agent` JWKS + RFC 9421 web-bot-auth only. Cost = tiny session-bound PoW HMAC'd to the terminated TLS session with expiry in the MAC. Difficulty from load + `stack_class` mismatch, not User-Agent. JSON challenge, not DOM puzzles. Spec: [#114](https://github.com/netgoat-xyz/netgoat/issues/114). |
 | VSA (Virtual System Administrator) | Planned | Out-of-band autonomous defense operator (not a hot-path classifier, not Kaseya VSA). Open: [#98](https://github.com/netgoat-xyz/netgoat/issues/98). |
 
 **Honesty**
@@ -70,26 +69,23 @@ rows as implementation claims.
   front, this agent must not fingerprint that ClientHello and call it the
   browser.
 - Turnstile / reCAPTCHA are **not** NetGoat features.
-- Session-bound PoW and pinned Web Bot Auth skip are **not live**.
+- Session-bound PoW and pinned Web Bot Auth skip **are live** when this
+  agent terminates TLS. The pin list may be empty (skip lane empty until
+  operators seed https `pinned_directories`). Unsigned agents take the
+  PoW lane.
 
 **Gaps**
 
-- No terminate (plaintext, pass-through, or another terminator in front)
-  → no fingerprint and no PoW. Same rule as [#113](https://github.com/netgoat-xyz/netgoat/issues/113)
-  and [#114](https://github.com/netgoat-xyz/netgoat/issues/114).
-- Web Bot Auth registry is empty until operators seed a pinned allowlist.
+- No terminate (plaintext, pass-through, or Cloudflare in front)
+  → no fingerprint and no PoW. Same rule as [#113](https://github.com/netgoat-xyz/netgoat/issues/113).
+- Web Bot Auth registry is empty until operators seed a pinned https
+  allowlist.
 - HTTP/3 / QUIC clients will not appear in fingerprint v1.
 - Unsigned LLM browsers / `python` / `go-http-client` / curl take the
-  **PoW** lane once [#114](https://github.com/netgoat-xyz/netgoat/issues/114)
-  ships — not a magic skip.
+  **PoW** lane — not a magic skip.
 
 **Hardening next** (docs only; not this change)
 
-- Bind challenges to session, not IP (called out in
-  [#114](https://github.com/netgoat-xyz/netgoat/issues/114); today's store
-  keys on IP).
-- Stop User-Agent bot scoring that flags the agents we want through
-  (`bot` / `python` / `go-http-client` in `CalculateSuspicion`).
 - Keep CI race + vet on PRs and `main` as the verification baseline.
 
 ## Quick start
@@ -161,13 +157,14 @@ Then set `auth.enabled: true`. Bootstrap credentials are used only when the user
 - `listen`: plaintext HTTP bind address when TLS is off; the sample uses loopback.
 - `allow_insecure_public_http`: explicit opt-in for plaintext HTTP on a public address.
 - `ssl`: static fallback TLS, per-domain certificate selection, and optional ACME issuance/renewal.
+- `bot_auth`: pinned https Web Bot Auth directory allowlist; empty pins fail open to session-bound PoW.
 - `dynamic_rules`: bounded administrator-managed TypeScript/JavaScript request decisions.
 - `plugins`: restart-only catalog selections for middleware compiled into this exact agent build; `sha256` is the release descriptor fingerprint, not a downloaded artifact hash.
 - `cloudflare`: optional Access JWT enforcement and explicit DNS/tunnel startup reconciliation. Reconciliation defaults to dry-run.
 - `telemetry`: disabled by default; endpoint, shared ingestion key, and heartbeat interval.
 - `anomaly`, `koda_waf`, `koda_2`: optional local inference workers.
 
-Secrets may also be supplied through the environment. `API_STREAM_KEY` overrides the YAML control-plane key, `NETGOAT_ACME_CACHE_KEY` encrypts ACME state, and `CLOUDFLARE_API_TOKEN` is required for Cloudflare reconciliation. Do not commit `.env`, private keys, model files, databases, recovery snapshots, or telemetry identifiers.
+Secrets may also be supplied through the environment. `API_STREAM_KEY` overrides the YAML control-plane key, `NETGOAT_ACME_CACHE_KEY` encrypts ACME state, `CLOUDFLARE_API_TOKEN` is required for Cloudflare reconciliation, and `NETGOAT_CHALLENGE_SECRET` (or `DiamondKey`) binds PoW commitments. Do not commit `.env`, private keys, model files, databases, recovery snapshots, or telemetry identifiers.
 
 See the [operations guide](docs/operations.md) for policy precedence, ACME setup, and dynamic-rule safety boundaries; the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions; and the [developer plugin catalog guide](docs/developer-plugins.md) for the restart-time selection and publisher trust boundary.
 

@@ -27,7 +27,11 @@ type Config struct {
 		Enabled       bool   `yaml:"enabled"`
 		SessionSecret string `yaml:"session_secret"`
 	} `yaml:"auth"`
-	SSL struct {
+	// BotAuth is the pinned Web Bot Auth skip lane. Empty pinned_directories
+	// means the verifier is present but never skips; unsigned agents pay PoW.
+	// Operator pins should be https directory URLs.
+	BotAuth BotAuthConfig `yaml:"bot_auth"`
+	SSL     struct {
 		Enabled  bool   `yaml:"enabled"`
 		CertFile string `yaml:"cert_file"`
 		KeyFile  string `yaml:"key_file"`
@@ -176,6 +180,16 @@ type Config struct {
 	// Routes are local fallback routes keyed by domain, wildcard/regex pattern,
 	// or path prefix. Streamed routes with the same key take precedence.
 	Routes map[string]Route `yaml:"routes"`
+}
+
+// BotAuthConfig is the YAML-safe Web Bot Auth allowlist. Directory URLs are
+// operator-pinned https JWKS locations; the agent never fetches an arbitrary
+// Signature-Agent URL. The PoW HMAC key is not stored here: set
+// NETGOAT_CHALLENGE_SECRET or DiamondKey in the environment.
+type BotAuthConfig struct {
+	Enabled           bool     `yaml:"enabled"`
+	PinnedDirectories []string `yaml:"pinned_directories"`
+	JWKSCacheSeconds  int      `yaml:"jwks_cache_seconds"`
 }
 
 type Route struct {

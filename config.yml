@@ -11,6 +11,15 @@ listen: "127.0.0.1:8080"
 allow_insecure_public_http: false
 auth:
   enabled: false
+# Pinned Web Bot Auth skip lane. Empty pins fail open to session-bound PoW.
+# HMAC key: NETGOAT_CHALLENGE_SECRET or DiamondKey. If neither is set, an
+# ephemeral process key is used and the verified set is not kept across restarts.
+# pinned_directories must be https JWKS URLs; the agent never fetches an
+# unlisted Signature-Agent location.
+bot_auth:
+  enabled: true
+  pinned_directories: []  # e.g. ["https://example.invalid/.well-known/web-bot-auth"]
+  jwks_cache_seconds: 300
 ssl:
   enabled: false
   cert_file: "cert.pem"
