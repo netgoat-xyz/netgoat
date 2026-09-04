@@ -49,3 +49,7 @@ docs(readme): distinguish shipped features from roadmap
 Explain why the change is needed, its security or performance impact, and how it was verified. Link the relevant issue or discussion when one exists. Maintainers may ask that a large feature be discussed before implementation so its configuration and compatibility surface can be agreed first.
 
 By contributing, you agree that your contribution is licensed under this repository's [AGPL-3.0 license](LICENSE).
+
+## Releases
+
+Tagging, changelog discipline, and the alpha→beta gate are in [docs/release.md](docs/release.md). If a change is operator-visible, add a line under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Maintainers cut `vX.Y.Z[-prerelease]` tags so the release-agent workflow runs; do not push tags from a drive-by docs change.

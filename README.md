@@ -5,7 +5,8 @@
 NetGoat is a self-hosted reverse proxy and traffic-policy agent written in Go. It can run from a local YAML configuration, consume snapshots from the companion control plane, and continue serving the last known-good configuration during an outage.
 
 > [!WARNING]
-> NetGoat is active alpha software (`v0.1.0-alpha.1`). The shipped
+> NetGoat is active alpha software (`v0.1.0-alpha.1`; git tags going
+> forward are `v*`, see [docs/release.md](docs/release.md)). The shipped
 > configuration contains no routes. Review every upstream, use strong
 > bootstrap credentials, and place administrative services behind
 > authenticated TLS before exposing a deployment to the internet.
@@ -87,6 +88,10 @@ rows as implementation claims.
 **Hardening next** (docs only; not this change)
 
 - Keep CI race + vet on PRs and `main` as the verification baseline.
+- Leave alpha only when the written gate in
+  [docs/release.md](docs/release.md) is checked off. Beta does not
+  require Cloudflare parity, VSA, H3/QUIC fingerprint, default-on AI
+  classifiers, or a control-plane MVP.
 
 ## Quick start
 
@@ -166,7 +171,7 @@ Then set `auth.enabled: true`. Bootstrap credentials are used only when the user
 
 Secrets may also be supplied through the environment. `API_STREAM_KEY` overrides the YAML control-plane key, `NETGOAT_ACME_CACHE_KEY` encrypts ACME state, `CLOUDFLARE_API_TOKEN` is required for Cloudflare reconciliation, and `NETGOAT_CHALLENGE_SECRET` (or `DiamondKey`) binds PoW commitments. Do not commit `.env`, private keys, model files, databases, recovery snapshots, or telemetry identifiers.
 
-See the [operations guide](docs/operations.md) for policy precedence, ACME setup, and dynamic-rule safety boundaries; the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions; and the [developer plugin catalog guide](docs/developer-plugins.md) for the restart-time selection and publisher trust boundary.
+See the [operations guide](docs/operations.md) for production deploy, metrics scrape, policy precedence, ACME setup, and dynamic-rule safety boundaries; the [release train](docs/release.md) for `v*` tags and the alpha→beta gate; the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions; and the [developer plugin catalog guide](docs/developer-plugins.md) for the restart-time selection and publisher trust boundary.
 
 ## Architecture
 
@@ -198,7 +203,7 @@ Python worker syntax can be checked without installing their model dependencies:
 python3 -m py_compile ai/*.py
 ```
 
-See `CONTRIBUTING.md` for contribution conventions and `SECURITY.md` for private vulnerability reporting.
+See `CONTRIBUTING.md` for contribution conventions, `docs/release.md` for tagging and the alpha→beta gate, `docs/operations.md` for production deploy, and `SECURITY.md` for private vulnerability reporting.
 
 ## Project links
 

@@ -1,5 +1,10 @@
 # NetGoat Agent Release
 
+The public alpha label is `v0.1.0-alpha.1`. Git tags for new cuts are
+`vX.Y.Z` or `vX.Y.Z-<prerelease>` so release CI runs. The historical tag
+`0.0.1-alpha.1` is a legacy name for that same alpha; do not treat it as
+a different product version. See `CHANGELOG.md` and `docs/release.md`.
+
 ## Highlights
 
 - Self-hostable reverse proxy agent for NetGoat deployments.
@@ -17,7 +22,7 @@
 ## Upgrade Notes
 
 - Back up your existing `config.yml` and `database/` directory before replacing the binary.
-- Keep your `API_STREAM_KEY`, `DiamondKey`, and TLS private keys out of release archives and shell history.
+- Keep your `API_STREAM_KEY`, `NETGOAT_CHALLENGE_SECRET` / `DiamondKey`, `NETGOAT_ACME_CACHE_KEY`, and TLS private keys out of release archives and shell history.
 - If Koda WAF or Koda-2 is enabled, confirm the referenced model and Python script paths still match your deployment.
 
 ## Verification
