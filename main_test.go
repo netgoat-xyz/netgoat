@@ -34,7 +34,7 @@ func TestProxyErrorHandlerReturnsBadGatewayOnConnectRefused(t *testing.T) {
 	proxy.Transport = newStableProxyTransport()
 
 	pages := &errorPageStore{}
-	store := challenge.NewStore()
+	store := challenge.NewStore(challenge.WithSecret([]byte("test-secret")), challenge.WithDifficulty(8, 8, 4))
 
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, perr error) {
 		writeError(rw, pages, store, req, http.StatusBadGateway, "Bad Gateway")
@@ -238,14 +238,23 @@ func TestPrepareForwardingHeadersRemovesSpoofedValues(t *testing.T) {
 	}
 }
 
-func TestZeroTrustChallengeBindingSeparatesUsersBehindNAT(t *testing.T) {
-	first := zeroTrustChallengeBinding("203.0.113.8", &auth.AuthResult{Authenticated: true, UserID: 1})
-	second := zeroTrustChallengeBinding("203.0.113.8", &auth.AuthResult{Authenticated: true, UserID: 2})
-	if first == second || first == "203.0.113.8" || second == "203.0.113.8" {
-		t.Fatalf("user challenge bindings were not isolated: %q / %q", first, second)
+func TestZeroTrustSubjectSeparatesUsersOnTheSameSession(t *testing.T) {
+	first := zeroTrustSubject(&auth.AuthResult{Authenticated: true, UserID: 1})
+	second := zeroTrustSubject(&auth.AuthResult{Authenticated: true, UserID: 2})
+	if first == second || first == "" || second == "" {
+		t.Fatalf("user subjects were not isolated: %q / %q", first, second)
 	}
-	if got := zeroTrustChallengeBinding("203.0.113.8", nil); got != "203.0.113.8" {
-		t.Fatalf("anonymous binding = %q", got)
+	if got := zeroTrustSubject(nil); got != "" {
+		t.Fatalf("anonymous subject = %q", got)
+	}
+
+	session := challenge.SessionBinding{SessionID: "tls-conn", Terminated: true}
+	one := session
+	one.Subject = first
+	two := session
+	two.Subject = second
+	if one.Key() == two.Key() || one.Key() == session.Key() {
+		t.Fatalf("session+subject keys were not isolated: %q / %q / %q", one.Key(), two.Key(), session.Key())
 	}
 }
 

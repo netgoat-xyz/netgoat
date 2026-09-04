@@ -42,6 +42,12 @@ func TestSampleConfigUsesSafeOfflineDefaults(t *testing.T) {
 	if cfg.AllowInsecurePublicHTTP {
 		t.Fatal("sample must not enable the public plaintext HTTP escape hatch")
 	}
+	if !cfg.BotAuth.Enabled {
+		t.Fatal("sample should enable the Web Bot Auth skip lane with an empty pin list")
+	}
+	if len(cfg.BotAuth.PinnedDirectories) != 0 {
+		t.Fatalf("sample must not ship a filled bot registry: %v", cfg.BotAuth.PinnedDirectories)
+	}
 	if cfg.SSL.Enabled {
 		t.Fatal("sample should keep TLS off when binding loopback HTTP")
 	}

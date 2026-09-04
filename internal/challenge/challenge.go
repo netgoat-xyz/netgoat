@@ -2,9 +2,11 @@ package challenge
 
 import (
 	"container/list"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -13,35 +15,54 @@ import (
 type ChallengeType string
 
 const (
-	ChallengeNone   ChallengeType = "none"
-	ChallengeText   ChallengeType = "text"
-	ChallengeClick  ChallengeType = "click"
-	ChallengeSlider ChallengeType = "slider"
+	ChallengeNone ChallengeType = "none"
+	ChallengePoW  ChallengeType = "pow"
 )
 
 const (
-	challengeIDBytes            = 16
-	challengeIDLength           = 22
-	defaultMaxChallenges        = 4096
-	defaultMaxVerified          = 4096
-	defaultMaxFailedAttempts    = 5
-	defaultChallengeTTL         = 5 * time.Minute
-	defaultVerificationTTL      = time.Hour
-	maxAnswerBytes              = 256
-	maxStoredBindingBytes       = 256
-	maxStoredChallengeTypeBytes = 32
-	maxStoredUserAgentBytes     = 512
+	challengeIDBytes         = 16
+	challengeIDLength        = 22
+	defaultMaxChallenges     = 4096
+	defaultMaxVerified       = 4096
+	defaultMaxFailedAttempts = 5
+	defaultChallengeTTL      = 2 * time.Minute
+	defaultVerificationTTL   = 15 * time.Minute
+	maxAnswerBytes           = 256
+	maxStoredBindingBytes    = 256
+	maxStoredSubjectBytes    = 128
 )
 
+// Challenge is a session-bound proof-of-work puzzle. Agents solve the Wire
+// JSON without a DOM; browsers use the same JSON in a small inline worker.
 type Challenge struct {
-	ID        string
-	Type      ChallengeType
-	Answer    string
-	CreatedAt time.Time
-	ExpiresAt time.Time
-	IP        string
-	UserAgent string
-	Suspicion int
+	ID         string
+	Type       ChallengeType
+	Nonce      string
+	Difficulty int
+	Expires    int64
+	MAC        string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
+// Wire is the agent-facing PoW document.
+type Wire struct {
+	Nonce      string `json:"nonce"`
+	Difficulty int    `json:"difficulty"`
+	Expires    int64  `json:"expires"`
+	MAC        string `json:"mac"`
+}
+
+func (c *Challenge) Wire() Wire {
+	if c == nil {
+		return Wire{}
+	}
+	return Wire{
+		Nonce:      c.Nonce,
+		Difficulty: c.Difficulty,
+		Expires:    c.Expires,
+		MAC:        c.MAC,
+	}
 }
 
 type bindingKey [sha256.Size]byte
@@ -49,6 +70,10 @@ type bindingKey [sha256.Size]byte
 type challengeEntry struct {
 	challenge      Challenge
 	binding        bindingKey
+	sessionID      string
+	expiresUnix    int64
+	difficulty     int
+	commitment     []byte
 	failedAttempts int
 	order          *list.Element
 }
@@ -61,11 +86,52 @@ type verifiedEntry struct {
 
 type storeConfig struct {
 	now               func() time.Time
+	secret            []byte
+	botAuth           *BotAuthVerifier
 	maxChallenges     int
 	maxVerified       int
 	maxFailedAttempts int
 	challengeTTL      time.Duration
 	verificationTTL   time.Duration
+	baseDifficulty    int
+	maxDifficulty     int
+	mismatchBump      int
+}
+
+// Option configures a Store.
+type Option func(*storeConfig)
+
+func WithSecret(secret []byte) Option {
+	return func(config *storeConfig) {
+		config.secret = append([]byte(nil), secret...)
+	}
+}
+
+func WithBotAuth(verifier *BotAuthVerifier) Option {
+	return func(config *storeConfig) {
+		config.botAuth = verifier
+	}
+}
+
+func WithNow(now func() time.Time) Option {
+	return func(config *storeConfig) {
+		config.now = now
+	}
+}
+
+func WithTTLs(challengeTTL, verificationTTL time.Duration) Option {
+	return func(config *storeConfig) {
+		config.challengeTTL = challengeTTL
+		config.verificationTTL = verificationTTL
+	}
+}
+
+func WithDifficulty(base, max, mismatchBump int) Option {
+	return func(config *storeConfig) {
+		config.baseDifficulty = base
+		config.maxDifficulty = max
+		config.mismatchBump = mismatchBump
+	}
 }
 
 type Store struct {
@@ -77,24 +143,36 @@ type Store struct {
 	challengeOrder list.List
 	verified       map[bindingKey]*verifiedEntry
 	verifiedOrder  list.List
+	recentIssues   []time.Time
 
 	now               func() time.Time
+	secret            []byte
+	botAuth           *BotAuthVerifier
 	maxChallenges     int
 	maxVerified       int
 	maxFailedAttempts int
 	challengeTTL      time.Duration
 	verificationTTL   time.Duration
+	baseDifficulty    int
+	maxDifficulty     int
+	mismatchBump      int
 }
 
-func NewStore() *Store {
-	// Cleanup is deliberately request-driven: Store has no Close method, so a
-	// background ticker here would leak one goroutine for every Store instance.
-	return newStore(storeConfig{})
+func NewStore(opts ...Option) *Store {
+	config := storeConfig{}
+	for _, opt := range opts {
+		opt(&config)
+	}
+	return newStore(config)
 }
 
 func newStore(config storeConfig) *Store {
 	if config.now == nil {
 		config.now = time.Now
+	}
+	if len(config.secret) == 0 {
+		secret, _ := ResolveSecret()
+		config.secret = secret
 	}
 	if config.maxChallenges <= 0 {
 		config.maxChallenges = defaultMaxChallenges
@@ -111,16 +189,33 @@ func newStore(config storeConfig) *Store {
 	if config.verificationTTL <= 0 {
 		config.verificationTTL = defaultVerificationTTL
 	}
+	if config.baseDifficulty <= 0 {
+		config.baseDifficulty = defaultBaseDifficulty
+	}
+	if config.maxDifficulty <= 0 {
+		config.maxDifficulty = defaultMaxDifficulty
+	}
+	if config.maxDifficulty < config.baseDifficulty {
+		config.maxDifficulty = config.baseDifficulty
+	}
+	if config.mismatchBump <= 0 {
+		config.mismatchBump = defaultMismatchBump
+	}
 
 	return &Store{
 		challenges:        make(map[string]*challengeEntry),
 		verified:          make(map[bindingKey]*verifiedEntry),
 		now:               config.now,
+		secret:            append([]byte(nil), config.secret...),
+		botAuth:           config.botAuth,
 		maxChallenges:     config.maxChallenges,
 		maxVerified:       config.maxVerified,
 		maxFailedAttempts: config.maxFailedAttempts,
 		challengeTTL:      config.challengeTTL,
 		verificationTTL:   config.verificationTTL,
+		baseDifficulty:    config.baseDifficulty,
+		maxDifficulty:     config.maxDifficulty,
+		mismatchBump:      config.mismatchBump,
 	}
 }
 
@@ -130,85 +225,64 @@ func GenerateID() string {
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
 
-func CalculateSuspicion(userAgent, ip string) int {
-	score := 0
-	ua := strings.ToLower(userAgent)
-
-	bots := []string{"bot", "crawler", "spider", "scraper", "curl", "wget", "python", "go-http-client", "java"}
-	for _, b := range bots {
-		if strings.Contains(ua, b) {
-			score += 30
-			break
-		}
+// SkipRequest is the pinned Web Bot Auth skip lane. Unpinned, unknown, or
+// missing signatures return false and must fail open to PoW with no
+// suspicion bump.
+func (s *Store) SkipRequest(r *http.Request) bool {
+	if s == nil || s.botAuth == nil {
+		return false
 	}
-
-	if userAgent == "" || len(userAgent) < 10 {
-		score += 25
-	}
-	if !strings.Contains(ua, "mozilla") && !strings.Contains(ua, "chrome") && !strings.Contains(ua, "safari") {
-		score += 15
-	}
-	if strings.Count(ua, ";") > 10 || len(ua) > 300 {
-		score += 10
-	}
-
-	if score > 100 {
-		score = 100
-	}
-	return score
+	return s.botAuth.Skip(r)
 }
 
-func DetermineChallengeType(suspicion int) ChallengeType {
-	if suspicion < 30 {
-		return ChallengeNone
-	} else if suspicion < 60 {
-		return ChallengeText
-	} else if suspicion < 80 {
-		return ChallengeClick
-	}
-	return ChallengeSlider
-}
-
-func (s *Store) Create(ip, userAgent string, suspicion int, challengeType ChallengeType) *Challenge {
-	challenge := Challenge{
-		ID:        GenerateID(),
-		Type:      ChallengeType(boundedClone(string(challengeType), maxStoredChallengeTypeBytes)),
-		IP:        boundedClone(ip, maxStoredBindingBytes),
-		UserAgent: boundedClone(userAgent, maxStoredUserAgentBytes),
-		Suspicion: suspicion,
-	}
-
-	switch challengeType {
-	case ChallengeText:
-		challenge.Answer = generateTextAnswer()
-	case ChallengeClick:
-		challenge.Answer = generateClickAnswer()
-	case ChallengeSlider:
-		challenge.Answer = generateSliderAnswer()
+// Create issues a session-bound PoW puzzle. It returns nil when TLS was not
+// terminated here (pass-through / HTTP-only / Cloudflare in front).
+func (s *Store) Create(binding SessionBinding) *Challenge {
+	if !binding.usable() {
+		return nil
 	}
 
 	entry := &challengeEntry{
-		challenge: challenge,
-		binding:   makeBindingKey(ip),
+		binding:   makeBindingKey(binding.Key()),
+		sessionID: boundedClone(binding.SessionID, maxStoredBindingBytes),
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	entry.challenge.CreatedAt = now
-	entry.challenge.ExpiresAt = now.Add(s.challengeTTL)
 	s.cleanupExpiredLocked(now)
 	for len(s.challenges) >= s.maxChallenges {
 		s.removeOldestChallengeLocked()
 	}
+
+	difficulty := s.difficulty(binding)
+	expiresAt := now.Add(s.challengeTTL)
+	expiresUnix := expiresAt.Unix()
+	nonce := GenerateID()
 	for {
-		if _, exists := s.challenges[entry.challenge.ID]; !exists {
+		if _, exists := s.challenges[nonce]; !exists {
 			break
 		}
-		entry.challenge.ID = GenerateID()
+		nonce = GenerateID()
 	}
+	commitment := computeCommitment(s.secret, entry.sessionID, nonce, difficulty, expiresUnix)
+
+	entry.challenge = Challenge{
+		ID:         nonce,
+		Type:       ChallengePoW,
+		Nonce:      nonce,
+		Difficulty: difficulty,
+		Expires:    expiresUnix,
+		MAC:        encodeMAC(commitment),
+		CreatedAt:  now,
+		ExpiresAt:  expiresAt,
+	}
+	entry.expiresUnix = expiresUnix
+	entry.difficulty = difficulty
+	entry.commitment = commitment
 	entry.order = s.challengeOrder.PushBack(entry)
-	s.challenges[entry.challenge.ID] = entry
+	s.challenges[nonce] = entry
+	s.noteIssueLocked(now)
 
 	return cloneChallenge(entry.challenge)
 }
@@ -240,49 +314,66 @@ func (s *Store) Get(id string) (*Challenge, bool) {
 	return cloneChallenge(entry.challenge), true
 }
 
-func (s *Store) Verify(id, answer, ip string) bool {
-	binding := makeBindingKey(ip)
+// Verify checks a PoW solution bound to the caller's session. The nonce is
+// burned on success or after maxFailedAttempts. Binding is never an IP.
+func (s *Store) Verify(binding SessionBinding, nonce, counter string) bool {
+	if !binding.usable() {
+		return false
+	}
+	key := makeBindingKey(binding.Key())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
 	s.cleanupExpiredLocked(now)
 
-	if len(id) != challengeIDLength {
+	if len(nonce) != challengeIDLength {
 		return false
 	}
-	entry, ok := s.challenges[id]
-	if !ok || entry.binding != binding {
+	entry, ok := s.challenges[nonce]
+	if !ok || entry.binding != key {
 		return false
 	}
-	if len(answer) > maxAnswerBytes {
+	if now.Unix() >= entry.expiresUnix {
+		s.removeChallengeLocked(entry)
+		return false
+	}
+	if len(counter) > maxAnswerBytes {
+		s.recordFailureLocked(entry)
+		return false
+	}
+	parsed, ok := parseCounter(counter)
+	if !ok {
 		s.recordFailureLocked(entry)
 		return false
 	}
 
-	correct := false
-	switch entry.challenge.Type {
-	case ChallengeText:
-		correct = strings.EqualFold(strings.TrimSpace(answer), strings.TrimSpace(entry.challenge.Answer))
-	case ChallengeClick, ChallengeSlider:
-		correct = answer == entry.challenge.Answer
+	// Recompute the commitment with the stored expires_unix. A truncated
+	// HMAC that omitted expiry cannot match, which is the Altcha replay hole.
+	recomputed := computeCommitment(s.secret, entry.sessionID, entry.challenge.Nonce, entry.difficulty, entry.expiresUnix)
+	if !hmac.Equal(recomputed, entry.commitment) {
+		s.removeChallengeLocked(entry)
+		return false
 	}
-
-	if !correct {
+	digest := powDigest(recomputed, parsed)
+	if leadingZeroBits(digest) < entry.difficulty {
 		s.recordFailureLocked(entry)
 		return false
 	}
 
 	s.removeChallengeLocked(entry)
-	s.markVerifiedLocked(binding, now)
+	s.markVerifiedLocked(key, now)
 	return true
 }
 
-func (s *Store) IsVerified(ip string) bool {
-	binding := makeBindingKey(ip)
+func (s *Store) IsVerified(binding SessionBinding) bool {
+	if !binding.usable() {
+		return false
+	}
+	key := makeBindingKey(binding.Key())
 	s.mu.RLock()
 	now := s.now()
-	entry, ok := s.verified[binding]
+	entry, ok := s.verified[key]
 	if ok && now.Before(entry.expiresAt) {
 		s.mu.RUnlock()
 		return true
@@ -296,7 +387,7 @@ func (s *Store) IsVerified(ip string) bool {
 	defer s.mu.Unlock()
 	s.cleanupExpiredLocked(now)
 
-	entry, ok = s.verified[binding]
+	entry, ok = s.verified[key]
 	return ok && now.Before(entry.expiresAt)
 }
 
@@ -330,7 +421,7 @@ func (s *Store) cleanupExpiredLocked(now time.Time) {
 			break
 		}
 		entry := oldest.Value.(*challengeEntry)
-		if now.Before(entry.challenge.ExpiresAt) {
+		if now.Before(entry.challenge.ExpiresAt) && now.Unix() < entry.expiresUnix {
 			break
 		}
 		s.removeChallengeLocked(entry)
@@ -405,35 +496,4 @@ func readRandom(buffer []byte) {
 	if _, err := rand.Read(buffer); err != nil {
 		panic("challenge: secure randomness unavailable: " + err.Error())
 	}
-}
-
-func generateTextAnswer() string {
-	words := []string{"sunrise", "mountain", "ocean", "forest", "desert", "river", "cloud", "thunder"}
-	var b [1]byte
-	readRandom(b[:])
-	return words[int(b[0])%len(words)]
-}
-
-func generateClickAnswer() string {
-	var b [3]byte
-	readRandom(b[:])
-	var seen [9]bool
-	for _, value := range b {
-		idx := int(value) % len(seen)
-		seen[idx] = true
-	}
-	result := make([]string, 0, len(b))
-	for idx, selected := range seen {
-		if selected {
-			result = append(result, string(rune('0'+idx)))
-		}
-	}
-	return strings.Join(result, ",")
-}
-
-func generateSliderAnswer() string {
-	var b [1]byte
-	readRandom(b[:])
-	pos := 20 + (int(b[0]) % 60)
-	return string(rune('0' + pos/10))
 }

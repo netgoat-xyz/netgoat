@@ -17,6 +17,10 @@ honeypot: true
 auth:
   enabled: true
   session_secret: "supersecret"
+bot_auth:
+  enabled: true
+  pinned_directories: ["https://example.invalid/.well-known/web-bot-auth"]
+  jwks_cache_seconds: 300
 ssl:
   enabled: true
   cert_file: "/path/to/cert.pem"
@@ -136,6 +140,16 @@ api:
 	}
 	if cfg.Auth.SessionSecret != "supersecret" {
 		t.Errorf("Auth.SessionSecret = %s, want supersecret", cfg.Auth.SessionSecret)
+	}
+
+	if !cfg.BotAuth.Enabled {
+		t.Error("BotAuth.Enabled should be true")
+	}
+	if len(cfg.BotAuth.PinnedDirectories) != 1 || cfg.BotAuth.PinnedDirectories[0] != "https://example.invalid/.well-known/web-bot-auth" {
+		t.Errorf("BotAuth.PinnedDirectories = %#v", cfg.BotAuth.PinnedDirectories)
+	}
+	if cfg.BotAuth.JWKSCacheSeconds != 300 {
+		t.Errorf("BotAuth.JWKSCacheSeconds = %d, want 300", cfg.BotAuth.JWKSCacheSeconds)
 	}
 
 	// Test SSL config

@@ -327,8 +327,23 @@ func main() {
 		}
 	}
 
-	challengeStore := challenge.NewStore()
-	log.Info().Msg("Challenge system initialized")
+	secret, ephemeralSecret := challenge.ResolveSecret()
+	if ephemeralSecret {
+		log.Warn().Msg("NETGOAT_CHALLENGE_SECRET and DiamondKey are unset; PoW HMAC key is ephemeral and the verified set is per-process")
+	}
+	botAuth, err := challenge.NewBotAuthVerifier(challenge.BotAuthConfig{
+		Enabled:           cfg.BotAuth.Enabled,
+		PinnedDirectories: cfg.BotAuth.PinnedDirectories,
+		CacheTTL:          time.Duration(ifZeroInt(cfg.BotAuth.JWKSCacheSeconds, 300)) * time.Second,
+	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to configure Web Bot Auth skip lane")
+	}
+	challengeStore := challenge.NewStore(
+		challenge.WithSecret(secret),
+		challenge.WithBotAuth(botAuth),
+	)
+	log.Info().Bool("bot_auth", cfg.BotAuth.Enabled).Int("pinned_directories", len(cfg.BotAuth.PinnedDirectories)).Msg("Challenge system initialized")
 
 	telemetryClient := telemetry.NewClient(telemetry.Config{
 		Enabled:   cfg.Telemetry.Enabled,
@@ -371,30 +386,35 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		r.ParseForm()
-		challengeID := r.FormValue("challenge_id")
-		answer := r.FormValue("answer")
-		ip := getClientIP(r)
-		binding := ip
+		nonce, counter, jsonRequest := challenge.ReadSolution(r)
+		binding := challenge.BindingFromRequest(r)
 		if cfg.Auth.Enabled {
 			if result := auth.Check(r, db); result.Authenticated {
-				binding = zeroTrustChallengeBinding(ip, result)
+				binding.Subject = zeroTrustSubject(result)
 			}
 		}
 
-		verified := challengeStore.Verify(challengeID, answer, binding)
-		if !verified && binding != ip {
-			// Non-authentication error challenges remain bound to the client IP.
-			verified = challengeStore.Verify(challengeID, answer, ip)
-		}
+		verified := challengeStore.Verify(binding, nonce, counter)
 		if verified {
-			log.Info().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verified successfully")
+			log.Info().Str("challenge_id", nonce).Msg("Challenge verified successfully")
+			if jsonRequest || challenge.WantsJSON(r) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"verified":true}`))
+				return
+			}
 			redirectTo := safeLocalRedirect(r.Header.Get("Referer"), r.Host)
 			http.Redirect(w, r, redirectTo, http.StatusFound)
-		} else {
-			log.Warn().Str("ip", ip).Str("challenge_id", challengeID).Msg("Challenge verification failed")
-			http.Error(w, "Verification failed. Please try again.", http.StatusForbidden)
+			return
 		}
+		log.Warn().Str("challenge_id", nonce).Msg("Challenge verification failed")
+		if jsonRequest || challenge.WantsJSON(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"verified":false}`))
+			return
+		}
+		http.Error(w, "Verification failed. Please try again.", http.StatusForbidden)
 	})
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
@@ -476,12 +496,13 @@ func main() {
 				}
 				return
 			}
-			challengeBinding := zeroTrustChallengeBinding(getClientIP(r), authResult)
+			challengeBinding := challenge.BindingFromRequest(r)
+			challengeBinding.Subject = zeroTrustSubject(authResult)
 			if auth.RequireZeroTrustChallenge(authResult, database.IsZeroTrustEnabled(db), challengeStore.IsVerified(challengeBinding)) {
 				analysisInfo.RequestAllowed = false
 				analysisInfo.BlockReason = "zero-trust verification required"
 				recordBlocked(metricsRecorder, "zero-trust")
-				log.Info().Str("user", authResult.Username).Str("ip", getClientIP(r)).Msg("Zero-trust challenge required")
+				log.Info().Str("user", authResult.Username).Msg("Zero-trust challenge required")
 				writeZeroTrustChallenge(w, challengeStore, r, challengeBinding)
 				return
 			}
@@ -882,6 +903,9 @@ func newProxyHTTPServer() *http.Server {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    64 << 10,
 		Handler:           nil,
+		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
+			return challenge.WithConnSessionID(ctx)
+		},
 	}
 }
 
@@ -1235,10 +1259,9 @@ func (s *errorPageStore) pick(r *http.Request) []byte {
 }
 
 func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.Store, r *http.Request, status int, fallback string) {
-	ip := getClientIP(r)
-	userAgent := r.UserAgent()
+	binding := challenge.BindingFromRequest(r)
 
-	if store.IsVerified(ip) {
+	if store.IsVerified(binding) {
 		if p := pages.pick(r); len(p) > 0 && isHTML(p) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(status)
@@ -1249,35 +1272,50 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 		return
 	}
 
-	suspicion := challenge.CalculateSuspicion(userAgent, ip)
-	challengeType := challenge.DetermineChallengeType(suspicion)
-
-	log.Info().Str("ip", ip).Str("user_agent", userAgent).Int("suspicion", suspicion).Str("challenge_type", string(challengeType)).Msg("Generating dynamic error page")
-
-	var ch *challenge.Challenge
-	if challengeType != challenge.ChallengeNone {
-		ch = store.Create(ip, userAgent, suspicion, challengeType)
+	if store.SkipRequest(r) {
+		writeChallengeResponse(w, r, nil, status, fallback)
+		return
 	}
 
-	dynamicHTML := challenge.RenderDynamicErrorPage(ch, status, fallback)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(dynamicHTML))
+	ch := store.Create(binding)
+	log.Info().Bool("terminated", binding.Terminated).Int("difficulty", challengeDifficulty(ch)).Msg("Generating dynamic error page")
+	writeChallengeResponse(w, r, ch, status, fallback)
 }
 
-func writeZeroTrustChallenge(w http.ResponseWriter, store *challenge.Store, r *http.Request, binding string) {
-	ch := store.Create(binding, r.UserAgent(), 50, challenge.ChallengeText)
-	html := challenge.RenderDynamicErrorPage(ch, http.StatusForbidden, "Zero-trust verification required")
+func writeZeroTrustChallenge(w http.ResponseWriter, store *challenge.Store, r *http.Request, binding challenge.SessionBinding) {
+	if store.SkipRequest(r) {
+		writeChallengeResponse(w, r, nil, http.StatusForbidden, "Zero-trust verification required")
+		return
+	}
+	ch := store.Create(binding)
+	writeChallengeResponse(w, r, ch, http.StatusForbidden, "Zero-trust verification required")
+}
+
+func writeChallengeResponse(w http.ResponseWriter, r *http.Request, ch *challenge.Challenge, status int, fallback string) {
+	if challenge.WantsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write(challenge.RenderChallengeJSON(ch, status, fallback))
+		return
+	}
+	html := challenge.RenderDynamicErrorPage(ch, status, fallback)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusForbidden)
+	w.WriteHeader(status)
 	_, _ = w.Write([]byte(html))
 }
 
-func zeroTrustChallengeBinding(ip string, result *auth.AuthResult) string {
-	if result == nil || !result.Authenticated || result.UserID <= 0 {
-		return ip
+func challengeDifficulty(ch *challenge.Challenge) int {
+	if ch == nil {
+		return 0
 	}
-	return ip + "|user:" + strconv.Itoa(result.UserID)
+	return ch.Difficulty
+}
+
+func zeroTrustSubject(result *auth.AuthResult) string {
+	if result == nil || !result.Authenticated || result.UserID <= 0 {
+		return ""
+	}
+	return "user:" + strconv.Itoa(result.UserID)
 }
 
 func isHTML(b []byte) bool {
