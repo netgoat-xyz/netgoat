@@ -143,3 +143,102 @@ func TestSnapshotFromDomainsResponsePreservesRoutePolicies(t *testing.T) {
 		t.Fatalf("bandwidth policy was not preserved: %+v", route.Policy)
 	}
 }
+
+func TestSnapshotFromDomainsResponseAcceptsRoutePolicyAlias(t *testing.T) {
+	raw := []byte(`{
+		"domains": [{
+			"domain": "alias.example.test",
+			"target_url": "http://upstream",
+			"route_policy": {
+				"cache": {"enabled": true, "ttl_seconds": 15}
+			},
+			"subdomains": [{
+				"full_domain": "child.alias.example.test",
+				"target_url": "http://child",
+				"route_policy": {
+					"bandwidth": {"bytes_per_second": 2048}
+				}
+			}]
+		}]
+	}`)
+	var payload domainsResponse
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := snapshotFromDomainsResponse(payload)
+
+	parent := snapshot.Routes["alias.example.test"]
+	if parent.Policy.Cache == nil || parent.Policy.Cache.TTLSeconds == nil || *parent.Policy.Cache.TTLSeconds != 15 {
+		t.Fatalf("domain route_policy alias was not applied: %+v", parent.Policy)
+	}
+	child := snapshot.Routes["child.alias.example.test"]
+	if child.Policy.Bandwidth == nil || child.Policy.Bandwidth.BytesPerSecond == nil ||
+		*child.Policy.Bandwidth.BytesPerSecond != 2048 {
+		t.Fatalf("subdomain route_policy alias was not applied: %+v", child.Policy)
+	}
+}
+
+func TestSnapshotFromDomainsResponsePrefersPolicyOverRoutePolicyAlias(t *testing.T) {
+	raw := []byte(`{
+		"domains": [{
+			"domain": "both.example.test",
+			"target_url": "http://upstream",
+			"policy": {
+				"cache": {"enabled": true, "ttl_seconds": 30}
+			},
+			"route_policy": {
+				"cache": {"enabled": true, "ttl_seconds": 99},
+				"bandwidth": {"bytes_per_second": 1024}
+			}
+		}]
+	}`)
+	var payload domainsResponse
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := snapshotFromDomainsResponse(payload)
+	route := snapshot.Routes["both.example.test"]
+	if route.Policy.Cache == nil || route.Policy.Cache.TTLSeconds == nil || *route.Policy.Cache.TTLSeconds != 30 {
+		t.Fatalf("canonical policy should win: %+v", route.Policy)
+	}
+	if route.Policy.Bandwidth != nil {
+		t.Fatalf("alias bandwidth should not merge when policy is set: %+v", route.Policy)
+	}
+}
+
+func TestPollDomainsAppliesRoutePolicyAlias(t *testing.T) {
+	payload := map[string]any{
+		"domains": []map[string]any{{
+			"domain":     "polled.example.test",
+			"target_url": "http://127.0.0.1:9000",
+			"active":     true,
+			"route_policy": map[string]any{
+				"cache": map[string]any{"enabled": true, "ttl_seconds": 12},
+			},
+		}},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	mgr := streaming.NewManager("")
+	defer mgr.Close()
+	state := &domainPollState{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	changed, err := pollDomains(ctx, mgr, server.URL, "", state)
+	if err != nil || !changed {
+		t.Fatalf("poll changed/error = %v/%v", changed, err)
+	}
+	route := mgr.GetSnapshot().Routes["polled.example.test"]
+	if route.Policy.Cache == nil || route.Policy.Cache.TTLSeconds == nil || *route.Policy.Cache.TTLSeconds != 12 {
+		t.Fatalf("polled route_policy alias was not applied: %+v", route.Policy)
+	}
+}

@@ -19,6 +19,8 @@ released version. The next cut must add a dated section here and a new
 
 ### Added
 
+- Stream `/domains` records accept JSON `route_policy` as an alias of
+  `policy`, so older and newer stream-server payloads both apply.
 - Session-bound proof-of-work and pinned Web Bot Auth skip
   ([#114](https://github.com/netgoat-xyz/netgoat/issues/114),
   [#116](https://github.com/netgoat-xyz/netgoat/pull/116)). Challenge is
@@ -39,6 +41,10 @@ released version. The next cut must add a dated section here and a new
 
 ### Changed
 
+- Operations guide documents connecting this agent to stream-server
+  (`api.url` / `API_STREAM_KEY` → `/domains`) and last-known-good
+  recovery when the companion control plane is down. Beta non-goals
+  name an embedded dashboard, not a held companion CP.
 - README feature status and honesty notes now distinguish shipped
   behavior from roadmap
   ([#115](https://github.com/netgoat-xyz/netgoat/pull/115), updated again

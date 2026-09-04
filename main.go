@@ -1565,16 +1565,27 @@ type domainRecord struct {
 	CertificatePEM string             `json:"certificate_pem"`
 	PrivateKeyPEM  string             `json:"private_key_pem"`
 	Policy         policy.RoutePolicy `json:"policy"`
+	RoutePolicy    policy.RoutePolicy `json:"route_policy"`
 	Active         any                `json:"active"`
 	Subdomains     []subdomainRecord  `json:"subdomains"`
 }
 
 type subdomainRecord struct {
-	FullDomain string             `json:"full_domain"`
-	TargetURL  string             `json:"target_url"`
-	TargetURLs []string           `json:"target_urls"`
-	Policy     policy.RoutePolicy `json:"policy"`
-	Active     any                `json:"active"`
+	FullDomain  string             `json:"full_domain"`
+	TargetURL   string             `json:"target_url"`
+	TargetURLs  []string           `json:"target_urls"`
+	Policy      policy.RoutePolicy `json:"policy"`
+	RoutePolicy policy.RoutePolicy `json:"route_policy"`
+	Active      any                `json:"active"`
+}
+
+// coalesceRoutePolicy prefers the canonical `policy` field and falls back to
+// the `route_policy` alias used by some stream-server payloads.
+func coalesceRoutePolicy(canonical, alias policy.RoutePolicy) policy.RoutePolicy {
+	if canonical.Cache != nil || canonical.Bandwidth != nil {
+		return canonical
+	}
+	return alias
 }
 
 type wafRuleRecord struct {
@@ -1740,7 +1751,7 @@ func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapsh
 				Targets:        routeTargetsFromAPI(domain.TargetURL, domain.TargetURLs),
 				CertificatePEM: domain.CertificatePEM,
 				PrivateKeyPEM:  domain.PrivateKeyPEM,
-				Policy:         domain.Policy.Clone(),
+				Policy:         coalesceRoutePolicy(domain.Policy, domain.RoutePolicy).Clone(),
 			}
 		}
 		for _, subdomain := range domain.Subdomains {
@@ -1751,7 +1762,7 @@ func snapshotFromDomainsResponse(payload domainsResponse) streaming.ConfigSnapsh
 				Type:    "domain",
 				Target:  subdomain.TargetURL,
 				Targets: routeTargetsFromAPI(subdomain.TargetURL, subdomain.TargetURLs),
-				Policy:  subdomain.Policy.Clone(),
+				Policy:  coalesceRoutePolicy(subdomain.Policy, subdomain.RoutePolicy).Clone(),
 			}
 		}
 	}

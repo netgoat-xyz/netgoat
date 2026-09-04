@@ -1,5 +1,30 @@
 # Operations guide
 
+## Connect the agent
+
+The companion control plane is `netgoat-xyz/frontend` writing through
+`netgoat-xyz/stream-server`. This agent does not embed that dashboard.
+
+Set `api.url` to the stream-server base URL and `api.key` (or
+`API_STREAM_URL` / `API_STREAM_KEY`). The agent polls `{api.url}/domains`
+for routes, streamed certificates, and route policy. Domain records may
+send that policy as `policy` or `route_policy`.
+
+```yaml
+api:
+  url: "http://127.0.0.1:8081"
+  key: "" # prefer API_STREAM_KEY in the environment
+  poll_interval: 5
+  connection_timeout: 10
+  max_retry_interval: 120
+```
+
+If stream-server is unreachable, the process keeps serving local YAML
+routes and the last valid on-disk recovery snapshot
+(`./database/config-snapshot.json`). Failed polls retry with exponential
+backoff up to `max_retry_interval`. Leave `api.url` empty for a fully
+offline deployment.
+
 ## Route-scoped cache and bandwidth policy
 
 Global `cache` and `bandwidth` settings remain the defaults. A route can

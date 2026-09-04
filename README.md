@@ -91,7 +91,7 @@ rows as implementation claims.
 - Leave alpha only when the written gate in
   [docs/release.md](docs/release.md) is checked off. Beta does not
   require Cloudflare parity, VSA, H3/QUIC fingerprint, default-on AI
-  classifiers, or a control-plane MVP.
+  classifiers, or an embedded control-plane dashboard.
 
 ## Quick start
 
@@ -139,7 +139,7 @@ authentication before adding such a route. The shipped `routes: {}` is
 intentionally empty: a fresh default deployment returns `404` for every Host
 instead of proxying to a local service.
 
-If the control plane is unavailable, NetGoat uses local routes and then the last valid recovery snapshot. Configure `api.url` as an empty string for a fully offline deployment.
+To take routes, certificates, and route policy from the companion stack, set `api.url` to the stream-server base URL and `api.key` (or `API_STREAM_URL` / `API_STREAM_KEY`). The agent polls `/domains`. If that plane is unreachable, it keeps local YAML routes and the last valid recovery snapshot. Leave `api.url` empty for a fully offline deployment. See [Connect the agent](docs/operations.md#connect-the-agent).
 
 ## Authentication bootstrap
 
@@ -155,7 +155,7 @@ Then set `auth.enabled: true`. Bootstrap credentials are used only when the user
 ## Configuration highlights
 
 - `routes`: local fallback routes keyed by domain, wildcard/regex pattern, or path prefix; each route can override `policy.cache` and `policy.bandwidth`.
-- `api`: control-plane URL, key, poll interval, timeout, and maximum retry interval.
+- `api`: stream-server base URL and key (the agent polls `/domains`); poll interval, timeout, and maximum retry interval.
 - `health`: probe enablement, interval, timeout, and default path.
 - `cache`, `rate_limit`, `request_queue`, `bandwidth`: bounded global traffic defaults; cache and bandwidth can be overridden per route.
 - `metrics`: enables JSON at the configured path and Prometheus at `<path>.prom`.
@@ -171,7 +171,7 @@ Then set `auth.enabled: true`. Bootstrap credentials are used only when the user
 
 Secrets may also be supplied through the environment. `API_STREAM_KEY` overrides the YAML control-plane key, `NETGOAT_ACME_CACHE_KEY` encrypts ACME state, `CLOUDFLARE_API_TOKEN` is required for Cloudflare reconciliation, and `NETGOAT_CHALLENGE_SECRET` (or `DiamondKey`) binds PoW commitments. Do not commit `.env`, private keys, model files, databases, recovery snapshots, or telemetry identifiers.
 
-See the [operations guide](docs/operations.md) for production deploy, metrics scrape, policy precedence, ACME setup, and dynamic-rule safety boundaries; the [release train](docs/release.md) for `v*` tags and the alpha→beta gate; the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions; and the [developer plugin catalog guide](docs/developer-plugins.md) for the restart-time selection and publisher trust boundary.
+See the [operations guide](docs/operations.md) for connecting the agent to stream-server, production deploy, metrics scrape, policy precedence, ACME setup, and dynamic-rule safety boundaries; the [release train](docs/release.md) for `v*` tags and the alpha→beta gate; the [middleware SDK guide](docs/middleware-sdk.md) for trusted compiled-in extensions; and the [developer plugin catalog guide](docs/developer-plugins.md) for the restart-time selection and publisher trust boundary.
 
 ## Architecture
 

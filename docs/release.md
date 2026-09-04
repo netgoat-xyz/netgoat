@@ -108,8 +108,9 @@ These may stay planned, optional, or incomplete:
 - VSA ([#98](https://github.com/netgoat-xyz/netgoat/issues/98))
 - HTTP/3 / QUIC fingerprint (documented hole in v1)
 - Fancy or default-on AI classifiers (GoatAI / Koda remain optional)
-- Control-plane MVP (this repo is the agent; streamed snapshots stay
-  optional)
+- An embedded control-plane dashboard in this agent. Companion CP
+  (frontend → stream-server `/domains`) is the intended routes / certs /
+  route-policy path; streamed snapshots stay optional.
 
 Beta is still prerelease. It is not a promise of Cloudflare-scale
 bot management or an identity product. `stack_class` is a TLS/HTTP stack
