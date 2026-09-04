@@ -12,17 +12,19 @@ import (
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 	"github.com/rs/zerolog/log"
+	"netgoat.xyz/agent/internal/fingerprint"
 )
 
 // WAFContext defines the variables exposed to the rule engine.
 type WAFContext struct {
-	IP       string
-	Host     string
-	Method   string
-	Path     string
-	Query    map[string][]string
-	RawQuery string
-	Headers  map[string][]string
+	IP         string
+	Host       string
+	Method     string
+	Path       string
+	Query      map[string][]string
+	RawQuery   string
+	Headers    map[string][]string
+	StackClass string
 }
 
 type compiledRule struct {
@@ -131,13 +133,14 @@ func (e *Engine) CheckWithClientIP(r *http.Request, clientIP string, debugLogs b
 		}
 	}
 	env := WAFContext{
-		IP:       ip,
-		Host:     normalizedHost(r.Host),
-		Method:   r.Method,
-		Path:     r.URL.Path,
-		Query:    r.URL.Query(),
-		RawQuery: decodedQuery,
-		Headers:  r.Header,
+		IP:         ip,
+		Host:       normalizedHost(r.Host),
+		Method:     r.Method,
+		Path:       r.URL.Path,
+		Query:      r.URL.Query(),
+		RawQuery:   decodedQuery,
+		Headers:    r.Header,
+		StackClass: fingerprint.FromRequest(r),
 	}
 
 	rules := e.rules.Load()

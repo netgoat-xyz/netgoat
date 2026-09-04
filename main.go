@@ -36,6 +36,7 @@ import (
 	"netgoat.xyz/agent/internal/database"
 	"netgoat.xyz/agent/internal/debugoverlay"
 	"netgoat.xyz/agent/internal/dynamicrules"
+	"netgoat.xyz/agent/internal/fingerprint"
 	"netgoat.xyz/agent/internal/health"
 	"netgoat.xyz/agent/internal/honeypot"
 	"netgoat.xyz/agent/internal/koda2"
@@ -871,8 +872,15 @@ func main() {
 			port = ":8443"
 		}
 		server.Addr = port
+		if err := fingerprint.ConfigureHTTP2(server); err != nil {
+			log.Fatal().Err(err).Msg("Failed to configure HTTP/2 stack fingerprinting")
+		}
+		ln, err := net.Listen("tcp", port)
+		if err != nil {
+			log.Fatal().Err(err).Str("port", port).Msg("Failed to listen for HTTPS")
+		}
 		log.Info().Str("port", port).Msg("Reverse proxy listening (HTTPS)")
-		serveErr = server.ListenAndServeTLS("", "")
+		serveErr = server.ServeTLS(fingerprint.WrapListener(ln), "", "")
 	} else {
 		addr := cfg.HTTPListenAddr()
 		server.Addr = addr
@@ -903,8 +911,9 @@ func newProxyHTTPServer() *http.Server {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    64 << 10,
 		Handler:           nil,
-		ConnContext: func(ctx context.Context, _ net.Conn) context.Context {
-			return challenge.WithConnSessionID(ctx)
+		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
+			ctx = challenge.WithConnSessionID(ctx)
+			return fingerprint.WithConn(ctx, conn)
 		},
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"netgoat.xyz/agent/internal/fingerprint"
 )
 
 var testSecret = []byte("challenge-test-secret-32-bytes!!")
@@ -277,6 +279,40 @@ func TestMismatchBumpIndependentOfUA(t *testing.T) {
 	}
 }
 
+func TestStackClassMismatchWiresFromFingerprint(t *testing.T) {
+	store := testStore(storeConfig{baseDifficulty: 8, maxDifficulty: 24, mismatchBump: 4})
+	chromeUA := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	goClass := "t13d0608h2_aaaaaaaaaaaa_bbbbbbbbbbbb|-|h2,http/1.1"
+	chromeClass := "t13d1516h2_8daaf6152771_b186095e22b6|1:65536|0|0|m,a,s,p|h2,http/1.1"
+
+	disagree := tlsRequest(chromeUA, goClass)
+	agree := tlsRequest(chromeUA, chromeClass)
+	honest := tlsRequest("Go-http-client/1.1", goClass)
+	missing := tlsRequest(chromeUA, "")
+
+	if !BindingFromRequest(disagree).StackClassMismatch {
+		t.Fatal("Go stack claiming Chrome must set StackClassMismatch")
+	}
+	if BindingFromRequest(agree).StackClassMismatch {
+		t.Fatal("matching Chrome stack must not set StackClassMismatch")
+	}
+	if BindingFromRequest(honest).StackClassMismatch {
+		t.Fatal("honest library UA must not set StackClassMismatch")
+	}
+	if !BindingFromRequest(missing).StackClassMismatch {
+		t.Fatal("missing stack with browser UA must set StackClassMismatch")
+	}
+
+	base := store.DifficultyFor(BindingFromRequest(agree))
+	bumped := store.DifficultyFor(BindingFromRequest(disagree))
+	if bumped-base != store.mismatchBump {
+		t.Fatalf("wired mismatch bump = %d, want %d", bumped-base, store.mismatchBump)
+	}
+	if store.DifficultyFor(BindingFromRequest(honest)) != base {
+		t.Fatal("honest library UA must not raise difficulty")
+	}
+}
+
 func TestZeroTrustSubjectSeparatesVerifiedSet(t *testing.T) {
 	store := testStore(storeConfig{})
 	user1 := SessionBinding{SessionID: "tls-conn", Terminated: true, Subject: "user:1"}
@@ -307,7 +343,7 @@ func TestBindingFromRequestRequiresTLS(t *testing.T) {
 		t.Fatalf("terminated TLS should mint a session id: %+v", binding)
 	}
 	if binding.StackClassMismatch {
-		t.Fatal("StackClassMismatch must stay false until #113 wires it")
+		t.Fatal("empty UA must not set StackClassMismatch")
 	}
 
 	ctx := WithConnSessionID(context.Background())
@@ -412,5 +448,15 @@ func TestChallengeTypes(t *testing.T) {
 
 func httptestRequest() *http.Request {
 	req, _ := http.NewRequest(http.MethodGet, "http://example.test/", nil)
+	return req
+}
+
+func tlsRequest(userAgent, stackClass string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "https://example.test/", nil)
+	req.TLS = &tls.ConnectionState{HandshakeComplete: true}
+	req.Header.Set("User-Agent", userAgent)
+	if stackClass != "" {
+		req = req.WithContext(fingerprint.WithStackClass(req.Context(), stackClass))
+	}
 	return req
 }
