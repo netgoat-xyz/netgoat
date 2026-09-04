@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"netgoat.xyz/agent/internal/fingerprint"
 )
 
 type sessionContextKey struct{}
@@ -13,11 +15,11 @@ type sessionContextKey struct{}
 // SessionBinding identifies the TLS session a challenge is bound to.
 //
 // SessionID is an opaque nonce minted when this process terminated TLS.
-// Issue #113 (JA4+H2+ALPN stack_class) may later fold fingerprint material
-// into SessionID; until then it is only the connection nonce.
 //
-// StackClassMismatch is the #113 hook. It stays false until that stack is
-// wired. When true, difficulty is bumped independently of User-Agent.
+// StackClassMismatch is set when the terminate-only stack_class disagrees
+// with a browser-like User-Agent (library TLS claiming Chrome, or a missing
+// class when we terminated the client). Cloudflare-in-front never mismatches:
+// that ClientHello is not the browser. Difficulty is not raised from UA alone.
 //
 // Subject is an optional authenticated identity (for example a user id) so
 // zero-trust users behind the same TLS session stay distinct. It is not an IP.
@@ -78,8 +80,9 @@ func BindingFromRequest(r *http.Request) SessionBinding {
 		id = sessionIDForTLS(r.TLS)
 	}
 	return SessionBinding{
-		SessionID:  id,
-		Terminated: true,
+		SessionID:          id,
+		Terminated:         true,
+		StackClassMismatch: fingerprint.MismatchFromRequest(r),
 	}
 }
 

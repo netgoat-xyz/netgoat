@@ -25,11 +25,11 @@ returns `404` for every Host instead of proxying to a local service.
 | --- | --- | --- |
 | Domain and path routing | Available | Exact, wildcard, regex, and longest-prefix path routes; local routes can be overridden by streamed routes. |
 | Load balancing and failover | Available | Round-robin pools, bounded concurrent health checks, and safe-method retry/failover. |
-| WAF rules | Available | Precompiled expression rules with priorities, `BLOCK`/`ALLOW` actions, and request host/method/path/query/header context. |
-| Traffic controls | Available | Global rate limiting, request queueing, bandwidth throttling, honeypot handling, and session-bound PoW with pinned Web Bot Auth skip. Challenge is JSON (not text/click/slider). Difficulty from load + `stack_class` mismatch hook, not User-Agent. Verify is bound to the terminated TLS session, not IP. |
+| WAF rules | Available | Precompiled expression rules with priorities, `BLOCK`/`ALLOW` actions, and request host/method/path/query/header/`stack_class` context. |
+| Traffic controls | Available | Global rate limiting, request queueing, bandwidth throttling, honeypot handling, and session-bound PoW with pinned Web Bot Auth skip. Challenge is JSON (not text/click/slider). Difficulty from load + `stack_class` mismatch (wired from terminate-only JA4/H2/ALPN), not User-Agent. Verify is bound to the terminated TLS session, not IP. |
 | Shared response cache | Available | Bounded LRU/TTL cache for explicitly public responses, with HTTP freshness and revalidation safeguards. |
 | Local authentication | Available | Cookie or Basic authentication, per-user zero-trust challenge flags, and explicit secure bootstrap users. |
-| TLS termination | Available | Static fallback, streamed per-domain/wildcard certificates, and atomic SNI selection. Termination is required for fingerprint v1 and for session-bound PoW. PoW is live when this agent terminates TLS; JA4 / [#113](https://github.com/netgoat-xyz/netgoat/issues/113) is not emitted. |
+| TLS termination | Available | Static fallback, streamed per-domain/wildcard certificates, and atomic SNI selection. Termination is required for fingerprint v1 and for session-bound PoW. |
 | WebSocket proxying | Available | Upgrade connections are preserved by Go's reverse proxy. |
 | Metrics | Available | JSON and Prometheus endpoints for traffic, cache, block, latency, and proxy-error counters. |
 | AI request classifiers | Optional | Local GoatAI, Koda-WAF, and Koda-2 workers; model files and Python dependencies are required only when enabled. |
@@ -37,6 +37,7 @@ returns `404` for every Host instead of proxying to a local service.
 | Operational telemetry | Optional | Explicitly opt-in delivery to the companion telemetry server, with endpoint and ingestion-key configuration. |
 | Automatic certificate issuance/renewal | Available (opt-in) | Explicit ACME allow-list, HTTP-01 handler, encrypted persistent cache, and last-known-good certificate retention. |
 | JavaScript/TypeScript dynamic rules | Available (opt-in) | Isolated, bounded JS/TS request decisions with atomic last-known-good reload and fail-closed evaluation. |
+| Stack fingerprint v1 | Available | JA4 + Akamai-style H2 `SETTINGS` / `WINDOW_UPDATE` / `PRIORITY` / pseudo-header order + ALPN order, **only when this agent terminates TLS**. Opaque `stack_class` for bot clustering — not a user, hardware ID, or canvas hash. No JA4H. HTTP/3 / QUIC is a documented hole. Emit nothing for plaintext HTTP, TLS pass-through, or Cloudflare in front (`CF-Connecting-IP`). Spec: [#113](https://github.com/netgoat-xyz/netgoat/issues/113). |
 | Developer plugin catalog and middleware SDK | Available | Restart-only selections for exact compiled descriptors; v1 capability grants, lifecycle isolation, and no remote code/artifact loading. |
 | Cloudflare Access, DNS, and tunnel management | Available (opt-in) | Fail-closed Access JWT/JWKS verification plus bounded, dry-run-by-default startup reconciliation using an environment-only token. Cloudflare in front of this agent is **not** a JA4 source. |
 | Per-route cache/bandwidth policies | Available | Route policies inherit global defaults, isolate cache/bandwidth state, and support explicit per-route overrides. |
@@ -58,16 +59,15 @@ rows as implementation claims.
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Stack fingerprint v1 | Planned | JA4 + Akamai-style H2 `SETTINGS` / `WINDOW_UPDATE` / `PRIORITY` / pseudo-header order + ALPN order, **only when this agent terminates TLS**. Opaque `stack_class` for bot clustering — not a user, hardware ID, or canvas hash. No JA4H. HTTP/3 / QUIC is a documented hole. Spec: [#113](https://github.com/netgoat-xyz/netgoat/issues/113). |
 | VSA (Virtual System Administrator) | Planned | Out-of-band autonomous defense operator (not a hot-path classifier, not Kaseya VSA). Open: [#98](https://github.com/netgoat-xyz/netgoat/issues/98). |
 
 **Honesty**
 
 - Fingerprint is a client TLS/HTTP **stack class**. Chrome on a million
   laptops will collide. Do not persist it as identity.
-- JA4 is **not live**. If Cloudflare or any other terminator sits in
-  front, this agent must not fingerprint that ClientHello and call it the
-  browser.
+- JA4 is live **only** when this agent terminates TLS. If Cloudflare or
+  any other terminator sits in front, this agent must not fingerprint
+  that ClientHello and call it the browser.
 - Turnstile / reCAPTCHA are **not** NetGoat features.
 - Session-bound PoW and pinned Web Bot Auth skip **are live** when this
   agent terminates TLS. The pin list may be empty (skip lane empty until

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	_ "modernc.org/sqlite"
+	"netgoat.xyz/agent/internal/fingerprint"
 )
 
 // setuptestDB creates an in-memory SQLite database and seeds it with mock rules for testing.
@@ -198,5 +199,33 @@ func TestEngineUsesResolvedClientIPAndRejectsUnknownAction(t *testing.T) {
 	}
 	if err := engine.Reload(db); err == nil {
 		t.Fatal("unknown WAF action should reject reload")
+	}
+}
+
+func TestEngineSeesStackClass(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`DELETE FROM waf_rules`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO waf_rules (name, expression, action, priority) VALUES
+		('block go stack', 'StackClass startsWith "t13d0608h2"', 'BLOCK', 10)`); err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine()
+	if err := engine.Reload(db); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	class := "t13d0608h2_aaaaaaaaaaaa_bbbbbbbbbbbb|-|h2,http/1.1"
+	req := httptest.NewRequest("GET", "https://example.test/", nil)
+	req = req.WithContext(fingerprint.WithStackClass(req.Context(), class))
+	if blocked, rule := engine.Check(req, false); !blocked || rule != "block go stack" {
+		t.Fatalf("stack_class rule blocked/rule = %v/%q", blocked, rule)
+	}
+
+	plain := httptest.NewRequest("GET", "https://example.test/", nil)
+	if blocked, rule := engine.Check(plain, false); blocked || rule != "" {
+		t.Fatalf("missing stack_class should not match: %v/%q", blocked, rule)
 	}
 }
