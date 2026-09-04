@@ -70,7 +70,7 @@ Current public alpha. Treat the product version as **`v0.1.0-alpha.1`**.
 | README / docs alpha label | `v0.1.0-alpha.1` |
 | `release-agent.yml` tag filter | `v*` — this historical tag does **not** match |
 
-The tag, the Release title, and the SemVer patch (`0.0.1` vs `0.1.0`)
+The tag, the Release title, and the SemVer version (`0.0.1` vs `0.1.0`)
 disagree. That is a legacy mismatch. **Do not delete or retag
 `0.0.1-alpha.1`.** The next release is a new `v…` tag on the intended
 commit, with a changelog section and the release-agent workflow.

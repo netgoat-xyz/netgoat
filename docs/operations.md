@@ -173,11 +173,11 @@ instead of becoming an unauthenticated reverse proxy to loopback.
    insecure flag on a production edge.
 3. **Bootstrap auth before public routes.** Fresh databases have no
    default password. Export `NETGOAT_BOOTSTRAP_USERNAME` and
-   `NETGOAT_BOOTSTRAP_PASSWORD` (at least 12 characters, unique, not a
-   placeholder) and set `auth.enabled: true` on first start. Enable
-   auth and TLS **before** adding a route that points at a loopback or
-   private upstream. Metrics paths skip agent login (see below); scrape
-   them from a network that is not the public listener.
+   `NETGOAT_BOOTSTRAP_PASSWORD`. Use a unique, non-placeholder password
+   of at least 12 characters. Set `auth.enabled: true` on first start.
+   Enable auth and TLS **before** adding a route that points at a
+   loopback or private upstream. Metrics paths skip agent login (see
+   below); scrape them from a network that is not the public listener.
 4. **Empty routes, then add.** Leave `routes: {}` until the listener,
    TLS, and auth decisions are in place. Then add only the Hosts you
    intend to expose. A route to `127.0.0.1` publishes that process to
@@ -222,8 +222,8 @@ names are the `netgoat_*_total` counters (including
 
 There is no separate PoW-issued counter. Challenge activity shows up as
 `block_reasons` / `netgoat_blocks_by_reason_total` (`zero-trust`,
-`waf:<rule>`, `rate-limit`, and the classifier names) and as 403s on
-`/__netgoat/verify` failures. Watch process logs for
+`waf:<rule>`, `rate-limit`, `koda-waf`, `goatai`, `koda-2`) and as
+403s on `/__netgoat/verify` failures. Watch process logs for
 `Challenge verification failed` if you need the verify path itself.
 
 Minimal alerts — use whatever already scrapes Prometheus or polls JSON.
