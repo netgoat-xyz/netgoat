@@ -29,6 +29,7 @@ type Config struct {
 	} `yaml:"auth"`
 	// BotAuth is the pinned Web Bot Auth skip lane. Empty pinned_directories
 	// means the verifier is present but never skips; unsigned agents pay PoW.
+	// Operator pins should be https directory URLs.
 	BotAuth BotAuthConfig `yaml:"bot_auth"`
 	SSL     struct {
 		Enabled  bool   `yaml:"enabled"`
@@ -182,9 +183,9 @@ type Config struct {
 }
 
 // BotAuthConfig is the YAML-safe Web Bot Auth allowlist. Directory URLs are
-// operator-pinned; the agent never fetches an arbitrary Signature-Agent URL.
-// The PoW HMAC key is not stored here: set NETGOAT_CHALLENGE_SECRET or
-// DiamondKey in the environment.
+// operator-pinned https JWKS locations; the agent never fetches an arbitrary
+// Signature-Agent URL. The PoW HMAC key is not stored here: set
+// NETGOAT_CHALLENGE_SECRET or DiamondKey in the environment.
 type BotAuthConfig struct {
 	Enabled           bool     `yaml:"enabled"`
 	PinnedDirectories []string `yaml:"pinned_directories"`

@@ -235,6 +235,37 @@ func (s *Store) SkipRequest(r *http.Request) bool {
 	return s.botAuth.Skip(r)
 }
 
+// Satisfied reports whether the request has already paid (verified session)
+// or presents a pinned web-bot-auth skip. A successful skip marks a
+// terminated TLS session verified so later checks stay consistent. Skip
+// still returns true when TLS was not terminated: the signature is the proof.
+func (s *Store) Satisfied(r *http.Request, binding SessionBinding) bool {
+	if s == nil {
+		return false
+	}
+	if s.IsVerified(binding) {
+		return true
+	}
+	if !s.SkipRequest(r) {
+		return false
+	}
+	s.MarkVerified(binding)
+	return true
+}
+
+// MarkVerified records that this session paid. It is a no-op when TLS was
+// not terminated here (there is no session to bind).
+func (s *Store) MarkVerified(binding SessionBinding) {
+	if s == nil || !binding.usable() {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	s.cleanupExpiredLocked(now)
+	s.markVerifiedLocked(makeBindingKey(binding.Key()), now)
+}
+
 // Create issues a session-bound PoW puzzle. It returns nil when TLS was not
 // terminated here (pass-through / HTTP-only / Cloudflare in front).
 func (s *Store) Create(binding SessionBinding) *Challenge {

@@ -3,6 +3,7 @@ package challenge
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -103,6 +104,47 @@ func TestMissingSignatureDoesNotSkip(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "https://app.example.test/", nil)
 	if verifier.Skip(req) {
 		t.Fatal("missing signature must fail open to PoW, not skip")
+	}
+}
+
+func TestSatisfiedPinnedSkipMarksSessionVerified(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeDirectory(t, w, public)
+	}))
+	t.Cleanup(directory.Close)
+
+	now := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
+	verifier, err := NewBotAuthVerifier(BotAuthConfig{
+		Enabled:           true,
+		PinnedDirectories: []string{directory.URL},
+		HTTPClient:        directory.Client(),
+		CacheTTL:          time.Minute,
+		Now:               func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(WithSecret(testSecret), WithBotAuth(verifier), WithNow(func() time.Time { return now }), WithDifficulty(8, 8, 4))
+
+	req := httptest.NewRequest(http.MethodGet, "https://app.example.test/private", nil)
+	req.Host = "app.example.test"
+	req.TLS = &tls.ConnectionState{HandshakeComplete: true}
+	attachWebBotAuth(t, req, private, jwkThumbprint(t, public), directory.URL, now)
+
+	binding := BindingFromRequest(req)
+	binding.Subject = "user:1"
+	if store.IsVerified(binding) {
+		t.Fatal("session should not be verified before skip")
+	}
+	if !store.Satisfied(req, binding) {
+		t.Fatal("pinned web-bot-auth skip should satisfy the challenge")
+	}
+	if !store.IsVerified(binding) {
+		t.Fatal("skip should mark the terminated session verified")
 	}
 }
 

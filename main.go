@@ -498,7 +498,7 @@ func main() {
 			}
 			challengeBinding := challenge.BindingFromRequest(r)
 			challengeBinding.Subject = zeroTrustSubject(authResult)
-			if auth.RequireZeroTrustChallenge(authResult, database.IsZeroTrustEnabled(db), challengeStore.IsVerified(challengeBinding)) {
+			if zeroTrustChallengeNeeded(challengeStore, r, authResult, database.IsZeroTrustEnabled(db), challengeBinding) {
 				analysisInfo.RequestAllowed = false
 				analysisInfo.BlockReason = "zero-trust verification required"
 				recordBlocked(metricsRecorder, "zero-trust")
@@ -1261,7 +1261,7 @@ func (s *errorPageStore) pick(r *http.Request) []byte {
 func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.Store, r *http.Request, status int, fallback string) {
 	binding := challenge.BindingFromRequest(r)
 
-	if store.IsVerified(binding) {
+	if store.Satisfied(r, binding) {
 		if p := pages.pick(r); len(p) > 0 && isHTML(p) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(status)
@@ -1272,23 +1272,18 @@ func writeError(w http.ResponseWriter, pages *errorPageStore, store *challenge.S
 		return
 	}
 
-	if store.SkipRequest(r) {
-		writeChallengeResponse(w, r, nil, status, fallback)
-		return
-	}
-
 	ch := store.Create(binding)
 	log.Info().Bool("terminated", binding.Terminated).Int("difficulty", challengeDifficulty(ch)).Msg("Generating dynamic error page")
 	writeChallengeResponse(w, r, ch, status, fallback)
 }
 
 func writeZeroTrustChallenge(w http.ResponseWriter, store *challenge.Store, r *http.Request, binding challenge.SessionBinding) {
-	if store.SkipRequest(r) {
-		writeChallengeResponse(w, r, nil, http.StatusForbidden, "Zero-trust verification required")
-		return
-	}
 	ch := store.Create(binding)
 	writeChallengeResponse(w, r, ch, http.StatusForbidden, "Zero-trust verification required")
+}
+
+func zeroTrustChallengeNeeded(store *challenge.Store, r *http.Request, result *auth.AuthResult, globalEnabled bool, binding challenge.SessionBinding) bool {
+	return auth.RequireZeroTrustChallenge(result, globalEnabled, store.Satisfied(r, binding))
 }
 
 func writeChallengeResponse(w http.ResponseWriter, r *http.Request, ch *challenge.Challenge, status int, fallback string) {
