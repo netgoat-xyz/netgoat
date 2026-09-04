@@ -5,22 +5,31 @@
 NetGoat is a self-hosted reverse proxy and traffic-policy agent written in Go. It can run from a local YAML configuration, consume snapshots from the companion control plane, and continue serving the last known-good configuration during an outage.
 
 > [!WARNING]
-> NetGoat is active alpha software. The shipped configuration contains no
-> routes. Review every upstream, use strong bootstrap credentials, and place
-> administrative services behind authenticated TLS before exposing a
-> deployment to the internet.
+> NetGoat is active alpha software (`v0.1.0-alpha.1`). The shipped
+> configuration contains no routes. Review every upstream, use strong
+> bootstrap credentials, and place administrative services behind
+> authenticated TLS before exposing a deployment to the internet.
 
 ## Feature status
+
+This table is the public roadmap surface. **Available** is what this agent
+ships today. **Planned** is designed work with open specs — not live
+behavior, not a package, and not an identity product.
+
+The shipped `config.yml` has `routes: {}`. A fresh default deployment
+returns `404` for every Host instead of proxying to a local service.
+
+### Available
 
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Domain and path routing | Available | Exact, wildcard, regex, and longest-prefix path routes; local routes can be overridden by streamed routes. |
 | Load balancing and failover | Available | Round-robin pools, bounded concurrent health checks, and safe-method retry/failover. |
 | WAF rules | Available | Precompiled expression rules with priorities, `BLOCK`/`ALLOW` actions, and request host/method/path/query/header context. |
-| Traffic controls | Available | Global rate limiting, request queueing, bandwidth throttling, honeypot handling, and dynamic challenges. |
+| Traffic controls | Available | Global rate limiting, request queueing, bandwidth throttling, honeypot handling, and dynamic challenges. Today's challenges are **text / click / slider** HTML puzzles in `internal/challenge`, scored in part from User-Agent and bound to IP — not PoW, not Web Bot Auth. |
 | Shared response cache | Available | Bounded LRU/TTL cache for explicitly public responses, with HTTP freshness and revalidation safeguards. |
 | Local authentication | Available | Cookie or Basic authentication, per-user zero-trust challenge flags, and explicit secure bootstrap users. |
-| TLS termination | Available | Static fallback, streamed per-domain/wildcard certificates, and atomic SNI selection. |
+| TLS termination | Available | Static fallback, streamed per-domain/wildcard certificates, and atomic SNI selection. Termination is required for the planned fingerprint and session-bound PoW; it does not emit JA4 today. |
 | WebSocket proxying | Available | Upgrade connections are preserved by Go's reverse proxy. |
 | Metrics | Available | JSON and Prometheus endpoints for traffic, cache, block, latency, and proxy-error counters. |
 | AI request classifiers | Optional | Local GoatAI, Koda-WAF, and Koda-2 workers; model files and Python dependencies are required only when enabled. |
@@ -29,10 +38,59 @@ NetGoat is a self-hosted reverse proxy and traffic-policy agent written in Go. I
 | Automatic certificate issuance/renewal | Available (opt-in) | Explicit ACME allow-list, HTTP-01 handler, encrypted persistent cache, and last-known-good certificate retention. |
 | JavaScript/TypeScript dynamic rules | Available (opt-in) | Isolated, bounded JS/TS request decisions with atomic last-known-good reload and fail-closed evaluation. |
 | Developer plugin catalog and middleware SDK | Available | Restart-only selections for exact compiled descriptors; v1 capability grants, lifecycle isolation, and no remote code/artifact loading. |
-| Cloudflare Access, DNS, and tunnel management | Available (opt-in) | Fail-closed Access JWT/JWKS verification plus bounded, dry-run-by-default startup reconciliation using an environment-only token. |
+| Cloudflare Access, DNS, and tunnel management | Available (opt-in) | Fail-closed Access JWT/JWKS verification plus bounded, dry-run-by-default startup reconciliation using an environment-only token. Cloudflare in front of this agent is **not** a JA4 source. |
 | Per-route cache/bandwidth policies | Available | Route policies inherit global defaults, isolate cache/bandwidth state, and support explicit per-route overrides. |
 
-The dashboard shown by the wider NetGoat project belongs to the control plane. This agent exposes metrics APIs but does not embed that dashboard.
+Recent hardening (already merged): public plaintext HTTP is refused at
+startup unless `allow_insecure_public_http: true` is set
+([#111](https://github.com/netgoat-xyz/netgoat/pull/111)). CI runs `go vet`
+and `go test -race` on pull requests and `main`
+([#110](https://github.com/netgoat-xyz/netgoat/pull/110),
+[#112](https://github.com/netgoat-xyz/netgoat/pull/112)).
+
+The dashboard shown by the wider NetGoat project belongs to the control
+plane. This agent exposes metrics APIs but does not embed that dashboard.
+
+### Next / roadmap
+
+Designed, not shipped. Specs live in the linked issues. Do not treat these
+rows as implementation claims.
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Stack fingerprint v1 | Planned | JA4 + Akamai-style H2 `SETTINGS` / `WINDOW_UPDATE` / `PRIORITY` / pseudo-header order + ALPN order, **only when this agent terminates TLS**. Opaque `stack_class` for bot clustering — not a user, hardware ID, or canvas hash. No JA4H. HTTP/3 / QUIC is a documented hole. Spec: [#113](https://github.com/netgoat-xyz/netgoat/issues/113). |
+| Challenge replace | Planned | Delete text / click / slider. Skip = pinned `Signature-Agent` JWKS + RFC 9421 web-bot-auth only. Cost = tiny session-bound PoW HMAC'd to the terminated TLS session with expiry in the MAC. Difficulty from load + `stack_class` mismatch, not User-Agent. JSON challenge, not DOM puzzles. Spec: [#114](https://github.com/netgoat-xyz/netgoat/issues/114). |
+| VSA (Virtual System Administrator) | Planned | Out-of-band autonomous defense operator (not a hot-path classifier, not Kaseya VSA). Open: [#98](https://github.com/netgoat-xyz/netgoat/issues/98). |
+
+**Honesty**
+
+- Fingerprint is a client TLS/HTTP **stack class**. Chrome on a million
+  laptops will collide. Do not persist it as identity.
+- JA4 is **not live**. If Cloudflare or any other terminator sits in
+  front, this agent must not fingerprint that ClientHello and call it the
+  browser.
+- Turnstile / reCAPTCHA are **not** NetGoat features.
+- Session-bound PoW and pinned Web Bot Auth skip are **not live**.
+
+**Gaps**
+
+- No terminate (plaintext, pass-through, or another terminator in front)
+  → no fingerprint and no PoW. Same rule as [#113](https://github.com/netgoat-xyz/netgoat/issues/113)
+  and [#114](https://github.com/netgoat-xyz/netgoat/issues/114).
+- Web Bot Auth registry is empty until operators seed a pinned allowlist.
+- HTTP/3 / QUIC clients will not appear in fingerprint v1.
+- Unsigned LLM browsers / `python` / `go-http-client` / curl take the
+  **PoW** lane once [#114](https://github.com/netgoat-xyz/netgoat/issues/114)
+  ships — not a magic skip.
+
+**Hardening next** (docs only; not this change)
+
+- Bind challenges to session, not IP (called out in
+  [#114](https://github.com/netgoat-xyz/netgoat/issues/114); today's store
+  keys on IP).
+- Stop User-Agent bot scoring that flags the agents we want through
+  (`bot` / `python` / `go-http-client` in `CalculateSuspicion`).
+- Keep CI race + vet on PRs and `main` as the verification baseline.
 
 ## Quick start
 
