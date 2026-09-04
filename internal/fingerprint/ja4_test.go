@@ -51,8 +51,8 @@ func TestJA4StripsGREASEAndIgnoresExtensionOrder(t *testing.T) {
 	if first[:1] != "t" {
 		t.Fatalf("protocol prefix = %q, want t", first[:1])
 	}
-	if want := "t13d0504h2_"; len(first) < len(want) || first[:len(want)] != want {
-		t.Fatalf("JA4 a-section = %q, want prefix %q (5 ciphers, 4 extensions after GREASE)", first, want)
+	if want := "t13d0505h2_"; len(first) < len(want) || first[:len(want)] != want {
+		t.Fatalf("JA4 a-section = %q, want prefix %q (5 ciphers, 5 extensions after GREASE)", first, want)
 	}
 }
 
