@@ -15,11 +15,12 @@ Feature behavior belongs in the [README](../README.md) and
   triggers on `push` tags matching `v*`, or on `workflow_dispatch` with an
   explicit `v…` tag name. A tag without the prefix does not run that
   workflow.
-- Conventional Commits are required on the default branch (see
-  [CONTRIBUTING.md](../CONTRIBUTING.md)). `fix:` and `feat:` feed patch
-  and minor; a `BREAKING CHANGE` footer or `!` after the type feeds major.
-  Alpha and beta cuts may still increment the prerelease identifier
-  without a major bump.
+- Use [Conventional Commits](https://www.conventionalcommits.org/) on
+  the default branch (see [CONTRIBUTING.md](../CONTRIBUTING.md)). That
+  is project convention, not a CI-enforced check. `fix:` and `feat:`
+  feed patch and minor; a `BREAKING CHANGE` footer or `!` after the type
+  feeds major. Alpha and beta cuts may still increment the prerelease
+  identifier without a major bump.
 
 ### Historical tag `0.0.1-alpha.1`
 

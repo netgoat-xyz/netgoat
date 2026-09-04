@@ -213,10 +213,12 @@ login handling. Do not expose them to the public internet; scrape from
 loopback, a trusted proxy, or a locked-down path.
 
 JSON fields that matter for a first scrape: `requests`, `responses`,
-`blocked`, `proxy_errors`, `status_codes`, `block_reasons`,
+`blocked`, `cache_hits`, `proxy_errors`, `bytes_written`,
+`average_latency_ms`, `status_codes`, `block_reasons`,
 `error_status_codes`, `recent_errors`, `uptime_seconds`. Prometheus
-names are `netgoat_*_total` plus `netgoat_responses_by_status_total`
-and `netgoat_blocks_by_reason_total`.
+names are the `netgoat_*_total` counters (including
+`netgoat_responses_by_status_total` and
+`netgoat_blocks_by_reason_total`) plus `netgoat_average_latency_ms`.
 
 There is no separate PoW-issued counter. Challenge activity shows up as
 `block_reasons` / `netgoat_blocks_by_reason_total` (`zero-trust`,
