@@ -24,3 +24,5 @@ Reports about directly exploitable dependency behavior, unsafe defaults, authent
 - Configure `trusted_proxies` narrowly; forwarding headers are ignored by default.
 - Keep SQLite databases, recovery snapshots, `.env`, private keys, telemetry IDs, and AI model artifacts out of source control.
 - Leave optional telemetry disabled unless you operate and trust its configured destination.
+
+The production checklist (TLS terminate, bootstrap auth before routes, empty `routes: {}`, listen vs `allow_insecure_public_http`, `trusted_proxies`, and the secret table) and metrics scrape/alert basics are in [docs/operations.md](docs/operations.md). Tagging and the alpha→beta security gate are in [docs/release.md](docs/release.md). Do not duplicate those lists here.

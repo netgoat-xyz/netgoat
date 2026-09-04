@@ -3,6 +3,8 @@ name: Release Agent
 on:
   push:
     tags:
+      # SemVer tags must start with v (v0.1.0, v0.1.0-beta.1). The legacy
+      # tag 0.0.1-alpha.1 does not match this filter and is left in place.
       - "v*"
   workflow_dispatch:
     inputs:
