@@ -1,0 +1,14 @@
+# Normalise text files to LF in the repository so Linux containers and
+# contributors on any platform see the same bytes.
+* text=auto eol=lf
+
+# Shell scripts keep LF endings.
+*.sh text eol=lf
+
+# Binary assets and models are never converted.
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.keras binary
+*.pkl binary
