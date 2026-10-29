@@ -30,6 +30,8 @@ ENV NO_COLOR=1 \
     GOMEMLIMIT=192MiB
 # TCP liveness probe: the agent answers 404/405 for unconfigured hosts and
 # paths, so an HTTP status check would report a healthy server as failing.
+# The probe port follows NETGOAT_HEALTHCHECK_PORT because the mounted
+# config.yml can move the listener (ssl.enabled, or a custom listen address).
 HEALTHCHECK --interval=15s --timeout=5s --retries=10 --start-period=25s \
-  CMD ["/busybox", "nc", "-z", "127.0.0.1", "8080"]
+  CMD ["/busybox", "sh", "-c", "/busybox nc -z 127.0.0.1 \"${NETGOAT_HEALTHCHECK_PORT:-8080}\""]
 ENTRYPOINT ["/app/netgoat"]

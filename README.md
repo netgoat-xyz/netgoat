@@ -172,7 +172,16 @@ docker run --rm -p 8080:8080 \
 Mount `/app/database` so SQLite state, recovery snapshots, and ACME material
 survive a restart. The healthcheck is a TCP probe on port 8080 because the agent
 answers `404` for unconfigured hosts, so an HTTP status check would report a
-healthy server as failing.
+healthy server as failing. If your config moves the listener (`ssl.enabled`, a
+different `listen` address), point the probe at it:
+
+```sh
+docker run --rm -p 8443:8443 \
+  -e NETGOAT_HEALTHCHECK_PORT=8443 \
+  -v "$PWD/config.tls.yml:/app/config.yml:ro" \
+  -v netgoat-data:/app/database \
+  netgoat-agent
+```
 
 Published images: `ghcr.io/netgoat-xyz/netgoat`.
 

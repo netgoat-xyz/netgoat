@@ -1,14 +1,13 @@
 # CodeRabbit configuration.
 #
-# Automated review is advisory: it never gates a merge and never requests
-# changes. The blocking gate is CI (see .github/workflows/ci.yml). This file
-# only tunes the review so it stays useful and quiet.
+# Automated review is advisory: it never gates a merge. The blocking gate is
+# CI (see .github/workflows/ci.yml). This file only tunes the review so it
+# stays useful and quiet.
 
 language: en-US
 
 reviews:
   profile: chill
-  request_changes_workflow: false
   high_level_summary: true
   poem: false
   review_status: true
@@ -23,3 +22,6 @@ reviews:
     - "!**/node_modules/**"
     - "!**/dist/**"
     - "!**/.next/**"
+    - "!**/*.exe"
+    - "!**/*.test"
+    - "!**/*.out"
