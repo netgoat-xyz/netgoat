@@ -179,7 +179,7 @@ jobs:
         run: ./.github/scripts/render-release-notes.sh "${RELEASE_TAG}" release-content.md release-assets release-notes.md
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: NetGoat Agent ${{ env.RELEASE_TAG }}
