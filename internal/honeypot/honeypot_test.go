@@ -127,33 +127,33 @@ func TestCheckNormalPaths(t *testing.T) {
 
 func TestCheckCaseSensitivity(t *testing.T) {
 	tests := []struct {
-		name        string
-		path        string
+		name          string
+		path          string
 		shouldTrigger bool
 	}{
 		{
-			name:        "lowercase .env",
-			path:        "/.env",
+			name:          "lowercase .env",
+			path:          "/.env",
 			shouldTrigger: true,
 		},
 		{
-			name:        "uppercase .ENV",
-			path:        "/.ENV",
+			name:          "uppercase .ENV",
+			path:          "/.ENV",
 			shouldTrigger: false,
 		},
 		{
-			name:        "mixed case .Env",
-			path:        "/.Env",
+			name:          "mixed case .Env",
+			path:          "/.Env",
 			shouldTrigger: false,
 		},
 		{
-			name:        "lowercase .git",
-			path:        "/.git",
+			name:          "lowercase .git",
+			path:          "/.git",
 			shouldTrigger: true,
 		},
 		{
-			name:        "uppercase .GIT",
-			path:        "/.GIT",
+			name:          "uppercase .GIT",
+			path:          "/.GIT",
 			shouldTrigger: false,
 		},
 	}
@@ -174,23 +174,23 @@ func TestCheckCaseSensitivity(t *testing.T) {
 
 func TestCheckWithQueryString(t *testing.T) {
 	tests := []struct {
-		name        string
-		path        string
+		name          string
+		path          string
 		shouldTrigger bool
 	}{
 		{
-			name:        ".env with query",
-			path:        "/.env?debug=true",
+			name:          ".env with query",
+			path:          "/.env?debug=true",
 			shouldTrigger: true,
 		},
 		{
-			name:        ".git with query",
-			path:        "/.git?test=1",
+			name:          ".git with query",
+			path:          "/.git?test=1",
 			shouldTrigger: true,
 		},
 		{
-			name:        "normal path with .env in query",
-			path:        "/page?file=.env",
+			name:          "normal path with .env in query",
+			path:          "/page?file=.env",
 			shouldTrigger: false,
 		},
 	}
@@ -298,43 +298,43 @@ func TestCheckMultipleCalls(t *testing.T) {
 
 func TestCheckEdgeCases(t *testing.T) {
 	tests := []struct {
-		name        string
-		path        string
+		name          string
+		path          string
 		shouldTrigger bool
 	}{
 		{
-			name:        "double slash .env",
-			path:        "//.env",
+			name:          "double slash .env",
+			path:          "//.env",
 			shouldTrigger: false,
 		},
 		{
-			name:        ".env in subdirectory",
-			path:        "/subdir/.env",
+			name:          ".env in subdirectory",
+			path:          "/subdir/.env",
 			shouldTrigger: false, // Only exact /.env triggers
 		},
 		{
-			name:        ".gitignore (not .git)",
-			path:        "/.gitignore",
+			name:          ".gitignore (not .git)",
+			path:          "/.gitignore",
 			shouldTrigger: false,
 		},
 		{
-			name:        ".github directory",
-			path:        "/.github/",
+			name:          ".github directory",
+			path:          "/.github/",
 			shouldTrigger: false,
 		},
 		{
-			name:        "env without dot",
-			path:        "/env",
+			name:          "env without dot",
+			path:          "/env",
 			shouldTrigger: false,
 		},
 		{
-			name:        "git without dot",
-			path:        "/git",
+			name:          "git without dot",
+			path:          "/git",
 			shouldTrigger: false,
 		},
 		{
-			name:        ".git in middle of path",
-			path:        "/path/.git/subdir",
+			name:          ".git in middle of path",
+			path:          "/path/.git/subdir",
 			shouldTrigger: true,
 		},
 	}

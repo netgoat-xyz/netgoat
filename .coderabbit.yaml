@@ -1,0 +1,27 @@
+# CodeRabbit configuration.
+#
+# Automated review is advisory: it never gates a merge. The blocking gate is
+# CI (see .github/workflows/ci.yml). This file only tunes the review so it
+# stays useful and quiet.
+
+language: en-US
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/go.sum"
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/.next/**"
+    - "!**/*.exe"
+    - "!**/*.test"
+    - "!**/*.out"
