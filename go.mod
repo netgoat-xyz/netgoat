@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/dop251/goja v0.0.0-20260723142020-b4aef50fa347
-	github.com/evanw/esbuild v0.28.1
+	github.com/evanw/esbuild v0.28.2
 	github.com/expr-lang/expr v1.17.7
 	github.com/rs/zerolog v1.34.0
 	golang.org/x/crypto v0.52.0
