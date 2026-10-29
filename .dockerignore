@@ -1,0 +1,14 @@
+# Local agent state and secrets — keep the build context lean.
+database/
+*.pem
+*.key
+.env
+.env.*
+Dockerfile
+docker-compose.yml
+**/*_test.go
+**/testdata/
+ai/
+docs/
+.git
+.github
