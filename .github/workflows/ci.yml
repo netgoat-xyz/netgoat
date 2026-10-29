@@ -86,9 +86,17 @@ jobs:
       - name: gitleaks
         # CLI image instead of gitleaks-action: the action requires a paid
         # licence for organization accounts, the CLI is MIT and free.
+        #
+        # The baseline records leaks that were purged from the working tree
+        # but are still reachable in history. They cannot be removed without
+        # rewriting published history, so they are accepted here and tracked
+        # for rotation instead. Anything not in the baseline fails the build.
         run: |
           docker run --rm -v "$PWD:/repo" \
-            ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source=/repo --redact --verbose --no-banner
+            ghcr.io/gitleaks/gitleaks:v8.30.1 detect --source=/repo \
+            --config=/repo/.gitleaks.toml \
+            --baseline-path=/repo/.gitleaks-baseline.json \
+            --redact --verbose --no-banner
 
   dependency-review:
     name: Dependency review

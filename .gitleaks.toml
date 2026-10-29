@@ -1,0 +1,12 @@
+# gitleaks configuration.
+#
+# The full default ruleset stays active; this file only adds allowlists for
+# findings that are known and accepted. New findings anywhere else still fail
+# the build.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Config parser unit tests use obviously fake credentials"
+paths = ['''internal/config/config_test\.go$''']
