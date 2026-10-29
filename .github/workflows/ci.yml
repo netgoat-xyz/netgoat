@@ -52,6 +52,21 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - name: Set up nameserver Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: nameserver/go.mod
+          cache: true
+          cache-dependency-path: nameserver/go.sum
+
+      - name: Vet nameserver
+        working-directory: nameserver
+        run: go vet ./...
+
+      - name: Build nameserver
+        working-directory: nameserver
+        run: CGO_ENABLED=0 go build ./...
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest
@@ -72,6 +87,16 @@ jobs:
           load: false
           cache-from: type=gha,scope=netgoat
           cache-to: type=gha,scope=netgoat,mode=max
+
+      - name: Build nameserver without publishing
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./nameserver
+          file: ./nameserver/Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=netgoat-nameserver
+          cache-to: type=gha,scope=netgoat-nameserver,mode=max
 
   secret-scan:
     name: Secret scan
