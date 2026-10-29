@@ -1,4 +1,4 @@
-# NetGoat authoritative nameserver
+# NetGoat authoritative DNS service
 
 This service serves active zones and DNS records from `stream-server`. It is
 authoritative only: it does not recurse, forward queries, provide zone
@@ -7,7 +7,7 @@ DNS listener and keeps the last valid stream snapshot in memory during a stream
 server outage.
 
 The stream API exposes a filtered `/dns/zones` snapshot with a dedicated
-`X-DNS-API-Key`. The nameserver polls it every five seconds by default. Records
+`X-DNS-API-Key`. The DNS service polls it every five seconds by default. Records
 are published from active domains and active DNS records in the `dnsrecords`
 collection.
 
@@ -21,7 +21,7 @@ collection.
 | `STREAM_DNS_KEY` | required | Must match stream server's `DNS_READ_KEY` |
 | `DNS_POLL_SECONDS` | `5` | Snapshot polling interval, 1–3600 seconds |
 | `DNS_NAMESERVERS` | required | Comma-separated public NS hostnames for synthesized apex NS records |
-| `DNS_SOA_MNAME` | first `DNS_NAMESERVERS` entry | SOA primary nameserver |
+| `DNS_SOA_MNAME` | first `DNS_NAMESERVERS` entry | SOA primary DNS server |
 | `DNS_SOA_RNAME` | `hostmaster.netgoat.xyz.` | SOA contact mailbox in DNS name form |
 | `DNS_SOA_TTL` | `300` | SOA TTL in seconds |
 | `DNS_NEGATIVE_TTL` | `60` | SOA minimum for negative answers |
@@ -29,9 +29,9 @@ collection.
 | `DNS_PROXY_IPV6` | empty | IPv6 returned for proxied AAAA/CNAME records |
 
 The container listens on unprivileged port 1053. Publish that port as both UDP
-and TCP port 53 at the host or load balancer. Configure the nameserver hostnames
+and TCP port 53 at the host or load balancer. Configure the DNS hostnames
 and their public glue addresses at the domain registrar before delegating a
-zone. A single instance does not provide nameserver redundancy; production
+zone. A single instance does not provide authoritative DNS redundancy; production
 delegations should use independently reachable instances.
 
 ## Health

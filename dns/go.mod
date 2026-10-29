@@ -1,4 +1,4 @@
-module github.com/netgoat-xyz/netgoat/nameserver
+module github.com/netgoat-xyz/netgoat/dns
 
 go 1.25.0
 

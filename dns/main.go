@@ -146,7 +146,7 @@ func loadConfig() (serverConfig, error) {
 
 	nameServers := splitNames(os.Getenv("DNS_NAMESERVERS"))
 	if len(nameServers) == 0 {
-		return serverConfig{}, errors.New("DNS_NAMESERVERS must contain the public nameserver hostnames for this deployment")
+		return serverConfig{}, errors.New("DNS_NAMESERVERS must contain the public DNS hostnames for this deployment")
 	}
 	for index, name := range nameServers {
 		if !validFQDN(name) {
@@ -603,7 +603,7 @@ func writeHealth(w http.ResponseWriter, current *snapshot, ready bool) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":    state,
-		"service":   "netgoat-nameserver",
+		"service":   "netgoat-dns",
 		"zones":     current.zoneCount,
 		"last_sync": current.lastSync,
 	})

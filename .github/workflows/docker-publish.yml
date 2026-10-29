@@ -44,19 +44,19 @@ jobs:
       - name: Test
         run: go test -race ./...
 
-      - name: Set up nameserver Go
+      - name: Set up DNS service Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: nameserver/go.mod
+          go-version-file: dns/go.mod
           cache: true
-          cache-dependency-path: nameserver/go.sum
+          cache-dependency-path: dns/go.sum
 
-      - name: Vet nameserver
-        working-directory: nameserver
+      - name: Vet DNS service
+        working-directory: dns
         run: go vet ./...
 
-      - name: Build nameserver
-        working-directory: nameserver
+      - name: Build DNS service
+        working-directory: dns
         run: CGO_ENABLED=0 go build ./...
 
   publish:
@@ -117,8 +117,8 @@ jobs:
           provenance: true
           sbom: true
 
-  publish-nameserver:
-    name: Build and push nameserver
+  publish-dns:
+    name: Build and push DNS service
     needs: verify
     runs-on: ubuntu-latest
     permissions:
@@ -151,8 +151,8 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: |
-            netgoat-xyz/nameserver
-            ghcr.io/netgoat-xyz/nameserver
+            netgoat-xyz/dns
+            ghcr.io/netgoat-xyz/dns
           tags: |
             type=sha,format=long,prefix=
             type=ref,event=branch
@@ -161,17 +161,17 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.source=https://github.com/netgoat-xyz/netgoat
-            org.opencontainers.image.title=NetGoat authoritative nameserver
+            org.opencontainers.image.title=NetGoat authoritative DNS service
 
-      - name: Build and push nameserver
+      - name: Build and push DNS service
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: ./nameserver
-          file: ./nameserver/Dockerfile
+          context: ./dns
+          file: ./dns/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=netgoat-nameserver
-          cache-to: type=gha,scope=netgoat-nameserver,mode=max
+          cache-from: type=gha,scope=netgoat-dns
+          cache-to: type=gha,scope=netgoat-dns,mode=max
           provenance: true
           sbom: true
