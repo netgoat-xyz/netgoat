@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -buildid=" -o /out/netgoat . \
     && mkdir -p /out/database
 
-FROM busybox:1.37.0-musl AS healthcheck
+FROM busybox:1.38.0-musl AS healthcheck
 
 FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.description="Minimal hardened NetGoat edge proxy runtime" \
